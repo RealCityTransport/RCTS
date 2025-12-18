@@ -4,9 +4,7 @@
 </template>
 
 <script setup>
-// App.vue는 최상위 라우터 뷰만 표시하므로, 별도의 로직은 필요 없습니다.
-// 글로벌 스타일이나 전역적인 설정을 import 할 수도 있습니다.
-// 예시: import '@/assets/styles/main.scss'; // 전역 SCSS 파일 (아래 3번 참고)
+import '@/assets/styles/main.scss';
 </script>
 
 <style lang="scss">
@@ -18,10 +16,15 @@ html, body, #app {
   padding: 0;
   height: 100%;
   width: 100%;
-  overflow: hidden; /* 전체 앱 스크롤 방지, 내부 컴포넌트가 스크롤 처리 */
-  font-family: 'NexonLv1Gothic', sans-serif; /* 기본 폰트 설정 (추후 로드 방식과 결합) */
+  overflow: hidden;
+  // ⭐⭐⭐ 폰트 패밀리 이름을 'Suit'로 변경 ⭐⭐⭐
+  font-family: 'Suit', sans-serif; /* Fallback 폰트도 함께 지정 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: 'Suit', sans-serif;
 }
 
 /* --- 임시 --- */

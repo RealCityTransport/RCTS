@@ -23,7 +23,6 @@ import TheFooter from '@/components/TheFooter.vue'; // 푸터 컴포넌트 임�
   height: 100vh; /* 전체 화면 높이 */
   background-color: #1a1a2e; /* 다크 계열 배경색 (컨셉 반영) */
   color: #e0e0e0; /* 기본 텍스트 색상 */
-  font-family: 'NexonLv1Gothic', sans-serif; /* 폰트 적용 (아직 적용 안 됐다면 추후 안내) */
 }
 
 .game-main-content {

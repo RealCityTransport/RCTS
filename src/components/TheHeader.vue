@@ -4,7 +4,7 @@
     <!-- RCTS 로고, 유저 정보, 게임 시간, 메뉴 아이콘 등 -->
     <div class="logo">RCTS</div>
     <div class="user-info">Manager: [UserName]</div>
-    <div class="game-time">DAY 1 | 12:45 PM</div>
+    <div class="game-time">{{ kstString }}</div>
     <nav class="header-nav">
       <button class="nav-button">⚙️ Settings</button>
       <button class="nav-button">❓ Help</button>
@@ -14,7 +14,10 @@
 </template>
 
 <script setup>
-// Header 관련 로직 (시간 표시 등)
+import { useKstTime } from '@/composables/useKstTime';
+
+// KST 시간 표시 모듈
+const { kstString } = useKstTime();
 </script>
 
 <style lang="scss" scoped>
