@@ -6,18 +6,25 @@
     <div class="user-info">Manager: [UserName]</div>
     <div class="game-time">{{ kstString }}</div>
     <nav class="header-nav">
-      <button class="nav-button">⚙️ Settings</button>
-      <button class="nav-button">❓ Help</button>
-      <button class="nav-button">📜 Logs</button>
+      <button class="nav-button">⚙️ 설정</button>
+      <button class="nav-button">❓ 도움말</button>
+      <button class="nav-button">📜 기록</button>
+      <button class="nav-button" @click="goToDataArchive">자료실</button>
     </nav>
   </header>
 </template>
 
 <script setup>
 import { useKstTime } from '@/composables/useKstTime';
+import { useRouter } from 'vue-router';
 
 // KST 시간 표시 모듈
 const { kstString } = useKstTime();
+
+const router = useRouter();
+const goToDataArchive = () => {
+  router.push({ name: 'DataArchive' });
+};
 </script>
 
 <style lang="scss" scoped>

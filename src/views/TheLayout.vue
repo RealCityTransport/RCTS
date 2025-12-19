@@ -20,18 +20,21 @@ import TheFooter from '@/components/TheFooter.vue'; // 푸터 컴포넌트 임�
 .game-app-container {
   display: flex;
   flex-direction: column;
-  height: 100vh; /* 전체 화면 높이 */
+  height: 100%;
   background-color: #1a1a2e; /* 다크 계열 배경색 (컨셉 반영) */
   color: #e0e0e0; /* 기본 텍스트 색상 */
 }
 
 .game-main-content {
-  flex-grow: 1; /* 남은 공간을 모두 차지 */
-  overflow-y: auto; /* 내용이 넘치면 스크롤 */
-  padding: 1rem; /* 내부 여백 */
-  display: flex; /* 중앙 콘텐츠도 flexbox로 관리 */
-  justify-content: center; /* 수평 중앙 정렬 */
-  align-items: flex-start; /* 수직 상단 정렬 (컨텐츠 시작점) */
+  flex-grow: 1;
+  overflow-y: auto; /* ⭐⭐⭐ 세로 스크롤은 유지 ⭐⭐⭐ */
+  overflow-x: hidden;
   width: 100%;
+  // display: flex; /* 주석 처리 혹은 제거 - 콘텐츠가 꽉 채우도록 허용 */
+
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 </style>

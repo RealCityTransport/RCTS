@@ -16,7 +16,6 @@ html, body, #app {
   padding: 0;
   height: 100%;
   width: 100%;
-  overflow: hidden;
   // ⭐⭐⭐ 폰트 패밀리 이름을 'Suit'로 변경 ⭐⭐⭐
   font-family: 'Suit', sans-serif; /* Fallback 폰트도 함께 지정 */
   -webkit-font-smoothing: antialiased;
