@@ -13,3 +13,12 @@
     <div id="app"></div>
   </body>
 </html>
+<script>
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const redirect = params.get('redirect');
+    if (redirect) {
+      history.replaceState(null, '', '/RCTS' + redirect);
+    }
+  })();
+</script>

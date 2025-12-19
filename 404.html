@@ -2,12 +2,11 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RCTS</title>
+    <script>
+      // 현재 경로를 쿼리로 넘겨서 index.html로 이동
+      const redirect = location.pathname.replace('/RCTS', '');
+      location.replace('/RCTS/?redirect=' + redirect);
+    </script>
   </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="src/main.js"></script>
-  </body>
+  <body></body>
 </html>
