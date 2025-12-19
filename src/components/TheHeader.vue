@@ -3,28 +3,51 @@
   <header class="app-header">
     <!-- RCTS 로고, 유저 정보, 게임 시간, 메뉴 아이콘 등 -->
     <div class="logo">RCTS</div>
-    <div class="user-info">Manager: [UserName]</div>
+    <div class="user-info">
+        <template v-if="user">
+          Manager: {{ user.displayName || user.email }}
+        </template>
+        <template v-else>
+          Manager: 로그인 필요
+        </template>
+      </div>
     <div class="game-time">{{ kstString }}</div>
     <nav class="header-nav">
       <button class="nav-button">⚙️ 설정</button>
       <button class="nav-button">❓ 도움말</button>
       <button class="nav-button">📜 기록</button>
       <button class="nav-button" @click="goToDataArchive">자료실</button>
+      <button class="nav-button" @click="handleAuthClick">
+          {{ user ? '로그아웃' : '로그인' }}
+      </button>
     </nav>
   </header>
 </template>
 
 <script setup>
-import { useKstTime } from '@/composables/useKstTime';
 import { useRouter } from 'vue-router';
+import { useKstTime } from '@/composables/useKstTime';
+import { useAuth } from '@/composables/useAuth';
 
 // KST 시간 표시 모듈
 const { kstString } = useKstTime();
 
+// 사용자 인증 정보 모귤
+const { user, signOutUser, signInWithGoogle } = useAuth();
+
 const router = useRouter();
+
 const goToDataArchive = () => {
   router.push({ name: 'DataArchive' });
 };
+
+const handleAuthClick = async () => {
+    if (user.value) { // 로그인 상태이면 로그아웃 처리
+        await signOutUser(); // useAuth의 로그아웃 함수 호출
+    } else { // 로그인 상태가 아니면 로그인 페이지로 이동
+        await signInWithGoogle();
+    }
+  };
 </script>
 
 <style lang="scss" scoped>
