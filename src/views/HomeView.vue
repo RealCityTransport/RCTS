@@ -5,7 +5,6 @@
     <div class="main-layout-horizontal">
       <TheLeftArea />
       <TheCenterArea />
-      <TheRightArea />
     </div>
   </div>
 </template>
@@ -14,7 +13,6 @@
 import TheTopBar from '@/components/TheTopBar.vue';
 import TheLeftArea from '@/components/TheLeftArea.vue';
 import TheCenterArea from '@/components/TheCenterArea.vue';
-import TheRightArea from '@/components/TheRightArea.vue';
 </script>
 
 <style scoped lang="scss">

@@ -2,6 +2,8 @@
 /* 이 파일은 애플리케이션 전체에 적용되는 전역 스타일과 CSS/SCSS 변수를 정의합니다. */
 
 // 🔥 리셋 CSS 임포트 (전역적으로 가장 먼저 적용되어야 합니다)
+@use "sass:color" as s_color;
+
 @import url('https://cdn.jsdelivr.net/npm/reset-css@5.0.1/reset.min.css');
 
 // 🔥 폰트 CDN 링크 (로컬 파일 대신 CDN 사용을 강력히 권장합니다. 없으면 404 에러)
@@ -30,11 +32,14 @@ $area-bg-color-right: #2a3a4a;
 $text-color: #e0e0e0;
 $border-color: #5a6a7a;
 $highlight-color: #ffd700;
+$highlight-color-light: s_color.scale($highlight-color, $lightness: 40%); // Sass 권장 s_color.scale 사용
 $positive-color: #8aff8a;
 $accent-color: #6a95e0;
 $panel-width: 20%;
 $panel-min-width: 200px;
 $top-bar-height: 80px;
+$positive-color-calculated: $highlight-color;
+$positive-color-light-calculated: s_color.scale($positive-color, $lightness: 40%); // $positive-color의 더 밝은 버전
 
 /* 🔥 CSS 변수를 사용하여 이 SCSS 변수들을 웹 컴포넌트에서도 참조할 수 있도록 합니다. */
 :root {
@@ -52,6 +57,8 @@ $top-bar-height: 80px;
   --panel-width: #{$panel-width};
   --panel-min-width: #{$panel-min-width};
   --top-bar-height: #{$top-bar-height};
+  --positive-color: #{$positive-color-calculated}; // $positive-color의 값을 따름
+  --positive-color-light: #{$positive-color-light-calculated}; // 미리 계산된 Sass 변수 사용
 }
 
 /* html, body, #app 컨테이너는 뷰포트 전체를 차지하도록 설정 */

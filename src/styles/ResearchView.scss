@@ -96,25 +96,50 @@
    border-color: global.$accent-color; // 악센트 색상으로 테두리 표시
  }
  
+ .research-item-content { // 🔥 새로운 flex 컨테이너 추가
+   display: flex;
+   flex-direction: column; // 이 컨테이너 안의 내용물(이름/진행바 컨테이너, 버튼)은 세로 정렬
+   gap: 10px;
+   width: 100%;
+ }
+ 
+ .item-name-and-progress { // 🔥🔥 이름과 진행바, 시간 영역을 감싸는 컨테이너 추가
+   display: flex;
+   align-items: center; // 세로 중앙 정렬
+   gap: 15px; // 이름과 진행바 영역 사이 간격
+   width: 100%; // 부모(.research-item-content) 너비 전체 사용
+ }
+
  .item-icon {
    font-size: 2.5em;
    line-height: 1;
    margin-right: 10px;
    flex-shrink: 0;
  }
-
-.item-name {
+ 
+ .item-name {
    font-size: 1.4em;
    font-weight: bold;
    color: var(--highlight-color);
    margin: 0;
-   text-shadow: 0 0 5px rgba(global.$highlight-color, 0.3);
+   text-shadow: 0 0 5px rgba(global.$highlight-color, 0.3); // 정민님의 현재 값 유지
    text-align: left;
-   flex-grow: 1;
+   flex-shrink: 0; // 🔥 이름이 줄어들지 않도록 합니다 (공간을 양보하지 않음).
+   max-width: 30%; // 🔥 이름이 차지할 최대 너비를 지정 (예: 전체 공간의 30%, 필요시 조절)
+   overflow: hidden; // 🔥 내용이 max-width를 넘어가면 숨김
+   white-space: nowrap; // 🔥 내용이 줄바꿈되지 않게 함
+   text-overflow: ellipsis; // 🔥 내용이 넘어가면 "..."으로 표시
    min-width: 0;
-   white-space: normal;
+
  }
  
+ .progress-details { // 🔥🔥 진행바와 시간 부분을 감싸는 컨테이너
+   flex-grow: 1; // 🔥 남은 공간을 모두 차지하도록 함
+   display: flex; // 진행바와 남은 시간을 나란히 정렬하기 위해
+   align-items: center;
+   gap: 10px; // 진행바와 시간 텍스트 사이 간격
+ }
+
  .unlock-item-btn {
    background-color: var(--accent-color);
    color: white;
@@ -219,7 +244,13 @@
     padding: 10px 15px;
   }
   .item-icon { margin-right: 0; margin-bottom: 5px; font-size: 2em; }
-  .item-name { text-align: center; } // 모바일에서 이름 가운데 정렬
+  .item-name { 
+     text-align: center; // 모바일에서 이름 가운데 정렬
+     max-width: 100%; // 모바일에서는 이름이 전체 너비를 사용하도록
+     white-space: normal; // 모바일에서는 줄바꿈 허용 (공간이 넓으니)
+     overflow: visible; // 넘쳐도 숨기지 않음
+     text-overflow: clip; // 줄임표도 사용 안 함
+   } 
    .unlock-item-btn { margin-left: 0; margin-top: 10px; } // 모바일 버튼 간격 조정
  
    // 🔥 모바일에서의 연구 상태 영역 스타일

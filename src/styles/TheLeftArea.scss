@@ -1,138 +1,159 @@
-/* src/styles/TheLeftArea.scss */
-@use "sass:color";
-@use "@/styles/global.scss" as global;
+ /* src/styles/TheLeftArea.scss */
+ @use "sass:color";
+ @use "@/styles/global.scss" as global;
+ 
+ .layout-area p {
+   margin: 5px 0;
+   text-align: center;
+   opacity: 0.7;
+ }
+ 
+ // 🔥🔥🔥 Left 패널 전체를 감싸는 wrapper 🔥🔥🔥
+ .left-panel-wrapper {
+   display: flex;
+   flex-direction: column;
+   height: 100%;
+   width: 100%;
+   padding: 15px; // 패딩은 전체 래퍼에서 한 번만 적용
+   box-sizing: border-box;
+ }
+ 
+ .panel-heading {
+   font-size: 1.4em;
+   color: var(--highlight-color);
+   margin-top: 20px; // 섹션별 상단 마진
+   margin-bottom: 10px;
+   text-align: center;
+   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+   padding-bottom: 5px;
+ }
+ 
+ // 🔥🔥🔥 1. 운송 수단 목록 컨테이너 스타일 🔥🔥🔥
+ .transport-list-container {
+   flex-shrink: 0; // 목록은 줄어들지 않음
+   max-height: 40%; // 최대 높이 제한 (필요시 조정)
+   overflow-y: auto; // 내용 넘치면 스크롤
+   border: 1px solid var(--border-color);
+   border-radius: 8px;
+   padding: 10px;
+   margin-bottom: 15px; // 아래 상세 정보 컨테이너와의 간격
+   background-color: color.scale(global.$area-bg-color-left, $lightness: 2%);
+ }
 
-.layout-area p {
-  margin: 5px 0;
-  text-align: center;
-  opacity: 0.7;
-}
+ .transport-list {
+   list-style: none;
+   padding: 0;
+   margin: 0;
+ }
 
-.area-title {
-  font-size: 1.6em;
-  color: var(--highlight-color);
-  margin-bottom: 20px;
-  text-align: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  padding-bottom: 10px;
-}
+ .transport-item {
+   display: flex;
+   align-items: center;
+   padding: 8px 10px;
+   margin-bottom: 5px;
+   background-color: color.scale(global.$area-bg-color-left, $lightness: -5%);
+   border-radius: 6px;
+   cursor: pointer;
+   transition: all 0.2s ease;
+   border: 1px solid transparent; // 기본 테두리 투명
+   user-select: none; // 드래그 방지
+ }
+ 
+ .transport-item:hover {
+   background-color: color.scale(global.$area-bg-color-left, $lightness: 5%);
+   border-color: var(--accent-color);
+ }
+ 
+ .transport-item.active { // 🔥🔥🔥 활성화된 항목 스타일 🔥🔥🔥
+   background-color: var(--accent-color);
+   color: white;
+   border-color: var(--highlight-color);
+   box-shadow: 0 0 8px rgba(var(--accent-color-rgb), 0.5);
+ }
 
-.transport-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-  gap: 15px;
-  width: 100%;
-  max-width: 300px;
-  margin: 0 auto 20px auto;
-  padding: 0 10px;
-  box-sizing: border-box;
-}
+ .transport-icon {
+   font-size: 1.5em;
+   margin-right: 10px;
+ }
+ 
+ .transport-name {
+   flex-grow: 1;
+   font-size: 1.1em;
+   font-weight: bold;
+ }
+ 
+ .transport-count {
+   font-size: 0.9em;
+   color: var(--highlight-color);
+   background-color: rgba(global.$highlight-color, 0.2);
+   padding: 2px 6px;
+   border-radius: 4px;
+ }
+ 
+ // 🔥🔥🔥 2. 운송 수단 상세 정보 컨테이너 스타일 🔥🔥🔥
+ .transport-details-container {
+   flex-grow: 1; // 남은 공간 차지
+   border: 1px solid var(--border-color);
+   border-radius: 8px;
+   padding: 15px;
+   background-color: color.scale(global.$area-bg-color-left, $lightness: -2%);
+   margin-bottom: 15px; // 아래 자원 컨테이너와의 간격
+   overflow-y: auto; // 내용 넘치면 스크롤
+ }
 
-.transport-card {
-  background-color: var(--area-bg-color-center);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 10px 5px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  text-align: center;
-}
+ .details-content p {
+   text-align: left;
+   margin-bottom: 5px;
+   font-size: 0.95em;
+   color: var(--text-color);
+ }
 
-.transport-card:hover:not(.locked) {
-  background-color: color.scale(global.$area-bg-color-center, $lightness: 5%);
-  transform: translateY(-2px);
-  border-color: var(--accent-color);
-}
+ .details-content strong {
+   color: var(--highlight-color);
+ }
 
-.transport-icon {
-  font-size: 2.2em;
-  line-height: 1;
-}
+ .details-placeholder {
+   flex-grow: 1; // 남은 공간 차지
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   background-color: color.scale(global.$area-bg-color-left, $lightness: -2%);
+   border: 1px dashed var(--border-color);
+   border-radius: 8px;
+   margin-bottom: 15px;
+   color: #aaa;
+   font-size: 0.9em;
+ }
 
-.transport-name {
-  font-size: 0.9em;
-  font-weight: bold;
-  color: var(--text-color);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+ .details-placeholder .placeholder-text {
+   font-size: 1em;
+   color: #aaa;
+   margin: 0;
+ }
 
-.lock-icon {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 3em;
-  color: rgba(255, 255, 255, 0.6);
-  pointer-events: none;
-  filter: drop-shadow(0 0 5px rgba(0,0,0,0.5));
-}
+ // 🔥🔥🔥 3. 보유 자원 컨테이너 스타일 (하단으로 이동) 🔥🔥🔥
+ .resource-container {
+   flex-shrink: 0; // 자원 목록은 줄어들지 않음
+   border: 1px solid var(--border-color);
+   border-radius: 8px;
+   padding: 10px;
+   background-color: color.scale(global.$area-bg-color-left, $lightness: 2%);
+ }
 
-.status-indicator {
-  font-size: 0.7em;
-  padding: 2px 5px;
-  border-radius: 3px;
-  margin-top: 3px;
-  white-space: nowrap;
-}
-.status-indicator.active {
-  background-color: rgba(60, 200, 60, 0.2);
-  color: var(--positive-color);
-  border: 1px solid var(--positive-color);
-}
+ .resource-container p {
+   text-align: left;
+   margin-left: 10px;
+   font-size: 0.95em;
+ }
 
-/* 잠금 상태 스타일 */
-.transport-card.locked {
-  background-color: color.scale(global.$area-bg-color-left, $lightness: -5%);
-  border-color: var(--border-color);
-  opacity: 0.5;
-  cursor: not-allowed;
-  filter: grayscale(100%);
-}
-
-.transport-card.locked .transport-icon,
-.transport-card.locked .transport-name {
-  color: #bbb;
-}
-
-.guide-text {
-  font-size: 0.9em;
-  color: #aaa;
-  text-align: center;
-  margin-top: auto;
-  padding-top: 15px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.05);
-}
-
-
-/* 모바일 반응형 */
+ // 모바일 반응형
 @media screen and (max-width: 768px) {
-  .area-title {
-    font-size: 1.4em;
-    margin-bottom: 15px;
-  }
-  .transport-list {
-    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-    gap: 10px;
-  }
-  .transport-icon {
-    font-size: 1.8em;
-  }
-  .transport-name {
-    font-size: 0.8em;
-  }
-  .guide-text {
-    font-size: 0.8em;
-  }
-  .lock-icon {
-    font-size: 2em;
-  }
-}
+  .left-panel-wrapper { padding: 10px; }
+  .panel-heading { font-size: 1.2em; margin-top: 10px; margin-bottom: 5px; }
+  .transport-item { padding: 6px 8px; font-size: 0.9em; }
+  .transport-icon { font-size: 1.3em; margin-right: 8px; }
+  .transport-count { font-size: 0.8em; }
+  .transport-details-container, .transport-details-placeholder, .resource-container { margin-bottom: 10px; padding: 10px; }
+  .details-content p { font-size: 0.9em; }
+  .resource-container p { font-size: 0.9em; margin-left: 8px; }
+ }
