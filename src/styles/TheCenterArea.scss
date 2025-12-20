@@ -1,0 +1,124 @@
+/* src/styles/TheCenterArea.scss */
+
+// layout-area 클래스 스타일은 HomeView.vue에 정의되어 있습니다.
+// 여기서는 TheCenterArea 내부 콘텐츠에 대한 스타일만 정의합니다.
+@import 'global.scss';
+
+.layout-area p {
+  margin: 5px 0;
+  text-align: center;
+  opacity: 0.7;
+}
+
+.center-content-wrapper {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%; // 부모 높이에 맞춰 정렬
+  padding: 20px;
+  text-align: center;
+  gap: 25px; // 요소들 간의 간격
+}
+
+.main-title {
+  font-size: 3.5em;
+  color: var(--highlight-color);
+  text-shadow: 0 0 15px rgba(255, 215, 0, 0.7), 0 0 30px rgba(255, 170, 0, 0.5);
+  margin: 0;
+  white-space: nowrap; // 줄바꿈 방지
+}
+
+.subtitle {
+  font-size: 1.5em;
+  color: var(--text-color);
+  opacity: 0.8;
+  margin: 0;
+}
+
+.research-hub-card {
+  background-color: rgba(var(--accent-color-rgb), 0.2); // 약간 투명한 배경색
+  border: 2px solid var(--accent-color); // 강조 색상 테두리
+  border-radius: 12px;
+  padding: 30px 40px;
+  max-width: 500px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  animation: pulse 2s infinite alternate; // 심장 박동처럼 깜빡이는 애니메이션
+}
+
+.card-title {
+  font-size: 2em;
+  color: var(--positive-color);
+  margin-top: 0;
+  margin-bottom: 15px;
+  text-shadow: 0 0 10px rgba(138, 255, 138, 0.5);
+}
+
+.card-description {
+  font-size: 1.1em;
+  color: var(--text-color);
+  opacity: 0.9;
+  margin-bottom: 25px;
+}
+
+.research-start-btn {
+  background-color: var(--accent-color);
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  border-radius: 8px;
+  font-size: 1.3em;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.research-start-btn:hover {
+  background-color: lighten($accent-color, 10%); // SCSS 변수 활용
+  transform: translateY(-3px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.6);
+}
+
+.game-guide-text {
+  font-size: 1em;
+  color: #bbb;
+  margin-top: 25px;
+  padding-top: 15px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+/* 애니메이션 키프레임 */
+@keyframes pulse {
+  0% { transform: scale(1); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5); }
+  100% { transform: scale(1.02); box-shadow: 0 12px 25px rgba(0, 0, 0, 0.7); }
+}
+
+/* 모바일 반응형 */
+@media screen and (max-width: 768px) {
+  .center-content-wrapper {
+    gap: 15px;
+  }
+  .main-title {
+    font-size: 2em;
+  }
+  .subtitle {
+    font-size: 1em;
+  }
+  .research-hub-card {
+    padding: 20px 25px;
+  }
+  .card-title {
+    font-size: 1.5em;
+  }
+  .card-description {
+    font-size: 0.9em;
+  }
+  .research-start-btn {
+    padding: 10px 20px;
+    font-size: 1.1em;
+  }
+  .game-guide-text {
+    font-size: 0.8em;
+  }
+}

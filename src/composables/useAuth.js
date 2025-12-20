@@ -32,7 +32,7 @@ export function useAuth() {
       // user.value는 onAuthStateChanged 리스너에 의해 자동으로 업데이트 됨
       authError.value = null;
       console.log('useAuth: 로그인 성공!', result.user.displayName);
-      router.push({ name: 'Overview' }); // 로그인 성공 시 메인 화면으로 이동
+      router.push({ name: 'Home' }); // 로그인 성공 시 메인 화면으로 이동
     } catch (err) {
       authError.value = err;
       console.error('useAuth: 로그인 실패:', err);
@@ -45,7 +45,7 @@ export function useAuth() {
       // user.value는 onAuthStateChanged 리스너에 의해 자동으로 업데이트 됨
       authError.value = null;
       console.log('useAuth: 로그아웃 성공!');
-      router.push({ name: 'Overview' }); // 로그아웃 성공 시 메인 화면으로 이동
+      router.push({ name: 'Home' }); // 로그아웃 성공 시 메인 화면으로 이동
     } catch (err) {
       authError.value = err;
       console.error('useAuth: 로그아웃 실패:', err);

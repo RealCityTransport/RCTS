@@ -1,0 +1,48 @@
+/* src/styles/global.scss */
+/* 이 파일은 애플리케이션 전체에 적용되는 전역 스타일과 CSS/SCSS 변수를 정의합니다. */
+
+// 🔥 SCSS 변수 정의 (CSS 변수와 동일한 값을 가집니다. SCSS 함수에서 사용)
+$main-bg-color: #222a3a;
+$top-bar-bg-color: #3a4a5a;
+$area-bg-color-left: #2a3a4a;
+$area-bg-color-center: #1a2a3a;
+$area-bg-color-right: #2a3a4a;
+$text-color: #e0e0e0;
+$border-color: #5a6a7a;
+$highlight-color: #ffd700;
+$positive-color: #8aff8a;
+$accent-color: #6a95e0;
+$panel-width: 20%;
+$panel-min-width: 200px;
+$top-bar-height: 80px;
+$accent-color-rgb: 106, 149, 224;
+
+
+/* CSS 변수를 사용하여 기본적인 색상과 크기 관리 */
+:root {
+  --main-bg-color: #{$main-bg-color}; /* SCSS 변수를 CSS 변수에 할당 */
+  --top-bar-bg-color: #{$top-bar-bg-color};
+  --area-bg-color-left: #{$area-bg-color-left};
+  --area-bg-color-center: #{$area-bg-color-center};
+  --area-bg-color-right: #{$area-bg-color-right};
+  --text-color: #{$text-color};
+  --border-color: #{$border-color};
+  --highlight-color: #{$highlight-color};
+  --positive-color: #{$positive-color};
+  --accent-color: #{$accent-color};
+  --panel-width: #{$panel-width};
+  --panel-min-width: #{$panel-min-width};
+  --top-bar-height: #{$top-bar-height};
+   --accent-color-rgb: #{$accent-color-rgb};
+}
+
+/* body 기본 스타일 초기화 */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Nexon Gothic', sans-serif;
+  overflow: hidden;
+  background: var(--main-bg-color); /* CSS 변수를 통해 배경색 적용 */
+  color: var(--text-color);
+  font-size: 16px;
+}
