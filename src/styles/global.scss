@@ -1,7 +1,27 @@
 /* src/styles/global.scss */
 /* 이 파일은 애플리케이션 전체에 적용되는 전역 스타일과 CSS/SCSS 변수를 정의합니다. */
 
-// 🔥 SCSS 변수 정의 (CSS 변수와 동일한 값을 가집니다. SCSS 함수에서 사용)
+// 🔥 리셋 CSS 임포트 (전역적으로 가장 먼저 적용되어야 합니다)
+@import url('https://cdn.jsdelivr.net/npm/reset-css@5.0.1/reset.min.css');
+
+// 🔥 폰트 CDN 링크 (로컬 파일 대신 CDN 사용을 강력히 권장합니다. 없으면 404 에러)
+// public/index.html에 <link> 태그로 넣는 것이 가장 좋으나, SCSS에서 @import도 가능.
+// 지금은 @font-face를 유지하되, 폰트 파일이 public/fonts에 있어야 함.
+// ⚠️ 로컬 파일 폰트 경로 주의: public/fonts/ 에 실제로 파일이 있어야 404 안 남
+@font-face {
+  font-family: 'Suit';
+  src: url('/fonts/SUIT-Regular.woff2') format('woff2'); 
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Suit';
+  src: url('/fonts/SUIT-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+}
+
+// 🔥🔥🔥 SCSS 변수 정의 (이 변수들이 다른 SCSS 파일에서 사용될 때 접두사 없이 $변수명으로 참조됩니다) 🔥🔥🔥
 $main-bg-color: #222a3a;
 $top-bar-bg-color: #3a4a5a;
 $area-bg-color-left: #2a3a4a;
@@ -15,12 +35,10 @@ $accent-color: #6a95e0;
 $panel-width: 20%;
 $panel-min-width: 200px;
 $top-bar-height: 80px;
-$accent-color-rgb: 106, 149, 224;
 
-
-/* CSS 변수를 사용하여 기본적인 색상과 크기 관리 */
+/* 🔥 CSS 변수를 사용하여 이 SCSS 변수들을 웹 컴포넌트에서도 참조할 수 있도록 합니다. */
 :root {
-  --main-bg-color: #{$main-bg-color}; /* SCSS 변수를 CSS 변수에 할당 */
+  --main-bg-color: #{$main-bg-color};
   --top-bar-bg-color: #{$top-bar-bg-color};
   --area-bg-color-left: #{$area-bg-color-left};
   --area-bg-color-center: #{$area-bg-color-center};
@@ -30,19 +48,30 @@ $accent-color-rgb: 106, 149, 224;
   --highlight-color: #{$highlight-color};
   --positive-color: #{$positive-color};
   --accent-color: #{$accent-color};
+  --accent-color-rgb: 106, 149, 224; 
   --panel-width: #{$panel-width};
   --panel-min-width: #{$panel-min-width};
   --top-bar-height: #{$top-bar-height};
-   --accent-color-rgb: #{$accent-color-rgb};
 }
 
-/* body 기본 스타일 초기화 */
-body {
+/* html, body, #app 컨테이너는 뷰포트 전체를 차지하도록 설정 */
+html, body, #app {
   margin: 0;
   padding: 0;
-  font-family: 'Nexon Gothic', sans-serif;
-  overflow: hidden;
-  background: var(--main-bg-color); /* CSS 변수를 통해 배경색 적용 */
+  height: 100%;
+  width: 100%;
+  font-family: 'Suit', sans-serif; // 모든 요소에 적용될 기본 폰트
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: 'Suit', sans-serif; // 버튼도 명시적으로 폰트 지정
+}
+
+/* body 기본 스타일 적용 */
+body {
+  background: var(--main-bg-color); // CSS 변수를 통해 배경색 적용
   color: var(--text-color);
-  font-size: 16px;
+  overflow: hidden; // 전역적으로 스크롤바 방지
 }

@@ -2,6 +2,7 @@
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import path from 'path'; // path 모듈 임포트
 
 export default defineConfig({
   // ⭐⭐⭐ GitHub Pages 배포를 위한 base 경로 설정 ⭐⭐⭐
@@ -12,10 +13,10 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': path.resolve(__dirname, './src'),
     }
   },
-   // ⭐⭐⭐ 로컬 개발 서버 설정 추가/수정 ⭐⭐⭐
+  // ⭐⭐⭐ 로컬 개발 서버 설정 추가/수정 ⭐⭐⭐
   server: {
     host: '0.0.0.0', // 모든 네트워크 인터페이스에서 접근 가능하도록 설정
     port: 5173,      // 기본 포트
@@ -25,6 +26,6 @@ export default defineConfig({
     // hmr: { // 필요한 경우, HMR 연결 설정을 명시할 수도 있습니다.
     //   overlay: false, // HMR 오류 오버레이 비활성화 (선택 사항)
     // }
-  }
+  },
   // ⭐⭐⭐ /로컬 개발 서버 설정 ⭐⭐⭐
 })

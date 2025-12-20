@@ -1,24 +1,19 @@
 /* src/styles/TheTopBar.scss */
-
-.top-bar-area {
-  /* HomeView.vue의 변수들을 사용하며, 기본 스타일은 HomeView.vue에 있습니다. */
-  /* 여기서는 내부 콘텐츠 정렬 및 세부 꾸밈만 정의합니다. */
-}
+@use "sass:color";
+@use "@/styles/global.scss" as global;
 
 .top-bar-content {
-  width: 100%; // 부모 요소 너비 100% 사용
+  width: 100%;
   display: flex;
   align-items: center;
-  justify-content: flex-start; // 이제 모든 요소를 왼쪽에서부터 배치
-  padding: 0 20px; // 좌우 20px 간격 추가
+  justify-content: space-between;
+  padding: 0 20px;
   box-sizing: border-box;
 }
 
-/* 1. 로고 영역 스타일 */
 .logo-area {
   display: flex;
   align-items: center;
-  /* order는 모바일 반응형에서만 의미 있으므로, 데스크톱 스타일에선 제거 */
 }
 
 .game-title {
@@ -31,7 +26,6 @@
   letter-spacing: 2px;
 }
 
-/* 2. KST 표준 시간 표시 영역 스타일 */
 .kst-time-display {
   display: flex;
   align-items: baseline;
@@ -40,10 +34,6 @@
   color: var(--text-color);
   font-weight: bold;
   white-space: nowrap;
-  
-  // **핵심 변경: margin-left: auto를 여기에 추가하여 KST 시간을 로고로부터 멀리 밀어냅니다.**
-  margin-left: auto; // 로고 다음의 모든 공간을 밀어내어 최대한 오른쪽으로 붙입니다.
-  /* order는 모바일 반응형에서만 의미 있으므로, 데스크톱 스타일에선 제거 */
 }
 
 .time-label {
@@ -56,14 +46,9 @@
   font-size: 1.2em;
 }
 
-/* 3. 로그인 버튼 영역 스타일 */
 .user-auth-area {
   display: flex;
   align-items: center;
-  // **핵심 변경: 여기에도 margin-left를 줘서 시간과 로그인 버튼 사이에 여유 간격을 만듭니다.**
-  // 이제 KST 시간이 'auto'로 오른쪽으로 밀렸고, 로그인 버튼은 KST 시간 옆에 20px 간격으로 붙습니다.
-  margin-left: 20px; 
-  /* order는 모바일 반응형에서만 의미 있으므로, 데스크톱 스타일에선 제거 */
 }
 
 .login-btn {
@@ -80,40 +65,33 @@
 }
 
 .login-btn:hover {
-  background-color: #5a7bd4;
+  background-color: color.scale(global.$accent-color, $lightness: 10%);
   transform: translateY(-1px);
 }
 
-/* ------------------------------------- */
-/* 모바일 반응형 조정 */
-/* ------------------------------------- */
 @media screen and (max-width: 768px) {
   .top-bar-content {
-    flex-direction: column; /* 모바일에서는 세로로 정렬 */
-    padding: 10px 15px; // 모바일에서도 좌우 간격 유지
+    flex-direction: column;
+    padding: 10px 15px;
     height: auto;
-    gap: 10px; // 모바일 세로 정렬 시 요소들 간 간격
+    gap: 10px;
   }
-
   .game-title {
     font-size: 1.8em;
     margin-bottom: 5px;
-    order: 1; // 모바일에서는 가장 위에
+    order: 1;
   }
-
   .kst-time-display {
     font-size: 1.1em;
     gap: 5px;
     margin-bottom: 5px;
-    margin-left: 0; // 모바일에서는 margin-left auto 제거
-    order: 2; // 모바일에서는 두 번째에
+    margin-left: 0;
+    order: 2;
   }
-
   .user-auth-area {
-    margin-left: 0; // 모바일에서는 margin-left 0으로 초기화
+    margin-left: 0;
     order: 3;
   }
-
   .login-btn {
     padding: 8px 15px;
     font-size: 1em;

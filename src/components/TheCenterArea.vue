@@ -2,26 +2,28 @@
 <template>
   <div class="layout-area center-area">
     <div class="center-content-wrapper">
-      <h2 class="main-title">Real City Transport Simulation</h2>
-      <p class="subtitle">당신의 도시를 움직일 제국을 건설하세요!</p>
+      <!-- 🚀 메인 콘텐츠 내부 탑 메뉴 (내비게이션) 영역 🚀 -->
+      <nav class="main-content-nav">
+        <ul>
+          <li><router-link to="/home/research">연구</router-link></li>
+          <li><router-link to="/home/vehicles">차량</router-link></li>
+          <li><router-link to="/home/line">노선</router-link></li>
+          <li><router-link to="/home/construction">건설</router-link></li>
+          <li><router-link to="/home/finance">재정</router-link></li>
+        </ul>
+      </nav>
 
-      <!-- 연구 허브 카드 -->
-      <div class="research-hub-card">
-        <h3 class="card-title">🚀 연구 허브 활성화 🚀</h3>
-        <p class="card-description">첫 번째 운송 수단을 해금하고 도시 발전을 시작하세요!</p>
-        <button class="research-start-btn">연구 시작하기</button>
+      <!-- 🚀 메뉴 클릭에 따라 콘텐츠가 바뀌는 영역 (Vue Router View) 🚀 -->
+      <div class="main-content-display">
+        <router-view />
       </div>
-
-      <p class="game-guide-text">로그인하여 진행 상황을 저장하고 나만의 운송 제국을 키워보세요.</p>
     </div>
   </div>
 </template>
 
 <script setup>
-// TheCenterArea 컴포넌트에는 현재 특별한 로직이 없으므로 비워둡니다.
 </script>
 
-<!-- scoped SCSS를 외부 .scss 파일로 분리하여 참조합니다. -->
 <style scoped lang="scss">
-@import '../styles/TheCenterArea.scss';
+@use '@/styles/TheCenterArea.scss';
 </style>

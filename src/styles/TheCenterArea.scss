@@ -1,124 +1,83 @@
 /* src/styles/TheCenterArea.scss */
-
-// layout-area 클래스 스타일은 HomeView.vue에 정의되어 있습니다.
-// 여기서는 TheCenterArea 내부 콘텐츠에 대한 스타일만 정의합니다.
-@import 'global.scss';
-
-.layout-area p {
-  margin: 5px 0;
-  text-align: center;
-  opacity: 0.7;
-}
+@use "sass:color";
+@use "@/styles/global.scss" as global;
 
 .center-content-wrapper {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  height: 100%; // 부모 높이에 맞춰 정렬
-  padding: 20px;
+  height: 100%;
+  width: 100%;
+  padding: 0;
   text-align: center;
-  gap: 25px; // 요소들 간의 간격
+  gap: 0;
 }
 
-.main-title {
-  font-size: 3.5em;
-  color: var(--highlight-color);
-  text-shadow: 0 0 15px rgba(255, 215, 0, 0.7), 0 0 30px rgba(255, 170, 0, 0.5);
-  margin: 0;
-  white-space: nowrap; // 줄바꿈 방지
-}
+/* 🚀 메인 콘텐츠 내부 탑 메뉴 (내비게이션) 영역 스타일 🚀 */
+.main-content-nav {
+  display: flex;
+  justify-content: center; // ul을 가로로 중앙 정렬
+  align-items: center;
+  flex-shrink: 0;
+  height: 50px;
+  background-color: color.scale(global.$area-bg-color-center, $lightness: 3%);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  padding: 0 10px;
 
-.subtitle {
-  font-size: 1.5em;
-  color: var(--text-color);
-  opacity: 0.8;
-  margin: 0;
-}
+  ul { // ul 태그 스타일링
+    display: flex; // li 요소들을 가로로 정렬
+    list-style: none; // 리스트 마커 제거
+    margin: 0;
+    padding: 0;
+    height: 100%;
+  }
 
-.research-hub-card {
-  background-color: rgba(var(--accent-color-rgb), 0.2); // 약간 투명한 배경색
-  border: 2px solid var(--accent-color); // 강조 색상 테두리
-  border-radius: 12px;
-  padding: 30px 40px;
-  max-width: 500px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
-  animation: pulse 2s infinite alternate; // 심장 박동처럼 깜빡이는 애니메이션
-}
+  li { // li 태그 스타일링 (필요하다면)
+    height: 100%;
+    display: flex;
+    align-items: center; // router-link를 li 안에서 중앙 정렬
+  }
 
-.card-title {
-  font-size: 2em;
-  color: var(--positive-color);
-  margin-top: 0;
-  margin-bottom: 15px;
-  text-shadow: 0 0 10px rgba(138, 255, 138, 0.5);
-}
+  a { // router-link (a 태그) 스타일링: 이전 .nav-item 스타일을 여기에 적용
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 0 20px;
+    color: var(--text-color);
+    font-size: 1.1em;
+    font-weight: bold;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
 
-.card-description {
-  font-size: 1.1em;
-  color: var(--text-color);
-  opacity: 0.9;
-  margin-bottom: 25px;
-}
+  a:hover { // router-link (a 태그) hover 스타일링
+    background-color: color.scale(global.$area-bg-color-center, $lightness: 8%);
+    color: var(--highlight-color);
+  }
 
-.research-start-btn {
-  background-color: var(--accent-color);
-  color: white;
-  border: none;
-  padding: 15px 30px;
-  border-radius: 8px;
-  font-size: 1.3em;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
-}
+  a.router-link-active { // router-link (a 태그) active 스타일링 (Vue Router 제공 클래스)
+    background-color: var(--accent-color);
+    color: white;
+    border-bottom: 3px solid var(--highlight-color);
+  }
+} // main-content-nav 블록의 닫는 중괄호
 
-.research-start-btn:hover {
-  background-color: lighten($accent-color, 10%); // SCSS 변수 활용
-  transform: translateY(-3px);
-  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.6);
-}
-
-.game-guide-text {
-  font-size: 1em;
-  color: #bbb;
-  margin-top: 25px;
-  padding-top: 15px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.1);
-}
-
-/* 애니메이션 키프레임 */
-@keyframes pulse {
-  0% { transform: scale(1); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5); }
-  100% { transform: scale(1.02); box-shadow: 0 12px 25px rgba(0, 0, 0, 0.7); }
+/* 🚀 메뉴 클릭에 따라 콘텐츠가 바뀌는 영역 (Vue Router View) 🚀 */
+.main-content-display {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  overflow-y: auto;
 }
 
 /* 모바일 반응형 */
 @media screen and (max-width: 768px) {
-  .center-content-wrapper {
-    gap: 15px;
-  }
-  .main-title {
-    font-size: 2em;
-  }
-  .subtitle {
-    font-size: 1em;
-  }
-  .research-hub-card {
-    padding: 20px 25px;
-  }
-  .card-title {
-    font-size: 1.5em;
-  }
-  .card-description {
-    font-size: 0.9em;
-  }
-  .research-start-btn {
-    padding: 10px 20px;
-    font-size: 1.1em;
-  }
-  .game-guide-text {
-    font-size: 0.8em;
-  }
+  .center-content-wrapper { gap: 0; }
+  .main-content-nav { height: 40px; padding: 0 5px; }
+  .main-content-nav a { font-size: 0.9em; padding: 0 10px; }
+  .main-content-display { padding: 0; }
 }

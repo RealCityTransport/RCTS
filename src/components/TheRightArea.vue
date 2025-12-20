@@ -28,10 +28,8 @@
 </template>
 
 <script setup>
-// TheRightArea 컴포넌트에는 현재 특별한 로직이 없으므로 비워둡니다.
 </script>
 
-<!-- scoped SCSS를 외부 .scss 파일로 분리하여 참조합니다. -->
 <style scoped lang="scss">
-@import '../styles/TheRightArea.scss';
+@use '@/styles/TheRightArea.scss';
 </style>

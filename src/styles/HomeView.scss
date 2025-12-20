@@ -1,40 +1,16 @@
 /* src/styles/HomeView.scss */
-/* 이 파일은 HomeView.vue 컴포넌트의 scoped SCSS 스타일을 담고 있습니다. */
-
-/* CSS 변수 및 body 스타일은 global.scss로 이동했으므로 여기서는 삭제합니다. */
-/* (아래 주석 처리된 부분은 삭제해야 합니다.)
-:root {
-  --main-bg-color: #222a3a;
-  --top-bar-bg-color: #3a4a5a;
-  --area-bg-color-left: #2a3a4a;
-  --area-bg-color-center: #1a2a3a;
-  --area-bg-color-right: #2a3a4a;
-  --text-color: #e0e0e0;
-  --border-color: #5a6a7a;
-  --panel-width: 20%;
-  --panel-min-width: 200px;
-  --top-bar-height: 80px;
-}
-body {
-  margin: 0;
-  padding: 0;
-  font-family: 'Nexon Gothic', sans-serif;
-  overflow: hidden;
-  background: var(--main-bg-color);
-  color: var(--text-color);
-  font-size: 16px;
-}
-*/
+@use "sass:color"; // color 모듈도 필요하면 여기에 추가
+@use "@/styles/global.scss" as global; // global.scss 모듈 불러오기 (접두사 방식)
 
 /* ------------------------------------- */
 /* 전체 게임 화면을 감싸는 래퍼 */
 /* ------------------------------------- */
 .game-wrapper {
   display: flex;
-  flex-direction: column; /* 탑 바 아래로 메인 영역 배치 */
-  height: 100vh; /* 뷰포트 높이 꽉 채움 */
-  width: 100vw; /* 뷰포트 너비 꽉 채움 */
-  background: var(--main-bg-color); /* 이제 global.scss에서 정의된 변수를 가져옵니다. */
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background: var(--main-bg-color);
   color: var(--text-color);
   font-size: 16px;
 }
@@ -44,20 +20,24 @@ body {
 /* ------------------------------------- */
 .main-layout-horizontal {
   display: flex;
-  flex-direction: row; /* 데스크톱에서는 수평 정렬 */
-  flex-grow: 1; /* 탑 바를 제외한 남은 세로 공간을 모두 차지 */
-  width: 100%; /* 너비 100% */
+  flex-direction: row;
+  flex-grow: 1;
+  width: 100%;
 }
 
-/* 각 영역 컴포넌트에 적용될 공통 스타일 (하위 컴포넌트들이 이 클래스를 가짐) */
+/* ------------------------------------- */
+/* 각 영역 컴포넌트에 적용될 공통 스타일 */
+/* ------------------------------------- */
 .layout-area {
   display: flex;
-  flex-direction: column; /* 내부 텍스트는 세로로 쌓이도록 */
+  flex-direction: column;
   justify-content: center;
-  align-items: center;
-  border: 1px solid var(--border-color); /* 각 영역을 구분하는 테두리 */
-  box-sizing: border-box; /* 패딩, 보더 포함하여 너비/높이 계산 */
-  padding: 10px; /* 플레이스홀더 텍스트를 위한 기본 패딩 */
+  align-items: center; // 중앙 정렬 유지
+  border: 1px solid var(--border-color);
+  box-sizing: border-box;
+  /* padding: 10px; */ // 🔥🔥🔥 패딩 제거 🔥🔥🔥
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 /* 왼쪽 영역 (데스크톱) */
@@ -65,15 +45,15 @@ body {
   width: var(--panel-width);
   min-width: var(--panel-min-width);
   background-color: var(--area-bg-color-left);
-  border-left: none; /* 화면 왼쪽 끝 테두리 없음 */
+  border-left: none;
 }
 
 /* 중앙 영역 (데스크톱) */
 .center-area {
-  flex-grow: 1; /* 남은 공간을 모두 차지 (가장 크게) */
+  flex-grow: 1;
   background-color: var(--area-bg-color-center);
-  border-left: none; /* 왼쪽 영역과 붙어 보이도록 */
-  border-right: none; /* 오른쪽 영역과 붙어 보이도록 */
+  border-left: none;
+  border-right: none;
 }
 
 /* 오른쪽 영역 (데스크톱) */
@@ -81,48 +61,32 @@ body {
   width: var(--panel-width);
   min-width: var(--panel-min-width);
   background-color: var(--area-bg-color-right);
-  border-right: none; /* 화면 오른쪽 끝 테두리 없음 */
+  border-right: none;
 }
-
-/* 플레이스홀더 텍스트 스타일 */
-/* 각 컴포넌트 내부의 <p> 태그에 직접 적용되므로 여기서는 삭제 (필요하면 각 컴포넌트에 추가) */
-
 
 /* ------------------------------------- */
 /* 모바일 반응형 레이아웃 */
-/* (탑 바는 항상 상단, L-R-C는 수직 스택, 순서: 좌-우-중앙) */
 /* ------------------------------------- */
-@media screen and (max-width: 768px) { /* 화면 너비가 768px 이하일 때 적용 */
+@media screen and (max-width: 768px) {
   .main-layout-horizontal {
-    flex-direction: column; /* L-C-R 영역들을 수직으로 나열 */
-    height: auto; /* 내용에 따라 높이 조절 */
+    flex-direction: column;
+    height: auto;
   }
-
   .layout-area {
-    width: 100% !important; /* 모바일에서는 너비 100% */
-    min-width: unset !important; /* 최소 너비 제한 해제 */
-    height: 30vh; /* 각 영역이 대략 뷰포트 높이의 1/3씩 차지하도록 (탑 바 제외한 공간 기준) */
-    border: 1px solid var(--border-color); /* 테두리 다시 적용 */
-    border-bottom: none; /* 스택 시 각 영역의 하단 테두리 제거 */
-    flex-grow: 0 !important; /* 모바일에서 grow를 초기화하여 고정 높이 vh를 따름 */
+    width: 100% !important;
+    min-width: unset !important;
+    height: 30vh;
+    border: 1px solid var(--border-color);
+    border-bottom: none;
+    flex-grow: 0 !important;
   }
-  
-  /* 각 영역에 order를 적용하여 모바일에서의 표시 순서 제어 */
-  .left-area {
-    order: 1; /* 왼쪽 영역이 첫 번째 */
-    border-left: 1px solid var(--border-color); /* 일반 테두리 */
-  }
-
-  .right-area {
-    order: 2; /* 오른쪽 영역이 두 번째 */
-    border-right: 1px solid var(--border-color); /* 일반 테두리 */
-  }
-
+  .left-area { order: 1; border-left: 1px solid var(--border-color); }
+  .right-area { order: 2; border-right: 1px solid var(--border-color); }
   .center-area {
-    order: 3; /* 중앙 영역이 세 번째 */
-    flex-grow: 1 !important; /* 중앙 영역은 남은 공간을 최대한 차지 */
-    height: auto; /* 중앙 영역은 내용에 따라 높이 유동적으로 */
-    min-height: 30vh; /* 하지만 최소 높이 확보 */
-    border-bottom: 1px solid var(--border-color); /* 가장 마지막 영역에만 하단 테두리 */
+    order: 3;
+    flex-grow: 1 !important;
+    height: auto;
+    min-height: 30vh;
+    border-bottom: 1px solid var(--border-color);
   }
 }

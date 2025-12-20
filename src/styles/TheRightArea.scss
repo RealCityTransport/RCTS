@@ -1,8 +1,6 @@
 /* src/styles/TheRightArea.scss */
-
-// layout-area 클래스 스타일은 HomeView.vue에 정의되어 있습니다.
-// 여기서는 TheRightArea 내부 콘텐츠에 대한 스타일만 정의합니다.
-@import 'global.scss';
+@use "sass:color";
+@use "@/styles/global.scss" as global;
 
 .layout-area p {
   margin: 5px 0;
@@ -13,10 +11,10 @@
 .right-panel-wrapper {
   display: flex;
   flex-direction: column;
-  height: 100%; // 부모 높이에 맞춰 정렬
-  width: 100%; // 부모 너비에 맞춰 정렬
+  height: 100%;
+  width: 100%;
   padding: 15px;
-  box-sizing: border-box; // 패딩이 너비에 포함되도록
+  box-sizing: border-box;
 }
 
 .panel-heading {
@@ -36,16 +34,15 @@
   margin-bottom: 20px;
 }
 
-/* 상단 컨트롤 영역 */
 .control-panel {
-  background-color: lighten($area-bg-color-right, 5%); // 더 밝은 색상
+  background-color: color.scale(global.$area-bg-color-right, $lightness: 5%);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 20px;
   margin-bottom: 20px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
   text-align: center;
-  flex-shrink: 0; // 내용이 많아져도 이 영역은 줄어들지 않음
+  flex-shrink: 0;
 }
 
 .control-buttons {
@@ -69,27 +66,26 @@
 }
 
 .control-btn:hover {
-  background-color: lighten($accent-color, 10%);
+  background-color: color.scale(global.$accent-color, $lightness: 10%);
   transform: translateY(-1px);
 }
 
 .control-btn.accent {
-  background-color: #ff4500; // 강조 색상 (빨강)
+  background-color: #ff4500;
   &:hover {
-    background-color: lighten(#ff4500, 10%);
+    background-color: color.scale(#ff4500, $lightness: 10%);
   }
 }
 
-/* 하단 로그 영역 */
 .log-display {
-  background-color: darken($area-bg-color-right, 3%); // 더 어두운 색상
+  background-color: color.scale(global.$area-bg-color-right, $lightness: -3%);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 15px;
-  flex-grow: 1; // 남은 공간을 모두 차지하여 스크롤 가능하게
-  overflow-y: auto; // 로그 메시지가 넘치면 스크롤바 생성
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.2); // 내부 그림자
-  font-family: 'Dank Mono', 'Consolas', monospace; // 로그에 어울리는 폰트
+  flex-grow: 1;
+  overflow-y: auto;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.2);
+  font-family: 'Dank Mono', 'Consolas', monospace;
   font-size: 0.9em;
   color: #c0c0c0;
 }
@@ -97,54 +93,26 @@
 .log-messages {
   display: flex;
   flex-direction: column;
-  gap: 5px; // 로그 엔트리 간 간격
+  gap: 5px;
 }
 
 .log-entry {
   margin: 0;
   line-height: 1.4;
-  word-break: break-word; // 긴 텍스트 줄바꿈 허용
+  word-break: break-word;
 }
 
-.log-entry.success {
-  color: var(--positive-color); // 초록색
-}
-.log-entry.info {
-  color: var(--accent-color); // 파란색
-}
-.log-entry.warn {
-  color: #ffc800; // 노란색
-}
-.log-entry.error {
-  color: #ff4500; // 빨간색
-}
+.log-entry.success { color: var(--positive-color); }
+.log-entry.info { color: var(--accent-color); }
+.log-entry.warn { color: #ffc800; }
+.log-entry.error { color: #ff4500; }
 
-/* 모바일 반응형 */
 @media screen and (max-width: 768px) {
-  .right-panel-wrapper {
-    padding: 10px;
-  }
-  .panel-heading {
-    font-size: 1.2em;
-    margin-bottom: 10px;
-  }
-  .placeholder-text {
-    font-size: 0.8em;
-    margin-bottom: 15px;
-  }
-  .control-panel {
-    padding: 15px;
-    margin-bottom: 15px;
-  }
-  .control-buttons {
-    gap: 10px;
-  }
-  .control-btn {
-    padding: 8px 15px;
-    font-size: 0.9em;
-  }
-  .log-display {
-    font-size: 0.8em;
-    padding: 10px;
-  }
+  .right-panel-wrapper { padding: 10px; }
+  .panel-heading { font-size: 1.2em; margin-bottom: 10px; }
+  .placeholder-text { font-size: 0.8em; margin-bottom: 15px; }
+  .control-panel { padding: 15px; margin-bottom: 15px; }
+  .control-buttons { gap: 10px; }
+  .control-btn { padding: 8px 15px; font-size: 0.9em; }
+  .log-display { font-size: 0.8em; padding: 10px; }
 }
