@@ -4,41 +4,55 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/plugins/firebase/config';
 import { useKstTime } from './useKstTime';
 
-const { kstDate, isKstTimeReady } = useKstTime();
+import { researchCatalog, getResearchDef } from '@/data/research/catalog';
 
-/**
- * ============================================================
- * Research Engine (Hardcoded v1)
- * - 게스트(비로그인)도 로그인과 동일하게 "플레이" 가능
- * - 차이점: Firebase 저장/로드만 로그인 상태에서 수행
- *
- * 추가 규칙(오빠 요청):
- * - 비로그인 상태에서 새로고침하면 초기화(택1부터 다시)
- *   => 게스트 상태를 localStorage에 저장하지 않는다.
- * ============================================================
- */
-
-const TRANSPORT_IDS = ['bus', 'truck', 'rail', 'plane', 'ship', 'spaceship'];
-
-const transportMeta = {
-  bus: { name: '버스', icon: '🚌' },
-  truck: { name: '트럭', icon: '🚚' },
-  rail: { name: '철도', icon: '🚆' },
-  plane: { name: '비행기', icon: '✈️' },
-  ship: { name: '배', icon: '🚢' },
-  spaceship: { name: '우주선', icon: '🚀' },
-};
-
-// 저장/자동저장 설정 (LocalStorage) — 이건 설정이므로 유지
+// 저장/자동저장 설정 (LocalStorage) — "설정"이므로 유지
 const LS_SAVE_ENABLED = 'rcts.research.saveEnabled';
 const LS_AUTOSAVE_ENABLED = 'rcts.research.autosave.enabled';
 const LS_AUTOSAVE_BASE = 'rcts.research.autosave.base';
 const LS_AUTOSAVE_INTERVAL = 'rcts.research.autosave.intervalMin';
 
-// ===== 전역 상태 (싱글톤) =====
-// ✅ 게스트는 새로고침 시 초기화해야 하므로 firstUnlockId를 localStorage에서 로드하지 않는다.
-const firstUnlockId = ref(null);
-const transports = ref(buildInitialTransports());
+const { kstDate, isKstTimeReady } = useKstTime();
+const isKstReady = computed(() => isKstTimeReady.value && kstDate.value instanceof Date);
+
+function nowKstMs() {
+  return isKstReady.value ? kstDate.value.getTime() : Date.now();
+}
+
+// ===== 전역 상태(싱글톤) =====
+const firstUnlockTransportId = ref(null);
+
+// 완료 연구(로그인 시 Firebase로만 저장)
+const completedIds = ref(new Set());
+
+// 진행 중 연구(단일)
+const activeResearch = ref(null); // { id, startedAtMs, endsAtMs }
+
+// ✅ 예약(대기열): 다중 큐
+const queuedResearchIds = ref([]); // string[]
+
+// 파생 효과 캐시
+const unlockedTransportTiers = ref({}); // { [transportId]: number } 최고 티어
+const incomeMultiplier = ref(1.0);
+
+// ✅ 연구 속도 효과
+const researchSpeedLevel = ref(0); // v2: 레벨1부터 5% 감산이므로 0부터
+const researchDurationMultiplier = ref(1.0); // durationSec에 곱해질 값 (작을수록 빠름)
+
+// ✅ 예약 레벨 (기본 1개, Lv2=3개, Lv3=5개)
+const queueReserveLevel = ref(1);
+
+// ✅ 도시 스케일(향후 UI/게이트용)
+const cityScale = ref('NONE'); // NONE | REGION | CITY | COUNTRY | STATE | PLANET
+
+// ✅ 기능 해금 상태(향후 시스템 게이트용)
+const unlockedFeatures = ref({
+  vehicle: false,
+  route: false,
+  construction: false,
+  finance: false,
+  city: false,
+});
 
 // Firebase 연동 상태
 const isLoadingFirebaseData = ref(false);
@@ -64,19 +78,7 @@ const lastAutoSaveAtMs = ref(0);
 // 자동 저장 타이머
 let autoSaveTimerId = null;
 
-// ===== Helpers =====
-function buildInitialTransports() {
-  return TRANSPORT_IDS.map((id) => ({
-    id,
-    name: transportMeta[id]?.name ?? id,
-    icon: transportMeta[id]?.icon ?? '❓',
-    locked: true,
-    isResearching: false,
-    researchFinishTime: null,
-    researchStartTime: null,
-  }));
-}
-
+// ===== Helpers (LocalStorage settings only) =====
 function loadBool(key, def) {
   const v = localStorage.getItem(key);
   if (v === null) return def;
@@ -92,6 +94,14 @@ function saveBool(key, value) {
 }
 function saveNum(key, value) {
   localStorage.setItem(key, String(value));
+}
+
+// ===== 예약 슬롯 계산 =====
+function queueLimitByLevel(level) {
+  const lv = Math.max(1, Math.min(3, Number(level || 1)));
+  if (lv === 1) return 1;
+  if (lv === 2) return 3;
+  return 5; // lv === 3
 }
 
 // ===== 저장 토글 =====
@@ -211,39 +221,7 @@ function syncAutoSave(restart = false) {
   }
 }
 
-// ===== 연구 규칙/상태 =====
-const isKstReady = computed(() => isKstTimeReady.value && kstDate.value instanceof Date);
-
-function applyFirstUnlockRule() {
-  if (!firstUnlockId.value) return;
-
-  const chosen = transports.value.find(t => t.id === firstUnlockId.value);
-  if (!chosen) return;
-
-  chosen.locked = false;
-  chosen.isResearching = false;
-  chosen.researchStartTime = null;
-  chosen.researchFinishTime = null;
-}
-
-const lockedTransports = computed(() => transports.value.filter(t => t.locked));
-const unlockedTransports = computed(() => transports.value.filter(t => !t.locked));
-
-const needsFirstUnlockSelection = computed(() => !firstUnlockId.value);
-
-const firstUnlockCandidates = computed(() =>
-  TRANSPORT_IDS.map(id => ({
-    id,
-    name: transportMeta[id]?.name ?? id,
-    icon: transportMeta[id]?.icon ?? '❓',
-  }))
-);
-
-/**
- * 게스트 전환(로그아웃 시 포함):
- * - 게스트도 플레이는 가능하되, "새로고침하면 초기화"이므로 로컬 영속은 하지 않음.
- * - 여기서는 Firebase 관련만 정리.
- */
+// ===== 게스트 전환(로그아웃 포함) =====
 function becomeGuestMode() {
   if (saveDebounceTimer) {
     clearTimeout(saveDebounceTimer);
@@ -256,44 +234,285 @@ function becomeGuestMode() {
   isHydrating = false;
 }
 
-// ===== 직렬화/역직렬화 =====
-const serializeTransport = (t) => ({
-  id: t.id,
-  locked: !!t.locked,
-  isResearching: !!t.isResearching,
-  researchStartTimeMs: t.researchStartTime instanceof Date ? t.researchStartTime.getTime() : null,
-  researchFinishTimeMs: t.researchFinishTime instanceof Date ? t.researchFinishTime.getTime() : null,
-});
-
-function applyRemoteState(remote) {
-  const remoteFirst = typeof remote?.firstUnlockId === 'string' ? remote.firstUnlockId : null;
-  firstUnlockId.value = remoteFirst;
-
-  const map = new Map((remote?.transports || []).map(x => [x.id, x]));
-  transports.value = buildInitialTransports().map(base => {
-    const r = map.get(base.id);
-    if (!r) return { ...base };
-
-    return {
-      ...base,
-      locked: typeof r.locked === 'boolean' ? r.locked : base.locked,
-      isResearching: typeof r.isResearching === 'boolean' ? r.isResearching : false,
-      researchStartTime: typeof r.researchStartTimeMs === 'number' ? new Date(r.researchStartTimeMs) : null,
-      researchFinishTime: typeof r.researchFinishTimeMs === 'number' ? new Date(r.researchFinishTimeMs) : null,
-    };
-  });
-
-  // 규칙 우선 적용
-  applyFirstUnlockRule();
+// ===== 카탈로그 해석 =====
+function prerequisitesMet(def) {
+  const reqs = Array.isArray(def?.requires) ? def.requires : [];
+  return reqs.every((rid) => completedIds.value.has(rid));
 }
 
-// ===== 저장 로직(Firebase) =====
+function revealSatisfied(def) {
+  const reveal = Array.isArray(def?.revealAfter) ? def.revealAfter : [];
+  if (reveal.length === 0) return true;
+  return reveal.every((rid) => completedIds.value.has(rid));
+}
+
+function isCompleted(id) {
+  return completedIds.value.has(id);
+}
+
+function isTier1TransportUnlock(def) {
+  if (!def) return false;
+  if (Number(def.tier || 1) !== 1) return false;
+  return (def.effects || []).some(
+    (e) => e?.type === 'UNLOCK_TRANSPORT_TIER' && Number(e?.tier || 1) === 1 && !!e?.transportId
+  );
+}
+
+// ✅ 기능 오픈(SYSTEM) 연구인지 판단(고정 8시간, 효율 미적용)
+function isSystemFixedResearch(def) {
+  if (!def) return false;
+  if (def.timePolicy === 'FIXED') return true;
+  return def.type === 'SYSTEM';
+}
+
+// ✅ 연구 효율 적용 대상인지 판단
+function isScalableResearch(def) {
+  if (!def) return false;
+  if (def.timePolicy === 'SCALABLE') return true;
+  // 하위호환: timePolicy 미지정이면 기존처럼 효율 적용(단, SYSTEM은 제외)
+  if (def.timePolicy == null) return !isSystemFixedResearch(def);
+  return false;
+}
+
+function cityScaleRank(scale) {
+  switch (String(scale || '').toUpperCase()) {
+    case 'REGION': return 1;
+    case 'CITY': return 2;
+    case 'COUNTRY': return 3;
+    case 'STATE': return 4;
+    case 'PLANET': return 5;
+    default: return 0;
+  }
+}
+
+function recomputeEffects() {
+  const tiers = {};
+  let mult = 1.0;
+
+  let rsLevel = 0;
+  let reserveLv = 1;
+
+  let nextCityScale = 'NONE';
+
+  const features = {
+    vehicle: false,
+    route: false,
+    construction: false,
+    finance: false,
+    city: false,
+  };
+
+  for (const node of researchCatalog) {
+    if (!completedIds.value.has(node.id)) continue;
+
+    for (const eff of node.effects || []) {
+      if (eff.type === 'UNLOCK_TRANSPORT_TIER') {
+        const tid = eff.transportId;
+        const t = Number(eff.tier || 1);
+        if (!tid) continue;
+        tiers[tid] = Math.max(Number(tiers[tid] || 0), t);
+      }
+
+      if (eff.type === 'INCOME_MULTIPLIER') {
+        mult *= Number(eff.value || 1.0);
+      }
+
+      if (eff.type === 'RESEARCH_SPEED_LEVEL') {
+        const lv = Number(eff.level || 0);
+        if (Number.isFinite(lv)) rsLevel = Math.max(rsLevel, lv);
+      }
+
+      // ✅ 예약 레벨 효과
+      // - level: 1(기본 1칸) / 2(3칸) / 3(5칸)
+      if (eff.type === 'QUEUE_RESERVE_LEVEL') {
+        const lv = Number(eff.level || 1);
+        if (Number.isFinite(lv)) reserveLv = Math.max(reserveLv, lv);
+      }
+
+      if (eff.type === 'UNLOCK_FEATURE') {
+        const k = String(eff.featureKey || '');
+        if (k && Object.prototype.hasOwnProperty.call(features, k)) {
+          features[k] = true;
+        }
+      }
+
+      if (eff.type === 'SET_CITY_SCALE') {
+        const s = String(eff.scale || '').toUpperCase();
+        if (cityScaleRank(s) > cityScaleRank(nextCityScale)) nextCityScale = s;
+      }
+    }
+  }
+
+  unlockedTransportTiers.value = tiers;
+  incomeMultiplier.value = mult;
+
+  researchSpeedLevel.value = rsLevel;
+
+  // ✅ 레벨당 -5% (Lv1=5%, Lv2=10% ...)
+  const raw = 1 - 0.05 * Math.max(0, rsLevel);
+  researchDurationMultiplier.value = Math.max(0.2, raw);
+
+  cityScale.value = nextCityScale;
+  unlockedFeatures.value = features;
+
+  queueReserveLevel.value = Math.max(1, Math.min(3, reserveLv));
+
+  // ✅ 예약 슬롯이 줄어드는 경우 초과분은 안전하게 잘라냄
+  const limit = queueLimitByLevel(queueReserveLevel.value);
+  if (queuedResearchIds.value.length > limit) {
+    queuedResearchIds.value = queuedResearchIds.value.slice(0, limit);
+  }
+}
+
+/**
+ * ✅ 오빠 요구:
+ * - tier2 이상은 항상 노출
+ * - tier1은 reveal 규칙
+ */
+const visibleCatalog = computed(() => {
+  return researchCatalog.filter((def) => {
+    const tier = Number(def?.tier || 1);
+    if (tier >= 2) return true;
+    return revealSatisfied(def);
+  });
+});
+
+// 첫 해금 후보(transportId 추출)
+const transportIdsTier1 = computed(() => {
+  const set = new Set();
+  for (const r of researchCatalog) {
+    if (Number(r.tier || 1) !== 1) continue;
+    for (const e of r.effects || []) {
+      if (e.type === 'UNLOCK_TRANSPORT_TIER' && Number(e.tier || 1) === 1 && e.transportId) {
+        set.add(e.transportId);
+      }
+    }
+  }
+  return Array.from(set);
+});
+
+const needsFirstUnlockSelection = computed(() => !firstUnlockTransportId.value);
+const firstUnlockCandidates = computed(() => transportIdsTier1.value.map((id) => ({ id })));
+
+/**
+ * ✅ 상태 머신
+ * - 1차 해금 이후 “나머지 티어1 운송 해금 연구”는 전부 available
+ */
+function getStatus(researchId) {
+  const def = getResearchDef(researchId);
+  if (!def) return 'unknown';
+
+  const tier = Number(def.tier || 1);
+
+  if (tier === 1 && !revealSatisfied(def)) return 'hidden';
+
+  if (isCompleted(researchId)) return 'done';
+  if (activeResearch.value?.id === researchId) return 'active';
+  if (queuedResearchIds.value.includes(researchId)) return 'queued';
+
+  if (def.enabled === false) return 'comingSoon';
+
+  if (tier === 1 && isTier1TransportUnlock(def) && !!firstUnlockTransportId.value) {
+    return 'available';
+  }
+
+  if (!prerequisitesMet(def)) return 'locked';
+  return 'available';
+}
+
+// Tier1 운송 해금 연구 id 찾기(첫 해금 즉시 완료용)
+function findTier1UnlockResearchId(transportId) {
+  const node = researchCatalog.find(
+    (r) =>
+      r.enabled !== false &&
+      Number(r.tier || 1) === 1 &&
+      (r.effects || []).some(
+        (e) =>
+          e.type === 'UNLOCK_TRANSPORT_TIER' &&
+          e.transportId === transportId &&
+          Number(e.tier || 1) === 1
+      )
+  );
+  return node?.id ?? null;
+}
+
+// ===== Firebase 저장/로드 =====
 function canSave() {
   if (!saveEnabled.value) return false;
   if (!currentUid.value) return false;
   if (!isStateLoaded.value) return false;
   if (isHydrating) return false;
   return true;
+}
+
+function serializeState() {
+  const limit = queueLimitByLevel(queueReserveLevel.value);
+
+  return {
+    version: 10,
+    firstUnlockTransportId: firstUnlockTransportId.value ?? null,
+    completedResearchIds: Array.from(completedIds.value),
+    activeResearch: activeResearch.value
+      ? {
+          id: activeResearch.value.id,
+          startedAtMs: activeResearch.value.startedAtMs,
+          endsAtMs: activeResearch.value.endsAtMs,
+        }
+      : null,
+
+    queuedResearchIds: Array.isArray(queuedResearchIds.value)
+      ? queuedResearchIds.value.slice(0, limit)
+      : [],
+  };
+}
+
+function applyRemoteState(remote) {
+  firstUnlockTransportId.value =
+    typeof remote?.firstUnlockTransportId === 'string'
+      ? remote.firstUnlockTransportId
+      : (typeof remote?.firstUnlockId === 'string' ? remote.firstUnlockId : null);
+
+  const list = Array.isArray(remote?.completedResearchIds) ? remote.completedResearchIds : [];
+  completedIds.value = new Set(list.filter((x) => typeof x === 'string'));
+
+  const ar = remote?.activeResearch;
+  if (ar && typeof ar === 'object' && typeof ar.id === 'string') {
+    activeResearch.value = {
+      id: ar.id,
+      startedAtMs: Number(ar.startedAtMs || 0),
+      endsAtMs: Number(ar.endsAtMs || 0),
+    };
+  } else {
+    activeResearch.value = null;
+  }
+
+  // ✅ 마이그레이션: queuedResearchId -> queuedResearchIds
+  const qArr = Array.isArray(remote?.queuedResearchIds)
+    ? remote.queuedResearchIds.filter((x) => typeof x === 'string')
+    : [];
+
+  const legacyQ = typeof remote?.queuedResearchId === 'string' ? remote.queuedResearchId : null;
+
+  const merged = [];
+  for (const id of qArr) {
+    if (!merged.includes(id)) merged.push(id);
+  }
+  if (legacyQ && !merged.includes(legacyQ)) merged.push(legacyQ);
+
+  queuedResearchIds.value = merged;
+
+  // 구버전 마이그레이션: transports[].locked=false → tier1 완료로 승격
+  if (completedIds.value.size === 0 && Array.isArray(remote?.transports)) {
+    for (const t of remote.transports) {
+      if (!t || typeof t.id !== 'string') continue;
+      if (t.locked === false) {
+        const rid = findTier1UnlockResearchId(t.id);
+        if (rid) completedIds.value.add(rid);
+      }
+    }
+  }
+
+  recomputeEffects();
 }
 
 async function saveNow({ reason = 'manual' } = {}) {
@@ -308,9 +527,7 @@ async function saveNow({ reason = 'manual' } = {}) {
     isSavingFirebaseData.value = true;
 
     const payload = {
-      version: 4,
-      firstUnlockId: firstUnlockId.value ?? null,
-      transports: transports.value.map(serializeTransport),
+      ...serializeState(),
       updatedAt: serverTimestamp(),
       lastSaveReason: reason,
     };
@@ -333,184 +550,277 @@ const scheduleSave = () => {
   }, 800);
 };
 
-// ===== Public API =====
-export function useResearch() {
-  /**
-   * isHydrated = "플레이 가능 상태"
-   * - 게스트: 원격 로드 없음 → 항상 true (즉시 플레이)
-   * - 로그인: 로드 완료 후 true
-   */
-  const isHydrated = computed(() => (!currentUid.value) || isStateLoaded.value);
+// ===== Public Actions =====
+function setFirstUnlockTransport(transportId) {
+  if (!transportId) return;
+  if (firstUnlockTransportId.value) return;
 
-  // TheLeftArea 계약 유지
-  const transportTypes = computed(() => transports.value);
-  const getUnlockedTransports = unlockedTransports;
+  const researchId = findTier1UnlockResearchId(transportId);
+  if (!researchId) return;
 
-  // 최초 택1 (게스트도 가능, 단 새로고침하면 초기화됨)
-  const setFirstUnlockTransport = (id) => {
-    if (!TRANSPORT_IDS.includes(id)) return;
-    if (firstUnlockId.value === id) return;
+  firstUnlockTransportId.value = transportId;
 
-    firstUnlockId.value = id;
-    applyFirstUnlockRule();
+  // 첫 해금은 즉시 완료
+  completedIds.value.add(researchId);
 
-    scheduleSave(); // 로그인 상태면 저장, 게스트면 no-op
+  recomputeEffects();
+  scheduleSave();
+}
+
+function startResearchInternal(researchId) {
+  const def = getResearchDef(researchId);
+  if (!def) return { ok: false, reason: 'UNKNOWN_RESEARCH' };
+
+  if (!firstUnlockTransportId.value) return { ok: false, reason: 'FIRST_UNLOCK_REQUIRED' };
+  if (!isKstReady.value) return { ok: false, reason: 'KST_NOT_READY' };
+
+  if (isCompleted(researchId)) return { ok: false, reason: 'ALREADY_DONE' };
+  if (def.enabled === false) return { ok: false, reason: 'COMING_SOON' };
+
+  const st = getStatus(researchId);
+  if (st !== 'available') return { ok: false, reason: st.toUpperCase() };
+
+  const now = nowKstMs();
+  const baseSec = Number(def.durationSec || 0);
+
+  let durSec = 0;
+  if (baseSec > 0) {
+    if (isSystemFixedResearch(def)) durSec = Math.ceil(baseSec);
+    else if (isScalableResearch(def)) durSec = Math.ceil(baseSec * researchDurationMultiplier.value);
+    else durSec = Math.ceil(baseSec * researchDurationMultiplier.value);
+  }
+
+  if (durSec <= 0) {
+    completedIds.value.add(researchId);
+    recomputeEffects();
+    scheduleSave();
+    return { ok: true, instant: true };
+  }
+
+  activeResearch.value = {
+    id: researchId,
+    startedAtMs: now,
+    endsAtMs: now + durSec * 1000,
   };
 
-  // 연구 시작 (게스트도 가능)
-  const unlockTransport = (id) => {
-    if (!firstUnlockId.value) return;
+  scheduleSave();
+  return { ok: true, instant: false };
+}
 
-    const t = transports.value.find(x => x.id === id);
-    if (!t || !isKstReady.value || t.isResearching || !t.locked) return;
+/**
+ * - 진행중이면 큐에 추가(레벨 기반 제한)
+ * - 비어있으면 즉시 시작
+ */
+function startResearch(researchId) {
+  const limit = queueLimitByLevel(queueReserveLevel.value);
 
-    const now = new Date(kstDate.value.getTime());
-    const ONE_HOUR_MS = 60 * 60 * 1000;
-    const finish = new Date(now.getTime() + ONE_HOUR_MS);
+  if (isCompleted(researchId)) return { ok: false, reason: 'ALREADY_DONE' };
+  if (activeResearch.value?.id === researchId) return { ok: false, reason: 'ALREADY_ACTIVE' };
+  if (queuedResearchIds.value.includes(researchId)) return { ok: true, queued: true, alreadyQueued: true };
 
-    t.researchStartTime = now;
-    t.researchFinishTime = finish;
-    t.isResearching = true;
+  if (activeResearch.value) {
+    if (queuedResearchIds.value.length >= limit) return { ok: false, reason: 'QUEUE_FULL' };
+
+    const st = getStatus(researchId);
+    if (st !== 'available') return { ok: false, reason: st.toUpperCase() };
+
+    queuedResearchIds.value = [...queuedResearchIds.value, researchId].slice(0, limit);
+    scheduleSave();
+    return { ok: true, queued: true };
+  }
+
+  return startResearchInternal(researchId);
+}
+
+function cancelQueuedResearch(researchId) {
+  const before = queuedResearchIds.value.slice();
+  const next = before.filter((id) => id !== researchId);
+  if (next.length === before.length) return;
+  queuedResearchIds.value = next;
+  scheduleSave();
+}
+
+function cancelAllQueuedResearch() {
+  if (queuedResearchIds.value.length === 0) return;
+  queuedResearchIds.value = [];
+  scheduleSave();
+}
+
+function getResearchProgress(researchId) {
+  if (!activeResearch.value || activeResearch.value.id !== researchId) return 0;
+  if (!isKstReady.value) return 0;
+
+  const total = activeResearch.value.endsAtMs - activeResearch.value.startedAtMs;
+  if (total <= 0) return 0;
+
+  const elapsed = nowKstMs() - activeResearch.value.startedAtMs;
+  return Math.max(0, Math.min(100, (elapsed / total) * 100));
+}
+
+function getResearchRemainingTime(researchId) {
+  if (!activeResearch.value || activeResearch.value.id !== researchId) return '00h 00m 00s';
+  if (!isKstReady.value) return '00h 00m 00s';
+
+  const diff = Math.max(0, activeResearch.value.endsAtMs - nowKstMs());
+  const s = Math.floor(diff / 1000);
+  const h = String(Math.floor(s / 3600)).padStart(2, '0');
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const sec = String(s % 60).padStart(2, '0');
+  return `${h}h ${m}m ${sec}s`;
+}
+
+// 로그인 시: 원격 로드
+async function loadForUser(uid) {
+  if (!uid) return;
+
+  if (saveDebounceTimer) {
+    clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = null;
+  }
+  stopAutoSave();
+
+  currentUid.value = uid;
+  isLoadingFirebaseData.value = true;
+  isStateLoaded.value = false;
+
+  try {
+    const refDoc = doc(db, 'users', uid, 'research', 'state');
+    const snap = await getDoc(refDoc);
+
+    isHydrating = true;
+    if (snap.exists()) {
+      applyRemoteState(snap.data());
+      console.log('useResearch: Firebase 상태 로드 완료');
+    } else {
+      console.log('useResearch: Firebase 문서 없음 (초기 상태)');
+      recomputeEffects();
+    }
+    isHydrating = false;
+
+    isStateLoaded.value = true;
+    syncAutoSave(true);
+  } catch (e) {
+    isHydrating = false;
+    console.error('useResearch: Firebase 로드 실패:', e);
+    isStateLoaded.value = false;
+    stopAutoSave();
+  } finally {
+    isLoadingFirebaseData.value = false;
+  }
+}
+
+function clearUserState() {
+  becomeGuestMode();
+
+  firstUnlockTransportId.value = null;
+  completedIds.value = new Set();
+  activeResearch.value = null;
+  queuedResearchIds.value = [];
+
+  cityScale.value = 'NONE';
+  unlockedFeatures.value = {
+    vehicle: false,
+    route: false,
+    construction: false,
+    finance: false,
+    city: false,
+  };
+
+  researchSpeedLevel.value = 0;
+  researchDurationMultiplier.value = 1.0;
+  queueReserveLevel.value = 1;
+
+  recomputeEffects();
+}
+
+// ✅ 연구 완료 판정 + 예약 자동 실행(큐)
+watchEffect(() => {
+  if (!isKstReady.value) return;
+
+  const now = nowKstMs();
+
+  if (activeResearch.value && now >= Number(activeResearch.value.endsAtMs || 0)) {
+    const doneId = activeResearch.value.id;
+
+    activeResearch.value = null;
+    completedIds.value.add(doneId);
+
+    recomputeEffects();
+
+    if (queuedResearchIds.value.length > 0) {
+      const [nextId, ...rest] = queuedResearchIds.value;
+      queuedResearchIds.value = rest;
+
+      const res = startResearchInternal(nextId);
+      if (!res?.ok) {
+        console.warn('useResearch: queued next start failed:', nextId, res?.reason);
+      }
+    }
 
     scheduleSave();
-  };
+  }
+});
 
-  const getResearchProgress = (id) => {
-    const item = transports.value.find(t => t.id === id);
-    if (
-      !item ||
-      !item.isResearching ||
-      !(item.researchStartTime instanceof Date) ||
-      !(item.researchFinishTime instanceof Date) ||
-      !isKstReady.value
-    ) return 0;
+// ===== Public API =====
+export function useResearch() {
+  const isHydrated = computed(() => (!currentUid.value) || isStateLoaded.value);
 
-    const total = item.researchFinishTime.getTime() - item.researchStartTime.getTime();
-    if (total <= 0) return 0;
+  const queueLimit = computed(() => queueLimitByLevel(queueReserveLevel.value));
+  const queueCount = computed(() => queuedResearchIds.value.length);
+  const isQueueFull = computed(() => queueCount.value >= queueLimit.value);
 
-    const elapsed = kstDate.value.getTime() - item.researchStartTime.getTime();
-    return Math.max(0, Math.min(100, (elapsed / total) * 100));
-  };
-
-  const getResearchRemainingTime = (id) => {
-    const item = transports.value.find(t => t.id === id);
-    if (!item || !(item.researchFinishTime instanceof Date) || !isKstReady.value) return '00h 00m 00s';
-
-    const diff = Math.max(0, item.researchFinishTime.getTime() - kstDate.value.getTime());
-    const s = Math.floor(diff / 1000);
-    const h = String(Math.floor(s / 3600)).padStart(2, '0');
-    const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-    const sec = String(s % 60).padStart(2, '0');
-    return `${h}h ${m}m ${sec}s`;
-  };
-
-  // 로그인 시: 원격 로드
-  const loadForUser = async (uid) => {
-    if (!uid) return;
-
-    if (saveDebounceTimer) {
-      clearTimeout(saveDebounceTimer);
-      saveDebounceTimer = null;
-    }
-    stopAutoSave();
-
-    currentUid.value = uid;
-    isLoadingFirebaseData.value = true;
-    isStateLoaded.value = false;
-
-    try {
-      const refDoc = doc(db, 'users', uid, 'research', 'state');
-      const snap = await getDoc(refDoc);
-
-      isHydrating = true;
-      if (snap.exists()) {
-        applyRemoteState(snap.data());
-        console.log('useResearch: Firebase 상태 로드 완료');
-      } else {
-        console.log('useResearch: Firebase 문서 없음 (초기 상태)');
-        // 문서가 없으면: 현재 로컬(게스트 플레이 상태) 유지
-      }
-      isHydrating = false;
-
-      isStateLoaded.value = true;
-      syncAutoSave(true);
-    } catch (e) {
-      isHydrating = false;
-      console.error('useResearch: Firebase 로드 실패:', e);
-      isStateLoaded.value = false;
-      stopAutoSave();
-    } finally {
-      isLoadingFirebaseData.value = false;
-    }
-  };
-
-  // 로그아웃/게스트 전환
-  const clearUserState = () => {
-    becomeGuestMode();
-
-    // 오빠 요구: 비로그인 새로고침=초기화.
-    // 로그아웃은 새 세션처럼 시작하는 게 일관적이라 즉시 초기화해둠.
-    firstUnlockId.value = null;
-    transports.value = buildInitialTransports();
-  };
-
-  // 연구 완료 판정: 완료 시 locked=false → 연구목록에서 자동 제거
-  watchEffect(() => {
-    let changed = false;
-
-    transports.value.forEach(t => {
-      if (
-        t.isResearching &&
-        isKstReady.value &&
-        t.researchFinishTime instanceof Date &&
-        kstDate.value.getTime() >= t.researchFinishTime.getTime()
-      ) {
-        t.locked = false;
-        t.isResearching = false;
-        t.researchFinishTime = null;
-        t.researchStartTime = null;
-        changed = true;
-      }
-    });
-
-    if (changed) scheduleSave();
-  });
+  const hasFeature = (key) => !!unlockedFeatures.value?.[key];
+  const cityScaleAtLeast = (scale) => cityScaleRank(cityScale.value) >= cityScaleRank(scale);
 
   return {
-    // 택1
-    firstUnlockId,
+    catalog: researchCatalog,
+    visibleCatalog,
+
+    firstUnlockTransportId,
     needsFirstUnlockSelection,
     firstUnlockCandidates,
     setFirstUnlockTransport,
 
-    // 센터 패널
-    transportTypes,
-    getUnlockedTransports,
-    isHydrated,
+    completedIds,
+    activeResearch,
 
-    // 연구 목록/상태
-    lockedTransports,
-    unlockedTransports,
+    queuedResearchIds,
+    queueReserveLevel,
+    queueLimit,
+    queueCount,
+    isQueueFull,
 
-    // 액션/유틸
-    unlockTransport,
+    unlockedTransportTiers,
+    incomeMultiplier,
+
+    researchSpeedLevel,
+    researchDurationMultiplier,
+
+    cityScale,
+    unlockedFeatures,
+    hasFeature,
+    cityScaleAtLeast,
+
+    getStatus,
+    startResearch,
+
+    cancelQueuedResearch,
+    cancelAllQueuedResearch,
+
     getResearchProgress,
     getResearchRemainingTime,
+
     isKstTimeReady,
 
-    // Firebase API
     loadForUser,
     clearUserState,
 
-    // 저장 API
     saveNow,
     scheduleSave,
 
-    // 저장 설정
     saveEnabled,
     setSaveEnabled,
 
-    // 자동저장 설정
     autoSaveEnabled,
     autoSaveBase,
     autoSaveIntervalMin,
@@ -518,13 +828,12 @@ export function useResearch() {
     setAutoSaveBase,
     setAutoSaveIntervalMin,
 
-    // 자동저장 상태
     autoSaveRunning,
     lastAutoSaveAtMs,
 
-    // 플래그
     isLoadingFirebaseData,
     isSavingFirebaseData,
     isStateLoaded,
+    isHydrated,
   };
 }
