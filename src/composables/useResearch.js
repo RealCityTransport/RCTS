@@ -415,9 +415,23 @@ const transportIdsTier1 = computed(() => {
 const needsFirstUnlockSelection = computed(() => !firstUnlockTransportId.value);
 const firstUnlockCandidates = computed(() => transportIdsTier1.value.map((id) => ({ id })));
 
+// =======================================================
+// ✅ OR 게이트(프리뷰 차량추가 연구용)
+// - 버스/트럭/철도 중 하나라도 해금(티어1 완료)되면 연구 가능
+// - requires(AND)로는 표현 못하므로 엔진에서 상태로 처리
+// =======================================================
+function hasAnyStarterTransportUnlocked() {
+  return (
+    completedIds.value.has('unlock_bus_t1') ||
+    completedIds.value.has('unlock_truck_t1') ||
+    completedIds.value.has('unlock_rail_t1')
+  );
+}
+
 /**
  * ✅ 상태 머신
  * - 1차 해금 이후 “나머지 티어1 운송 해금 연구”는 전부 available
+ * - 프리뷰 차량추가(sys_preview_starter_vehicles)는 OR 게이트 적용
  */
 function getStatus(researchId) {
   const def = getResearchDef(researchId);
@@ -433,6 +447,19 @@ function getStatus(researchId) {
 
   if (def.enabled === false) return 'comingSoon';
 
+  // ✅ OR 게이트: 프리뷰 차량추가
+  if (researchId === 'sys_preview_starter_vehicles') {
+    // "최초 해금 선택 전"에는 어차피 시작 못하지만, 상태도 잠금으로 보여주는 게 자연스러움
+    if (!firstUnlockTransportId.value) return 'locked';
+
+    // 버스/트럭/철도 중 하나라도 해금되면 available
+    if (!hasAnyStarterTransportUnlocked()) return 'locked';
+
+    // 나머지 기본조건 OK면 available
+    return 'available';
+  }
+
+  // ✅ 첫 해금 이후: 나머지 티어1 운송수단 해금 연구는 전부 available
   if (tier === 1 && isTier1TransportUnlock(def) && !!firstUnlockTransportId.value) {
     return 'available';
   }

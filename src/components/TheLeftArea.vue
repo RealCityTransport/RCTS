@@ -1,3 +1,4 @@
+<!-- src/components/console/LeftArea.vue -->
 <template>
   <aside class="layout-area left-area">
     <div class="left-panel-wrapper">
@@ -67,27 +68,40 @@
 
           <hr class="divider" />
 
-          <!-- 프리뷰 잠금/오픈 -->
+          <!-- ✅ 프리뷰 잠금/오픈: "연구 완료"로만 결정 -->
           <div v-if="!previewStarterFleetUnlocked" class="lock-box">
-            <p class="box-title">🔒 기본차량 프리뷰 잠김</p>
+            <p class="box-title">🔒 프리뷰 차량 활성화 잠김</p>
             <p class="box-desc">
-              기본차량 자동운행(프리뷰) 연구를 완료하면 이 영역에서
-              <strong>초기 운행 데이터</strong>가 표시됩니다.
+              연구실에서 <strong>프리뷰 차량 활성화</strong> 연구를 완료하면,
+              이곳에 <strong>프리뷰 차량/운행 상태</strong>가 표시됩니다.
             </p>
             <p class="box-desc subtle">
-              현재는 연구 파트만 서비스 중이므로, 프리뷰/차량/재정 등은 단계적으로 오픈됩니다.
+              (테스트도 연구 완료 후에만 활성화됩니다.)
             </p>
+
+            <div v-if="!hasAnyStarterTransportUnlocked" class="preview-placeholder">
+              <p class="placeholder-text">
+                참고: 버스/트럭/철도 중 하나라도 해금하면 프리뷰 연구를 진행할 수 있어요.
+              </p>
+            </div>
           </div>
 
           <div v-else class="preview-box">
-            <p class="box-title">✅ 기본차량 프리뷰 활성화</p>
-            <p class="box-desc">
-              현재는 레이아웃만 준비되어 있습니다. 다음 단계에서
-              <strong>운행중/남은시간/재롤링</strong>을 연결합니다.
+            <p class="box-title">✅ 프리뷰 차량 활성화</p>
+
+            <!-- 재정이 아직 잠김이면: 무상지급/프리뷰만 -->
+            <p class="box-desc" v-if="!financeUnlocked">
+              재정이 잠겨있어서 <strong>프리뷰(무상 지급)</strong>만 동작합니다.
+              (구매/비용은 재정 오픈 이후 연결)
+            </p>
+            <p class="box-desc" v-else>
+              재정이 활성화되어 구매/비용 연동도 가능합니다. (연동 단계는 추후)
             </p>
 
             <div class="preview-placeholder">
-              <p class="placeholder-text">초기 운행 데이터 영역 (준비중)</p>
+              <p class="placeholder-text">
+                프리뷰 운행 데이터 영역 (연동/표시 단계는 다음 작업에서 다듬기)
+              </p>
             </div>
           </div>
 
@@ -131,13 +145,24 @@ import { useResearch } from '@/composables/useResearch';
 const {
   transportTypes,
   unlockedTransports: unlockedRef,
-  previewStarterFleetUnlocked,
 } = useTransportUnlocks();
 
-// 연구 완료 기반으로 "재정 해금 여부" 체크
 const research = useResearch();
+
+// ✅ 재정 해금 여부 (기존 유지)
 const financeUnlocked = computed(() => {
   return !!research.completedIds.value?.has?.('sys_unlock_finance');
+});
+
+// ✅ 프리뷰 차량 활성화(연구 완료 여부) - 강제 오픈 제거, 연구로만!
+const previewStarterFleetUnlocked = computed(() => {
+  return !!research.completedIds.value?.has?.('sys_preview_starter_vehicles');
+});
+
+// “버스/트럭/철도 중 하나라도 해금” 안내용(OR)
+const hasAnyStarterTransportUnlocked = computed(() => {
+  const ids = new Set((unlockedRef.value || []).map(x => x.id));
+  return ids.has('bus') || ids.has('truck') || ids.has('rail');
 });
 
 // useVehicles 유지
@@ -156,9 +181,6 @@ const selectedTransport = computed(() => {
 <style scoped>
 /* =========================================================
    LEFT AREA – Desktop control panel
-   - 3 panels stacked
-   - internal scroll per panel (details/list)
-   - scrollbars hidden
    ========================================================= */
 
 /* wrapper */

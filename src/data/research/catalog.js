@@ -17,13 +17,6 @@
  * - timePolicy:
  *    - FIXED    : 고정 시간(효율 미적용). 기능오픈 8시간 규칙 적용 대상.
  *    - SCALABLE : 효율 적용 가능(연구 효율화 영향 받음)
- *
- * ⚠️ 합의된 룰 반영
- * - 기능오픈(SYSTEM) 연구는 무조건 8시간, timePolicy=FIXED (효율 미적용)
- * - 효율 연구(연구시간 감소)는 레벨당 -5%, 소요시간: 1h / 2h / 4h / 8h / 16h
- * - 운송수단: 버스/트럭/철도는 초기부터 연구 가능
- * - 항공/배/우주는 도시 진척(스케일) 이후 연구 가능
- * - 도시 스케일: 지역 → 시 → 나라 → 국가 → 행성
  */
 
 const HOUR = 3600;
@@ -44,7 +37,7 @@ export const researchCatalog = [
     durationSec: DUR_SYSTEM_FIXED,
     requires: [],
     revealAfter: [],
-    enabled: false, // ✅ 긴급 잠금
+    enabled: false,
     effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'vehicle' }],
   },
   {
@@ -58,7 +51,7 @@ export const researchCatalog = [
     durationSec: DUR_SYSTEM_FIXED,
     requires: [],
     revealAfter: [],
-    enabled: false, // ✅ 긴급 잠금
+    enabled: false,
     effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'route' }],
   },
   {
@@ -72,7 +65,7 @@ export const researchCatalog = [
     durationSec: DUR_SYSTEM_FIXED,
     requires: [],
     revealAfter: [],
-    enabled: false, // ✅ 긴급 잠금
+    enabled: false,
     effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'construction' }],
   },
   {
@@ -86,7 +79,7 @@ export const researchCatalog = [
     durationSec: DUR_SYSTEM_FIXED,
     requires: [],
     revealAfter: [],
-    enabled: false, // ✅ 긴급 잠금
+    enabled: false,
     effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'finance' }],
   },
   {
@@ -100,52 +93,71 @@ export const researchCatalog = [
     durationSec: DUR_SYSTEM_FIXED,
     requires: [],
     revealAfter: [],
-    enabled: false, // ✅ 긴급 잠금
+    enabled: false,
     effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'city' }],
   },
 
   // =========================================================
-  // [REAL] 프리뷰: 기본차량 자동운행(맛보기)
-  // - 차량 본시스템(8h FIXED) 이전에 제공되는 “맛보기” 시스템
-  // - 4시간(효율 적용 가능)
-  // - 완료 시: 버스/트럭/철도에 랜덤 운행시간으로 돌아가는 기본차량이 생성되어
-  //          "운행중"이 보이도록 한다.
+  // [REAL] 프리뷰: 프리뷰 차량추가 (1h)  -> 노선 재분배(2h) -> 노선 자동배정(4h)
   //
-  // ⚠️ 구현 메모:
-  // - useResearch 쪽에서 effects를 실제 상태(vehicles/operations)에 반영하는 로직이 필요.
-  // - 지금은 카탈로그에 effect만 정의해두고, 다음 단계에서 엔진을 붙이면 됨.
+  // 요구 반영:
+  // - 버스/트럭/철도 "하나라도" 해금되면 연구 가능 (OR 조건)
+  //   -> catalog.requires는 AND만 표현 가능하므로, requires를 비우고
+  //      엔진(getStatus)에서 OR 체크로 잠금 해제 처리한다.
   // =========================================================
   {
     id: 'sys_preview_starter_vehicles',
     type: 'REAL',
     domain: 'vehicle',
     timePolicy: 'SCALABLE',
-    title: '기본차량 자동운행(프리뷰) 도입',
-    desc: '차량 본시스템(8시간) 전에 맛보기로, 버스/트럭/철도 기본차량이 랜덤 운행시간으로 자동 운행됩니다. (4시간, 효율 적용)',
+    title: '프리뷰 차량추가',
+    desc: '차량 본시스템(8시간) 전에 맛보기로, 해금된 운송수단의 프리뷰 차량이 자동 운행됩니다. (1시간, 효율 적용)',
     tier: 1,
-    durationSec: 4 * HOUR,
-
-    // 운송수단을 해금했는데 차량이 “아무것도 안 굴러가는” 구간을 메워주는 브릿지.
-    // 최소 버스/트럭/철도 해금 이후에 시작 가능하게 잡음.
-    requires: ['unlock_bus_t1', 'unlock_truck_t1', 'unlock_rail_t1'],
+    durationSec: 1 * HOUR,
+    requires: [], // ✅ OR 조건은 엔진에서 처리
     revealAfter: [],
-
     enabled: true,
     effects: [
       {
         type: 'UNLOCK_STARTER_FLEET_PREVIEW',
         transports: ['bus', 'truck', 'rail'],
-        runTimeMinSec: 30 * 60,   // 30분
-        runTimeMaxSec: 2 * HOUR,  // 2시간
+        runTimeMinSec: 30 * 60,
+        runTimeMaxSec: 2 * HOUR,
         countPerTransport: 1,
       },
     ],
   },
+  {
+    id: 'sys_preview_route_redistribution',
+    type: 'REAL',
+    domain: 'route',
+    timePolicy: 'SCALABLE',
+    title: '프리뷰 노선 재분배',
+    desc: '프리뷰 차량의 노선을 재배정(롤링)할 수 있습니다. (2시간, 효율 적용)',
+    tier: 1,
+    durationSec: 2 * HOUR,
+    requires: ['sys_preview_starter_vehicles'],
+    revealAfter: [],
+    enabled: true,
+    effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'preview_route_redistribution' }],
+  },
+  {
+    id: 'sys_preview_auto_assign',
+    type: 'REAL',
+    domain: 'route',
+    timePolicy: 'SCALABLE',
+    title: '프리뷰 노선 자동배정',
+    desc: '프리뷰 운행이 종료되면 자동으로 다음 운행이 시작됩니다. (노선 유지, 시간 재배정) (4시간, 효율 적용)',
+    tier: 1,
+    durationSec: 4 * HOUR,
+    requires: ['sys_preview_route_redistribution'],
+    revealAfter: [],
+    enabled: true,
+    effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'preview_auto_assign' }],
+  },
 
   // =========================================================
   // [CITY] 도시 스케일 업 (효율 적용 가능)
-  // - 지역 → 시 → 나라 → 국가 → 행성
-  // - 항공/배/우주 연구 게이트에 사용
   // =========================================================
   {
     id: 'city_scale_region',
@@ -220,13 +232,7 @@ export const researchCatalog = [
 
   // =========================================================
   // [TRANSPORT] 운송수단 Tier1 해금
-  // - 버스/트럭/철도: 초기부터 연구 가능
-  // - 항공/배/우주: 도시 스케일 게이트 이후 연구 가능
-  //
-  // ⚠️ 기본 제공 차량 지급(Starter Vehicle)은 추후 effect 처리 로직 추가 시 적용
   // =========================================================
-
-  // --- 초기부터 가능 ---
   {
     id: 'unlock_bus_t1',
     type: 'TRANSPORT',
@@ -334,8 +340,6 @@ export const researchCatalog = [
 
   // =========================================================
   // [EFFICIENCY] 연구 시간 감소 (레벨당 -5%)
-  // - 시간: 1h / 2h / 4h / 8h / 16h
-  // - SYSTEM(timePolicy=FIXED)에는 적용되지 않도록 useResearch 엔진에서 처리
   // =========================================================
   {
     id: 'rs_1',

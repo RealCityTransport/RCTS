@@ -138,6 +138,48 @@
       </div>
     </section>
 
+    <!-- 3) 프리뷰(맛보기) / REAL -->
+    <section class="panel">
+      <h2 class="panel-title">프리뷰(맛보기)</h2>
+      <p class="panel-desc">
+        차량/재정 본 시스템 개방 전에 제공되는 맛보기 연구입니다. 여기서 “프리뷰 차량 활성화”를 진행하세요.
+      </p>
+
+      <div v-if="!isHydrated" class="empty">불러오는 중…</div>
+      <div v-else-if="previewList.length === 0" class="empty">현재 가능한 프리뷰 연구가 없습니다.</div>
+
+      <div v-else class="list">
+        <article v-for="r in previewList" :key="r.id" class="card">
+          <div class="card-left">
+            <div class="icon">{{ r.icon }}</div>
+          </div>
+
+          <div class="card-mid">
+            <div class="name-row">
+              <div class="name">{{ r.title }}</div>
+              <div class="meta">
+                <span class="pill time">{{ r.durationLabel }}</span>
+                <span class="pill" v-if="activeResearch">대기</span>
+                <span class="pill" v-else>가능</span>
+              </div>
+            </div>
+
+            <div class="hint2" v-if="r.desc">{{ r.desc }}</div>
+          </div>
+
+          <div class="card-right">
+            <button
+              class="btn primary"
+              :disabled="!isHydrated || (activeResearch && isQueueFull && !isQueued(r.id))"
+              @click="startOrQueue(r.id)"
+            >
+              {{ buttonLabel(r.id) }}
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
+
     <!-- (이하 섹션들은 기존 그대로 유지하되 버튼 disable 로직만 큐제한을 사용) -->
     <section class="panel">
       <h2 class="panel-title">기능 오픈 (고정 8시간)</h2>
@@ -404,7 +446,7 @@ function durationLabelOf(researchId) {
   return durationLabel(defOf(researchId));
 }
 
-// ---- 리스트(기존 ResearchView 분류 로직이 이미 있다면 그대로 연결해서 사용) ----
+// ---- 리스트(기존 ResearchView 분류 로직) ----
 function findTier1TransportId(def) {
   const eff = (def.effects || []).find(e => e?.type === 'UNLOCK_TRANSPORT_TIER' && Number(e?.tier || 1) === 1);
   return eff?.transportId || null;
@@ -432,8 +474,24 @@ const firstUnlockList = computed(() => {
   return list.map(def => toFirstUnlockItem(def, candidatesSet)).filter(Boolean);
 });
 
-// 아래 섹션 리스트들은 기존 방식(카다로그 type으로 분류) 그대로 쓸 수 있음.
-// 지금 파일은 “예약/스크롤 개선”이 핵심이라, list는 오빠 프로젝트의 현재 분류 버전에 맞춰 연결하면 됨.
+// ✅ 프리뷰(REAL) 섹션: sys_preview_* 계열만 노출 (난잡함 방지)
+function isPreviewReal(def) {
+  if (!def) return false;
+  if (def.type !== 'REAL') return false;
+  return String(def.id || '').startsWith('sys_preview_');
+}
+
+const previewList = computed(() => (research.visibleCatalog.value || [])
+  .filter(def => research.getStatus(def.id) === 'available' && isPreviewReal(def))
+  .map(def => ({
+    id: def.id,
+    title: def.title,
+    desc: def.desc,
+    durationLabel: durationLabel(def),
+    icon: '🧪',
+  }))
+);
+
 const systemList = computed(() => (research.visibleCatalog.value || [])
   .filter(def => research.getStatus(def.id) === 'available' && (def.type === 'SYSTEM' || def.timePolicy === 'FIXED'))
   .map(def => ({ id: def.id, title: def.title, desc: def.desc, durationLabel: durationLabel(def) }))
@@ -534,11 +592,9 @@ function debugDump() {
   height: 100%;
   min-height: 0;
 
-  /* ✅ 스크롤 주체는 페이지 */
   overflow-y: auto;
   overflow-x: hidden;
 
-  /* ✅ max-height 제거: 100vh 계산으로 흔들리는 문제 제거 */
   padding: 18px;
   box-sizing: border-box;
 
@@ -742,10 +798,8 @@ function debugDump() {
     gap: 12px;
   }
 
-  /* 헤더/배지: 버튼처럼 길어지는 배지 줄 정리 */
   .status-row { gap: 6px; }
 
-  /* 패널 헤더: 제목/버튼을 위아래로 */
   .panel-head {
     flex-direction: column;
     align-items: stretch;
@@ -758,7 +812,6 @@ function debugDump() {
     flex: 1;
   }
 
-  /* 카드: 모바일에서 1열 스택 + 버튼은 아래로 */
   .card {
     grid-template-columns: 44px 1fr;
     align-items: start;
@@ -770,7 +823,6 @@ function debugDump() {
     width: 100%;
   }
 
-  /* 이름/메타: 세로 정렬로 가독성 */
   .name-row {
     flex-direction: column;
     align-items: flex-start;
