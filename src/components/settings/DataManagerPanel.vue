@@ -1,3 +1,4 @@
+<!-- src/components/settings/DataManagerPanel.vue -->
 <template>
   <div class="data-manager">
     <header class="header">
@@ -215,10 +216,6 @@ function formatUpdatedAt(v) {
 }
 
 // ===== 자동저장 UI 모드 =====
-// 요구사항: 안함 / 5분 / 10분
-// - 5분 선택: base=5, interval=5, enabled=true
-// - 10분 선택: base=10, interval=10, enabled=true
-// - 안함: enabled=false
 const autoSaveMode = ref('off');
 
 function syncModeFromState() {
@@ -229,21 +226,18 @@ function syncModeFromState() {
   const base = Number(autoSaveBase.value);
   const interval = Number(autoSaveIntervalMin.value);
 
-  // UI는 5 or 10만 노출하니, 그 외 값이면 base 기준으로 가까운 쪽으로 표시
   if (base === 10 && interval === 10) autoSaveMode.value = '10';
   else if (base === 5 && interval === 5) autoSaveMode.value = '5';
   else if (base === 10) autoSaveMode.value = '10';
   else autoSaveMode.value = '5';
 }
 
-// 초기/상태 변화 반영
 watch(
   [autoSaveEnabled, autoSaveBase, autoSaveIntervalMin],
   () => syncModeFromState(),
   { immediate: true }
 );
 
-// UI 변경 -> 상태 반영
 watch(autoSaveMode, (v) => {
   if (!uid.value) return;
 
@@ -350,14 +344,12 @@ async function deleteResearchDoc() {
 <style scoped lang="scss">
 /* box-sizing 고정 (input overflow 방지) */
 .data-manager,
-.data-manager * {
-  box-sizing: border-box;
-}
+.data-manager * { box-sizing: border-box; }
 
 .data-manager { padding: 16px; }
 
-.title { margin: 0 0 6px; font-size: 20px; }
-.desc { margin: 0; opacity: 0.85; }
+.title { margin: 0 0 6px; font-size: 20px; font-weight: 800; }
+.desc { margin: 0; opacity: 0.85; line-height: 1.35; }
 
 .card {
   margin-top: 14px;
@@ -366,9 +358,9 @@ async function deleteResearchDoc() {
   border: 1px solid rgba(255,255,255,0.12);
   background: rgba(0,0,0,0.18);
 }
-.card-title { margin: 0 0 10px; font-size: 15px; opacity: 0.95; }
+.card-title { margin: 0 0 10px; font-size: 15px; opacity: 0.95; font-weight: 800; }
 
-/* 정렬: 라벨-값 간격이 과하게 벌어지지 않도록 "고정폭 + gap"으로 */
+/* 라벨-값 grid */
 .kv {
   display: grid;
   grid-template-columns: 96px 1fr;
@@ -397,7 +389,7 @@ async function deleteResearchDoc() {
 
 .preview { margin-top: 12px; }
 .preview-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.preview-title { margin: 0; font-size: 14px; opacity: 0.92; }
+.preview-title { margin: 0; font-size: 14px; opacity: 0.92; font-weight: 800; }
 
 .summary {
   display: grid;
@@ -407,7 +399,7 @@ async function deleteResearchDoc() {
 }
 .summary-item { border: 1px solid rgba(255,255,255,0.10); border-radius: 10px; padding: 10px; }
 .summary-k { font-size: 12px; opacity: 0.7; }
-.summary-v { margin-top: 6px; font-size: 14px; }
+.summary-v { margin-top: 6px; font-size: 14px; font-weight: 800; word-break: break-word; }
 
 .pre {
   margin-top: 10px;
@@ -424,23 +416,9 @@ async function deleteResearchDoc() {
   padding-top: 12px;
   border-top: 1px solid rgba(255,255,255,0.10);
 }
-.autosave-title {
-  font-size: 13px;
-  opacity: 0.9;
-  margin-bottom: 8px;
-}
-.autosave-controls {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.radio {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  user-select: none;
-  opacity: 0.95;
-}
+.autosave-title { font-size: 13px; opacity: 0.9; margin-bottom: 8px; font-weight: 800; }
+.autosave-controls { display: flex; gap: 14px; flex-wrap: wrap; }
+.radio { display: inline-flex; align-items: center; gap: 8px; user-select: none; opacity: 0.95; }
 
 /* 모달 */
 .modal-backdrop {
@@ -449,7 +427,6 @@ async function deleteResearchDoc() {
   display: grid; place-items: center;
   z-index: 9999;
 }
-
 .modal {
   width: min(560px, 92vw);
   padding: 16px;
@@ -458,9 +435,8 @@ async function deleteResearchDoc() {
   background: rgba(10,10,12,0.96);
   overflow: hidden;
 }
-
-.modal-title { margin: 0 0 8px; }
-.modal-desc { margin: 8px 0; opacity: 0.9; }
+.modal-title { margin: 0 0 8px; font-weight: 900; }
+.modal-desc { margin: 8px 0; opacity: 0.9; line-height: 1.35; }
 .danger-text { color: rgba(255,120,120,0.95); }
 
 .check { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0; }
@@ -475,8 +451,13 @@ async function deleteResearchDoc() {
   caret-color: #ffffff;
 }
 .input::placeholder { color: rgba(255,255,255,0.45); }
-.input:focus {
-  outline: none;
-  border-color: rgba(255,255,255,0.35);
+.input:focus { outline: none; border-color: rgba(255,255,255,0.35); }
+
+/* ✅ MOBILE: kv/summary 깨짐 방지 */
+@media (max-width: 520px) {
+  .data-manager { padding: 12px; }
+  .kv { grid-template-columns: 88px 1fr; gap: 10px; }
+  .summary { grid-template-columns: 1fr; }
+  .row .btn { flex: 1; }
 }
 </style>

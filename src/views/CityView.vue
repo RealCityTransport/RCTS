@@ -1,54 +1,53 @@
-<!-- src/views/ConstructionView.vue -->
+<!-- src/views/CityView.vue -->
 <template>
   <div class="page">
     <header class="page-header">
-      <h1 class="title">건설</h1>
-      <p class="desc">인프라 배치/건설 큐 기능은 아직 잠겨 있습니다. 연구로 개방할 수 있어요.</p>
+      <h1 class="title">도시</h1>
+      <p class="desc">도시 데이터/수요/성장 분석 기능은 아직 잠겨 있습니다. 연구로 개방할 수 있어요.</p>
 
       <div class="status-row">
         <span class="badge lock">LOCKED</span>
-        <span class="badge">건설 시스템</span>
+        <span class="badge">도시 시스템</span>
         <button class="btn primary" @click="goResearch">연구로 이동</button>
       </div>
     </header>
 
     <section class="panel">
       <div class="panel-head">
-        <h2 class="panel-title">건설 카탈로그</h2>
+        <h2 class="panel-title">도시 인사이트</h2>
         <div class="panel-actions">
-          <button class="btn" disabled>도로</button>
-          <button class="btn" disabled>정류장</button>
-          <button class="btn" disabled>철도</button>
-          <button class="btn" disabled>항만</button>
-          <button class="btn" disabled>공항</button>
+          <button class="btn" disabled>인구</button>
+          <button class="btn" disabled>수요</button>
+          <button class="btn" disabled>산업</button>
+          <button class="btn ghost" disabled>이벤트</button>
         </div>
       </div>
 
       <div class="empty">
-        현재는 잠금 상태입니다. 건설 개방 연구 완료 후 이용 가능합니다.
+        현재는 잠금 상태입니다. 도시 개방/확장 연구 완료 후 이용 가능합니다.
       </div>
 
       <div class="list">
-        <article class="card" v-for="n in 10" :key="n">
+        <article class="card" v-for="n in 8" :key="n">
           <div class="card-left">
-            <div class="icon">🏗️</div>
+            <div class="icon">🏙️</div>
           </div>
 
           <div class="card-mid">
             <div class="name-row">
-              <div class="name">잠김 건설 아이템</div>
+              <div class="name">잠김 도시 패널</div>
               <div class="meta">
                 <span class="pill lock">잠김</span>
                 <span class="pill time">—</span>
               </div>
             </div>
             <div class="hint2">
-              해금 후: 비용/건설시간/효율, 배치 제한, 건설 큐 관리 UI가 활성화됩니다.
+              해금 후: 지역/도시/국가/행성 확장, 수요 예측, 이벤트, 혼잡도 지표가 활성화됩니다.
             </div>
           </div>
 
           <div class="card-right">
-            <button class="btn primary" disabled>배치</button>
+            <button class="btn primary" disabled>잠김</button>
           </div>
         </article>
       </div>
@@ -56,7 +55,7 @@
 
     <section class="panel">
       <h2 class="panel-title">미리보기</h2>
-      <p class="panel-desc">해금 후 제공될 “선택 정보 / 예상 비용 / 건설 큐” 패널입니다.</p>
+      <p class="panel-desc">해금 후 제공될 “핵심 지표 / 이벤트 / 예측” 패널입니다.</p>
 
       <div class="grid">
         <div class="mini-card" v-for="n in 3" :key="n">
@@ -79,10 +78,10 @@ function goResearch() {
 
 <style scoped>
 /* =========================================================
-   ConstructionView (LOCKED)
-   - Local code preserved (structure/text)
-   - Layout stabilization: remove max-height hacks
-   - Mobile: stack headers, stack cards, keep scroll smooth
+   CityView (LOCKED)
+   - Local code preserved
+   - Mobile stability: remove max-height hacks
+   - Responsive: header/actions stack, cards safe
    ========================================================= */
 
 .page{
@@ -93,10 +92,9 @@ function goResearch() {
   overflow-y:auto;
   overflow-x:hidden;
 
-  /* ✅ max-height 제거(모바일 주소창/TopBar 높이 변동 대응) */
+  /* ✅ max-height 제거 */
   padding:18px;
   box-sizing:border-box;
-
   display:flex;
   flex-direction:column;
   gap:14px;
@@ -220,7 +218,7 @@ function goResearch() {
 .btn.primary{
   border-color: rgba(120, 255, 120, 0.25);
   background: rgba(120, 255, 120, 0.12);
-  font-weight:800;
+  font-weight:900;
 }
 
 .empty{
@@ -264,18 +262,9 @@ function goResearch() {
   }
   .panel-actions .btn{ flex: 1; }
 
-  /* 카드 스택 */
-  .card{
-    grid-template-columns:44px 1fr;
-    align-items:start;
-  }
-  .card-right{
-    grid-column: 1 / -1;
-  }
-  .card-right .btn{ width:100%; }
-
-  /* 미리보기: 1열 */
   .grid{ grid-template-columns: 1fr; }
+  .card{ grid-template-columns:44px 1fr; }
+  .card-right{ grid-column: 1 / -1; }
 }
 
 @media (max-width: 520px){

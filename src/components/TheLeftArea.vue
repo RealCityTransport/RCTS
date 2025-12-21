@@ -1,10 +1,12 @@
-<!-- src/components/TheLeftArea.vue -->
 <template>
-  <div class="layout-area left-area">
+  <aside class="layout-area left-area">
     <div class="left-panel-wrapper">
-      <!-- 1. 운송 수단 목록 -->
-      <div class="transport-list-container">
-        <h3 class="panel-heading">🚚 운송 수단 🚚</h3>
+      <!-- 1) 운송 수단 목록 -->
+      <section class="panel transport-list-container">
+        <div class="panel-head">
+          <h3 class="panel-heading">🚚 운송 수단</h3>
+          <span class="panel-meta">{{ unlockedTransports.length }}종</span>
+        </div>
 
         <ul class="transport-list" v-if="unlockedTransports.length > 0">
           <li
@@ -20,72 +22,103 @@
           </li>
         </ul>
 
-        <!-- 해금된 운송수단이 없을 때 -->
-        <div v-else class="transport-details-placeholder">
-          <p class="placeholder-text">아직 해금된 운송 수단이 없습니다. 연구실에서 해금해 주세요.</p>
+        <div v-else class="placeholder-box">
+          <p class="placeholder-text">
+            아직 해금된 운송 수단이 없습니다. 연구실에서 해금해 주세요.
+          </p>
         </div>
-      </div>
+      </section>
 
-      <!-- 2. 가운데 영역: 선택 운송 수단 / 프리뷰 잠금 처리 -->
-      <div class="transport-details-container">
-        <h3 class="panel-heading">
-          {{ selectedTransport ? `${selectedTransport.name} 상세 정보` : '운송 수단 상세 정보' }}
-        </h3>
+      <!-- 2) 선택 운송 수단 상세 -->
+      <section class="panel transport-details-container">
+        <div class="panel-head">
+          <h3 class="panel-heading">
+            {{ selectedTransport ? `${selectedTransport.name} 상세` : '운송 수단 상세' }}
+          </h3>
+          <span class="panel-meta" v-if="selectedTransport">ID: {{ selectedTransport.id }}</span>
+        </div>
 
         <!-- 선택 안 했을 때 -->
-        <div v-if="!selectedTransport" class="transport-details-placeholder">
+        <div v-if="!selectedTransport" class="placeholder-box">
           <p class="placeholder-text">운송 수단을 선택하여 상세 정보를 확인하세요.</p>
         </div>
 
         <!-- 선택 했을 때 -->
         <div v-else class="details-content">
-          <!-- 기본 정보(항상 표시) -->
-          <p><strong>아이콘:</strong> {{ selectedTransport.icon }}</p>
-          <p><strong>종류:</strong> {{ selectedTransport.name }}</p>
-          <p><strong>총 보유 차량:</strong> 0대</p>
-          <p><strong>연구 완료 여부:</strong> {{ selectedTransport.locked ? '아니오' : '예' }}</p>
+          <!-- 기본 정보 -->
+          <div class="kv">
+            <div class="kv-row">
+              <span class="k">아이콘</span>
+              <span class="v">{{ selectedTransport.icon }}</span>
+            </div>
+            <div class="kv-row">
+              <span class="k">종류</span>
+              <span class="v">{{ selectedTransport.name }}</span>
+            </div>
+            <div class="kv-row">
+              <span class="k">총 보유</span>
+              <span class="v">0대</span>
+            </div>
+            <div class="kv-row">
+              <span class="k">연구 완료</span>
+              <span class="v">{{ selectedTransport.locked ? '아니오' : '예' }}</span>
+            </div>
+          </div>
 
           <hr class="divider" />
 
-          <!-- 프리뷰 시스템 잠금/오픈 -->
+          <!-- 프리뷰 잠금/오픈 -->
           <div v-if="!previewStarterFleetUnlocked" class="lock-box">
-            <p class="lock-title">🔒 기본차량 프리뷰 시스템 잠김</p>
-            <p class="lock-desc">
+            <p class="box-title">🔒 기본차량 프리뷰 잠김</p>
+            <p class="box-desc">
               기본차량 자동운행(프리뷰) 연구를 완료하면 이 영역에서
               <strong>초기 운행 데이터</strong>가 표시됩니다.
             </p>
-            <p class="lock-desc subtle">
-              (현재는 연구 파트만 서비스 중이므로, 프리뷰/차량/재정 등은 단계적으로 오픈됩니다.)
+            <p class="box-desc subtle">
+              현재는 연구 파트만 서비스 중이므로, 프리뷰/차량/재정 등은 단계적으로 오픈됩니다.
             </p>
           </div>
 
           <div v-else class="preview-box">
-            <p class="preview-title">✅ 기본차량 프리뷰 활성화</p>
-            <p class="preview-desc">
-              현재는 표시용 레이아웃만 준비되어 있습니다. 다음 단계에서
+            <p class="box-title">✅ 기본차량 프리뷰 활성화</p>
+            <p class="box-desc">
+              현재는 레이아웃만 준비되어 있습니다. 다음 단계에서
               <strong>운행중/남은시간/재롤링</strong>을 연결합니다.
             </p>
 
-            <!-- 이후 실제 데이터 들어갈 자리 -->
             <div class="preview-placeholder">
               <p class="placeholder-text">초기 운행 데이터 영역 (준비중)</p>
             </div>
           </div>
 
-          <p class="details-placeholder">
+          <p class="details-footnote">
             선택된 {{ selectedTransport.name }}의 운영 통계 및 관리 옵션이 이곳에 표시됩니다.
           </p>
         </div>
-      </div>
+      </section>
 
-      <!-- 3. 보유 자원 목록 -->
-      <div class="resource-container">
-        <h3 class="panel-heading">📦 보유 자원 📦</h3>
-        <p v-if="!financeUnlocked" class="placeholder-text">재정을 해금해주세요.</p>
-        <p v-else>현금: $10,000</p>
-      </div>
+      <!-- 3) 보유 자원 -->
+      <section class="panel resource-container">
+        <div class="panel-head">
+          <h3 class="panel-heading">📦 보유 자원</h3>
+          <span class="panel-meta">{{ financeUnlocked ? '활성' : '잠김' }}</span>
+        </div>
+
+        <div class="placeholder-box" v-if="!financeUnlocked">
+          <p class="placeholder-text">재정을 해금해주세요.</p>
+        </div>
+
+        <div v-else class="resource-content">
+          <div class="kv">
+            <div class="kv-row">
+              <span class="k">현금</span>
+              <span class="v">$10,000</span>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
-  </div>
+  </aside>
 </template>
 
 <script setup>
@@ -94,7 +127,7 @@ import { useTransportUnlocks } from '@/composables/useTransportUnlocks';
 import { useVehicles } from '@/composables/useVehicles';
 import { useResearch } from '@/composables/useResearch';
 
-// ✅ 운송 목록/상태는 어댑터에서 가져온다 (연구 엔진 순수화 대응)
+// ✅ 운송 목록/상태는 어댑터에서 가져온다
 const {
   transportTypes,
   unlockedTransports: unlockedRef,
@@ -120,49 +153,252 @@ const selectedTransport = computed(() => {
 });
 </script>
 
-<style scoped lang="scss">
-@use '../styles/TheLeftArea.scss';
+<style scoped>
+/* =========================================================
+   LEFT AREA – Desktop control panel
+   - 3 panels stacked
+   - internal scroll per panel (details/list)
+   - scrollbars hidden
+   ========================================================= */
 
-/* 이 파일만으로 잠금/프리뷰 박스가 깔끔하게 보이도록 최소 스타일 보강 */
+/* wrapper */
+.left-area {
+  background: var(--area-bg-color-left);
+  padding: 10px;
+  box-sizing: border-box;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+/* panel stack */
+.left-panel-wrapper {
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* panels */
+.panel {
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.18);
+  border-radius: 12px;
+  padding: 10px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* panel header */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 2px 8px 2px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 8px;
+}
+
+.panel-heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  opacity: 0.95;
+}
+
+.panel-meta {
+  font-size: 11px;
+  opacity: 0.65;
+  white-space: nowrap;
+}
+
+/* allocate heights (desktop) */
+.transport-list-container { flex: 0 0 220px; }
+.transport-details-container { flex: 1 1 auto; }
+.resource-container { flex: 0 0 120px; }
+
+/* scroll region helpers */
+.transport-list,
+.details-content {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.transport-list::-webkit-scrollbar,
+.details-content::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* transport list */
+.transport-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.transport-item {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.03);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.transport-item:hover {
+  background: rgba(255,255,255,0.05);
+  transform: translateY(-1px);
+}
+
+.transport-item.active {
+  border-color: rgba(120, 255, 120, 0.22);
+  background: rgba(120, 255, 120, 0.10);
+}
+
+.transport-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.18);
+}
+
+.transport-name {
+  font-weight: 800;
+  font-size: 12px;
+  opacity: 0.95;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.transport-count {
+  font-size: 11px;
+  opacity: 0.70;
+  white-space: nowrap;
+}
+
+/* placeholders */
+.placeholder-box {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.02);
+}
+
+.placeholder-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.85;
+}
+
+/* detail kv */
+.kv {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+}
+.k {
+  font-size: 11px;
+  opacity: 0.70;
+}
+.v {
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0.95;
+}
+
+/* divider */
 .divider {
   margin: 12px 0;
   border: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  border-top: 1px solid rgba(255,255,255,0.10);
 }
 
+/* lock/preview boxes */
 .lock-box,
 .preview-box {
   padding: 12px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255,255,255,0.10);
   background: rgba(0, 0, 0, 0.18);
   margin-bottom: 10px;
 }
 
-.lock-title,
-.preview-title {
-  margin: 0 0 6px 0;
-  font-weight: 800;
-  font-size: 13px;
+.preview-box {
+  border-color: rgba(120, 255, 120, 0.18);
+  background: rgba(120, 255, 120, 0.06);
 }
 
-.lock-desc,
-.preview-desc {
+.box-title {
+  margin: 0 0 6px 0;
+  font-weight: 900;
+  font-size: 12px;
+  opacity: 0.95;
+}
+
+.box-desc {
   margin: 0 0 6px 0;
   font-size: 12px;
-  opacity: 0.9;
+  opacity: 0.88;
   line-height: 1.35;
 }
-
-.lock-desc.subtle {
-  opacity: 0.75;
-}
+.box-desc.subtle { opacity: 0.70; }
 
 .preview-placeholder {
   margin-top: 10px;
   padding: 12px;
   border-radius: 12px;
-  border: 1px dashed rgba(255, 255, 255, 0.16);
-  opacity: 0.9;
+  border: 1px dashed rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.02);
+}
+
+.details-footnote {
+  margin: 8px 0 0 0;
+  font-size: 12px;
+  opacity: 0.75;
+  line-height: 1.35;
+}
+
+/* resource */
+.resource-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* small screens (desktop narrow) */
+@media (max-width: 1100px) {
+  .transport-list-container { flex-basis: 200px; }
+  .resource-container { flex-basis: 110px; }
 }
 </style>

@@ -1,3 +1,4 @@
+<!-- src/views/settings/DataManagerView.vue -->
 <template>
   <DataManagerPanel />
 </template>

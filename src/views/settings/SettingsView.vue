@@ -1,3 +1,4 @@
+<!-- src/views/settings/SettingsView.vue -->
 <template>
   <SettingsShell>
     <template #nav>

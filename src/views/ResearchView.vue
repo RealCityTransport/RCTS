@@ -521,27 +521,35 @@ function debugDump() {
 </script>
 
 <style scoped>
+/* =========================================================
+   ResearchView Layout Refinement
+   - Page owns scroll (no max-height hacks)
+   - Mobile: cards stack, buttons full width
+   - Scrollbar hidden but scroll works
+   ========================================================= */
+
 /* 스크롤은 유지하되 스크롤바 제거(숨김) */
 .research-page {
   width: 100%;
   height: 100%;
   min-height: 0;
+
+  /* ✅ 스크롤 주체는 페이지 */
   overflow-y: auto;
   overflow-x: hidden;
-  max-height: calc(100vh - 120px);
+
+  /* ✅ max-height 제거: 100vh 계산으로 흔들리는 문제 제거 */
   padding: 18px;
   box-sizing: border-box;
+
   display: flex;
   flex-direction: column;
   gap: 14px;
 
-  -ms-overflow-style: none;   /* IE/Edge legacy */
-  scrollbar-width: none;      /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
-.research-page::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
+.research-page::-webkit-scrollbar { width: 0; height: 0; }
 
 .research-header {
   padding: 14px 14px;
@@ -550,8 +558,8 @@ function debugDump() {
   background: rgba(255,255,255,0.04);
 }
 
-.title { margin: 0 0 6px 0; font-size: 20px; font-weight: 700; }
-.desc { margin: 0 0 10px 0; opacity: 0.85; font-size: 13px; }
+.title { margin: 0 0 6px 0; font-size: 20px; font-weight: 800; }
+.desc  { margin: 0 0 10px 0; opacity: 0.85; font-size: 13px; line-height: 1.35; }
 
 .status-row { display: flex; flex-wrap: wrap; gap: 8px; }
 
@@ -563,7 +571,7 @@ function debugDump() {
   background: rgba(0,0,0,0.25);
   opacity: 0.95;
 }
-.badge.ok { border-color: rgba(120, 255, 120, 0.25); }
+.badge.ok   { border-color: rgba(120, 255, 120, 0.25); }
 .badge.warn { border-color: rgba(255, 190, 80, 0.25); }
 
 .panel {
@@ -581,8 +589,8 @@ function debugDump() {
   margin-bottom: 8px;
 }
 
-.panel-title { margin: 0; font-size: 16px; font-weight: 700; }
-.panel-desc { margin: 8px 0 0 0; opacity: 0.85; font-size: 13px; line-height: 1.35; }
+.panel-title { margin: 0; font-size: 16px; font-weight: 800; }
+.panel-desc  { margin: 8px 0 0 0; opacity: 0.85; font-size: 13px; line-height: 1.35; }
 
 .panel-actions { display: flex; gap: 8px; }
 
@@ -593,6 +601,7 @@ function debugDump() {
   gap: 10px;
 }
 
+/* 카드 (데스크톱) */
 .card {
   display: grid;
   grid-template-columns: 44px 1fr 120px;
@@ -621,7 +630,7 @@ function debugDump() {
   justify-content: space-between;
   gap: 10px;
 }
-.name { font-weight: 800; }
+.name { font-weight: 900; }
 
 .meta {
   display: flex;
@@ -708,7 +717,7 @@ function debugDump() {
   width: 100%;
   border-color: rgba(120, 255, 120, 0.25);
   background: rgba(120, 255, 120, 0.12);
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .empty {
@@ -722,5 +731,62 @@ function debugDump() {
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* =========================================================
+   Mobile optimization
+   ========================================================= */
+@media (max-width: 900px) {
+  .research-page {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  /* 헤더/배지: 버튼처럼 길어지는 배지 줄 정리 */
+  .status-row { gap: 6px; }
+
+  /* 패널 헤더: 제목/버튼을 위아래로 */
+  .panel-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .panel-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .panel-actions .btn {
+    flex: 1;
+  }
+
+  /* 카드: 모바일에서 1열 스택 + 버튼은 아래로 */
+  .card {
+    grid-template-columns: 44px 1fr;
+    align-items: start;
+  }
+  .card-right {
+    grid-column: 1 / -1;
+  }
+  .card-right .btn {
+    width: 100%;
+  }
+
+  /* 이름/메타: 세로 정렬로 가독성 */
+  .name-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .meta {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 520px) {
+  .research-page { padding: 12px; }
+  .panel { padding: 12px; }
+
+  .title { font-size: 18px; }
+  .panel-title { font-size: 15px; }
+
+  .badge { font-size: 11px; padding: 5px 8px; }
 }
 </style>
