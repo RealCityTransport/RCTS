@@ -7,20 +7,21 @@ import VehiclesView from '../views/VehiclesView.vue';
 import LineView from '../views/LineView.vue'; // 노선 (새로 추가)
 import ConstructionView from '../views/ConstructionView.vue'; // 건설 (새로 추가)
 import FinanceView from '../views/FinanceView.vue'; // 재정 (새로 추가)
+import SettingsView from '../views/settings/SettingsView.vue';
+import DataManagerView from '../views/settings/DataManagerView.vue';
 
 
 const routes = [
   {
     path: '/',
-    redirect: '/home/research', // 🔥 루트 경로로 오면 /home/research로 바로 리다이렉트 🔥
+    redirect: { name: 'Research' }, // 🔥 루트 경로로 오면 /home/research로 바로 리다이렉트 🔥
   },
   {
     path: '/home',
-    name: 'Home',
     component: HomeView, // HomeView가 최상위 레이아웃을 담당
     children: [ // 중첩 라우트 정의
       // /home 경로에 바로 접속했을 때 /home/research로 리다이렉트
-      { path: '', redirect: 'research' }, // 🔥 /home으로 들어오면 자동으로 /home/research로 🔥
+      { path: '', redirect: { name: 'Research' } }, // 🔥 /home으로 들어오면 자동으로 /home/research로 🔥
       {
         path: 'research', // /home/research
         name: 'Research',
@@ -46,6 +47,14 @@ const routes = [
         name: 'Finance',
         component: FinanceView,
       },
+      {
+        path: 'settings',
+        component: SettingsView,
+        children: [
+          { path: '', redirect: { name: 'DataManager' } },   // ✅ 이게 핵심
+          { path: 'data', name: 'DataManager', component: DataManagerView },
+       ],
+   },
     ],
   },
   // 다른 최상위 라우트들 (예: /login, /settings 등)은 여기에 추가

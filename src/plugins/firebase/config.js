@@ -1,6 +1,7 @@
 // src/plugins/firebase/config.js
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
 // Firebase 구성 객체 (환경 변수 사용 권장)
 const firebaseConfig = {
@@ -20,4 +21,7 @@ const app = initializeApp(firebaseConfig);
 // 인증 서비스 가져오기
 const auth = getAuth(app);
 
-export { auth };
+// 🔥 Firestore 서비스 가져오기
+ const db = getFirestore(app);
+
+export { auth, db };

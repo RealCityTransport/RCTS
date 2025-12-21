@@ -7,7 +7,7 @@
          <h3 class="panel-heading">🚚 운송 수단 🚚</h3>
          <ul class="transport-list">
            <li 
-             v-for="transport in getUnlockedTransports()" 
+             v-for="transport in getUnlockedTransports"
              :key="transport.id" 
              class="transport-item"
              :class="{ active: selectedTransportId === transport.id }"

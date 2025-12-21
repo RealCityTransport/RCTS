@@ -1,9 +1,8 @@
 /* src/styles/global.scss */
 /* 이 파일은 애플리케이션 전체에 적용되는 전역 스타일과 CSS/SCSS 변수를 정의합니다. */
 
-// 🔥 리셋 CSS 임포트 (전역적으로 가장 먼저 적용되어야 합니다)
 @use "sass:color" as s_color;
-
+// 🔥 리셋 CSS 임포트 (전역적으로 가장 먼저 적용되어야 합니다)
 @import url('https://cdn.jsdelivr.net/npm/reset-css@5.0.1/reset.min.css');
 
 // 🔥 폰트 CDN 링크 (로컬 파일 대신 CDN 사용을 강력히 권장합니다. 없으면 404 에러)

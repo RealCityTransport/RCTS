@@ -10,6 +10,7 @@
           <li><router-link to="/home/line">노선</router-link></li>
           <li><router-link to="/home/construction">건설</router-link></li>
           <li><router-link to="/home/finance">재정</router-link></li>
+          <li><router-link to="/home/settings">설정</router-link></li>
         </ul>
       </nav>
 
