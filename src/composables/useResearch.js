@@ -19,6 +19,28 @@ function nowKstMs() {
   return isKstReady.value ? kstDate.value.getTime() : Date.now();
 }
 
+// =======================================================
+// ✅ 긴급 잠금(실서비스 핫픽스)
+// - catalog.js에서 enabled:false로 내려둔 5개 연구
+// - "새로 시작"뿐 아니라, "진행중/예약중"도 즉시 취소
+// =======================================================
+const HARD_LOCK_RESEARCH_IDS = new Set([
+  'sys_unlock_vehicle',
+  'sys_unlock_route',
+  'sys_unlock_construction',
+  'sys_unlock_finance',
+  'sys_unlock_city',
+]);
+
+function isHardLockedResearchId(id) {
+  if (!id) return false;
+  if (!HARD_LOCK_RESEARCH_IDS.has(id)) return false;
+
+  const def = getResearchDef(id);
+  // 카탈로그에서 enabled:false로 내려둔 경우만 최종 잠금
+  return def?.enabled === false;
+}
+
 // ===== 전역 상태(싱글톤) =====
 const firstUnlockTransportId = ref(null);
 
@@ -323,7 +345,6 @@ function recomputeEffects() {
       }
 
       // ✅ 예약 레벨 효과
-      // - level: 1(기본 1칸) / 2(3칸) / 3(5칸)
       if (eff.type === 'QUEUE_RESERVE_LEVEL') {
         const lv = Number(eff.level || 1);
         if (Number.isFinite(lv)) reserveLv = Math.max(reserveLv, lv);
@@ -568,6 +589,9 @@ function setFirstUnlockTransport(transportId) {
 }
 
 function startResearchInternal(researchId) {
+  // ✅ 긴급 잠금: 엔진 레벨에서 시작 자체 차단
+  if (isHardLockedResearchId(researchId)) return { ok: false, reason: 'COMING_SOON' };
+
   const def = getResearchDef(researchId);
   if (!def) return { ok: false, reason: 'UNKNOWN_RESEARCH' };
 
@@ -612,6 +636,9 @@ function startResearchInternal(researchId) {
  * - 비어있으면 즉시 시작
  */
 function startResearch(researchId) {
+  // ✅ 긴급 잠금: UI/상태 꼬여도 엔진에서 차단
+  if (isHardLockedResearchId(researchId)) return { ok: false, reason: 'COMING_SOON' };
+
   const limit = queueLimitByLevel(queueReserveLevel.value);
 
   if (isCompleted(researchId)) return { ok: false, reason: 'ALREADY_DONE' };
@@ -732,6 +759,30 @@ function clearUserState() {
 
   recomputeEffects();
 }
+
+// ✅ 긴급 잠금: 진행/예약 중인 대상 연구를 즉시 정리
+watchEffect(() => {
+  if (isHydrating) return;
+
+  let changed = false;
+
+  // 진행중인 연구가 잠금 대상이면 즉시 취소
+  if (activeResearch.value?.id && isHardLockedResearchId(activeResearch.value.id)) {
+    activeResearch.value = null;
+    changed = true;
+  }
+
+  // 예약 큐에서 잠금 대상 제거
+  if (Array.isArray(queuedResearchIds.value) && queuedResearchIds.value.length > 0) {
+    const filtered = queuedResearchIds.value.filter((id) => !isHardLockedResearchId(id));
+    if (filtered.length !== queuedResearchIds.value.length) {
+      queuedResearchIds.value = filtered;
+      changed = true;
+    }
+  }
+
+  if (changed) scheduleSave();
+});
 
 // ✅ 연구 완료 판정 + 예약 자동 실행(큐)
 watchEffect(() => {
