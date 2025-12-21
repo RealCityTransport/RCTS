@@ -39,12 +39,12 @@ export const researchCatalog = [
     domain: 'vehicle',
     timePolicy: 'FIXED',
     title: '차량 시스템 개방',
-    desc: '차량 관리/확장 기능의 기반 시스템을 개방합니다. (고정 8시간, 효율 미적용)',
+    desc: '현재 잠금 상태입니다. (추후 업데이트에서 오픈)',
     tier: 1,
     durationSec: DUR_SYSTEM_FIXED,
     requires: [],
     revealAfter: [],
-    enabled: true,
+    enabled: false, // ✅ 긴급 잠금
     effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'vehicle' }],
   },
   {
@@ -53,12 +53,12 @@ export const researchCatalog = [
     domain: 'route',
     timePolicy: 'FIXED',
     title: '노선 시스템 개방',
-    desc: '노선 확인/설계/운영 기능을 개방합니다. (고정 8시간, 효율 미적용)',
+    desc: '현재 잠금 상태입니다. (추후 업데이트에서 오픈)',
     tier: 1,
     durationSec: DUR_SYSTEM_FIXED,
     requires: [],
     revealAfter: [],
-    enabled: true,
+    enabled: false, // ✅ 긴급 잠금
     effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'route' }],
   },
   {
@@ -67,12 +67,12 @@ export const researchCatalog = [
     domain: 'construction',
     timePolicy: 'FIXED',
     title: '건설 시스템 개방',
-    desc: '허브/터미널/인프라 건설 기반 시스템을 개방합니다. (고정 8시간, 효율 미적용)',
+    desc: '현재 잠금 상태입니다. (추후 업데이트에서 오픈)',
     tier: 1,
     durationSec: DUR_SYSTEM_FIXED,
     requires: [],
     revealAfter: [],
-    enabled: true,
+    enabled: false, // ✅ 긴급 잠금
     effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'construction' }],
   },
   {
@@ -81,12 +81,12 @@ export const researchCatalog = [
     domain: 'finance',
     timePolicy: 'FIXED',
     title: '재정(자금) 시스템 개방',
-    desc: '수익/비용/정산 등 재정 시스템을 개방합니다. (고정 8시간, 효율 미적용)',
+    desc: '현재 잠금 상태입니다. (추후 업데이트에서 오픈)',
     tier: 1,
     durationSec: DUR_SYSTEM_FIXED,
     requires: [],
     revealAfter: [],
-    enabled: true,
+    enabled: false, // ✅ 긴급 잠금
     effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'finance' }],
   },
   {
@@ -95,12 +95,12 @@ export const researchCatalog = [
     domain: 'city',
     timePolicy: 'FIXED',
     title: '도시 시스템 개방',
-    desc: '도시/권역 확장 및 도시 스케일 연구를 개방합니다. (고정 8시간, 효율 미적용)',
+    desc: '현재 잠금 상태입니다. (추후 업데이트에서 오픈)',
     tier: 1,
     durationSec: DUR_SYSTEM_FIXED,
     requires: [],
     revealAfter: [],
-    enabled: true,
+    enabled: false, // ✅ 긴급 잠금
     effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'city' }],
   },
 
@@ -132,15 +132,11 @@ export const researchCatalog = [
 
     enabled: true,
     effects: [
-      // 엔진 처리 예정: 프리뷰 플릿 활성화(버스/트럭/철도)
-      // - 차량/노선 시스템 미해금 상태에서도 "운행중" 상태만 표시 가능하도록 설계
       {
         type: 'UNLOCK_STARTER_FLEET_PREVIEW',
         transports: ['bus', 'truck', 'rail'],
-        // “랜덤 1회 운행시간” 룰의 파라미터(후속 구현용)
         runTimeMinSec: 30 * 60,   // 30분
         runTimeMaxSec: 2 * HOUR,  // 2시간
-        // 각 운송수단당 기본 1대(후속 구현에서 확장 가능)
         countPerTransport: 1,
       },
     ],
