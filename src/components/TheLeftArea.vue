@@ -121,7 +121,7 @@
                 </template>
 
                 <!-- =========================
-                     ✅ 자동화 연구 미완료: 0s 후 대기 + 수동 버튼
+                     ✅ 자동화 연구 미완료: 대기 + 수동 버튼
                      ========================= -->
                 <template v-else>
                   <div class="preview-right" v-if="statusOf(r.transportId) === 'running'">
@@ -130,7 +130,7 @@
                   </div>
 
                   <div class="preview-right" v-else>
-                    <div class="preview-idle-text">0s 후 대기</div>
+                    <div class="preview-idle-text">대기</div>
                     <button
                       class="preview-btn"
                       type="button"
