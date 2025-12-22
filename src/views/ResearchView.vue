@@ -65,7 +65,11 @@
 
             <div class="progress-area">
               <div class="progress-bar">
-                <div class="progress-fill" :style="{ width: researchProgress(activeResearch.id) + '%' }"></div>
+                <!-- ✅ 자연스럽게: width 대신 scaleX(Transform) 사용 -->
+                <div
+                  class="progress-fill"
+                  :style="{ transform: `scaleX(${Math.max(0, Math.min(100, researchProgress(activeResearch.id))) / 100})` }"
+                ></div>
               </div>
               <div class="progress-info">
                 <span>{{ researchProgress(activeResearch.id).toFixed(1) }}%</span>
@@ -259,9 +263,6 @@ function isFixedOf(researchId) {
   return isFixedDef(defOf(researchId));
 }
 
-/**
- * ✅ 데이터 연동 표기(정확한 시간 표기)
- */
 function formatDurationHuman(sec) {
   const s = Math.max(0, Number(sec || 0));
   if (!s) return '즉시';
@@ -320,7 +321,7 @@ const firstUnlockList = computed(() => {
   return list.map(def => toFirstUnlockItem(def, candidatesSet)).filter(Boolean);
 });
 
-// ---- 핵심: available / locked 를 "한 리스트"로 정리 + 가나다 정렬 ----
+// ---- available / locked 정렬 ----
 function koSortByTitle(a, b) {
   const ta = String(a?.title ?? '').trim();
   const tb = String(b?.title ?? '').trim();
@@ -366,7 +367,7 @@ const lockedSorted = computed(() => {
   return list;
 });
 
-// ---- 아이콘 매핑(가독성용) ----
+// ---- 아이콘 매핑 ----
 function iconOf(r) {
   const t = String(r?.type || '');
   if (t === 'SYSTEM') return '🧩';
@@ -546,6 +547,7 @@ function debugDump() {
   background: rgba(255, 190, 80, 0.10);
 }
 
+/* ✅ 여기만 핵심 변경: 더 부드러운 진행바 */
 .progress-area { margin-top: 10px; }
 .progress-bar {
   width: 100%;
@@ -555,7 +557,19 @@ function debugDump() {
   overflow: hidden;
   border: 1px solid rgba(255,255,255,0.10);
 }
-.progress-fill { height: 100%; background: rgba(120, 255, 120, 0.35); width: 0%; transition: width 0.25s ease; }
+.progress-fill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: rgba(120, 255, 120, 0.35);
+
+  /* ✅ 1초 갱신에도 끊김 덜 느끼게: tick보다 살짝 긴 시간 */
+  transition: transform 0.95s linear;
+
+  /* ✅ 렌더링 안정 */
+  will-change: transform;
+}
 .progress-info {
   margin-top: 6px;
   display: flex;

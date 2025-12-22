@@ -43,7 +43,7 @@ function normalizeRun(transportId, r) {
   const base = {
     transportId,
     // ✅ 상태 정의:
-    // idle   : (초기/미시작) - 현재는 사실상 거의 안 씀(기존 호환용)
+    // idle   : (초기/미시작) - 기존 호환용
     // running: 운행중(시간 흐름)
     // ready  : 운행 완료 후 0s에서 대기(수동 시작 대기)
     status: 'idle', // running | idle | ready
@@ -71,21 +71,26 @@ function normalizeRun(transportId, r) {
 
 export function usePreviewRuns() {
   const research = useResearch();
-  const { unlockedTransports } = useTransportUnlocks();
+  // ✅ transportTypes를 가져와서 previewActive를 “단일 진실”로 사용
+  const { transportTypes } = useTransportUnlocks();
   const { formatRemainMs } = useTimeFormat();
 
-  // ✅ 프리뷰 연구 완료 여부
+  // ✅ 프리뷰 연구 완료 여부(기존 유지)
   const previewUnlocked = computed(() =>
     !!research.completedIds.value?.has?.('sys_preview_starter_vehicles')
   );
 
-  // ✅ 자동화 연구 완료 여부
+  // ✅ 자동화 연구 완료 여부(기존 유지)
   const autoAssignUnlocked = computed(() =>
     !!research.completedIds.value?.has?.('sys_preview_auto_assign')
   );
 
-  // ✅ 현재 해금된 운송수단 ID set
-  const unlockedIds = computed(() => new Set((unlockedTransports.value || []).map((x) => x.id)));
+  // ✅ "프리뷰에 실제로 표시/운행할 대상" = previewActive인 운송수단만
+  // - previewActive는 useTransportUnlocks에서 (프리뷰 연구완료 + 해금 + 대상)까지 다 반영됨
+  const previewActiveIds = computed(() => {
+    const list = transportTypes.value || [];
+    return new Set(list.filter((t) => t?.previewActive).map((t) => t.id));
+  });
 
   // runs state
   const runs = ref({});
@@ -106,8 +111,6 @@ export function usePreviewRuns() {
 
     for (const [tid, r] of Object.entries(cur)) {
       const nr = normalizeRun(tid, r);
-
-      // ✅ 기존 데이터에 ready가 없거나 status/routeName 이상치면 정리
       if (!r?.status || r.status !== nr.status || r.routeName !== nr.routeName) {
         cur[tid] = nr;
         changed = true;
@@ -135,16 +138,16 @@ export function usePreviewRuns() {
     };
   }
 
-  // ---- 프리뷰 활성화 시: 해금된 bus/truck/rail에 대해 초기 운행 1회 자동 생성 ----
+  // ---- 프리뷰 활성화 시: "previewActive" 대상에 대해서만 초기 운행 1회 자동 생성 ----
   watchEffect(() => {
     if (!previewUnlocked.value) return;
 
-    const ids = unlockedIds.value;
-    const target = ['bus', 'truck', 'rail'].filter((id) => ids.has(id));
+    const ids = previewActiveIds.value; // ✅ 단일 진실 소스
+    if (!ids || ids.size === 0) return;
 
     let changed = false;
 
-    for (const tid of target) {
+    for (const tid of ids) {
       const existing = runs.value?.[tid];
       if (existing) continue;
 
@@ -162,18 +165,21 @@ export function usePreviewRuns() {
     if (timer) return;
 
     timer = setInterval(() => {
-      // ✅ 초당 감소(리렌더) 핵심
       clockMs.value = Date.now();
 
       if (!previewUnlocked.value) return;
 
       const now = clockMs.value;
+      const activeSet = previewActiveIds.value; // ✅ 현재 활성 대상
       let changed = false;
 
       for (const tid of Object.keys(runs.value || {})) {
+        // ✅ 현재 정책상 프리뷰 대상이 아니면 “운행 로직”도 적용하지 않음
+        // (로컬에 남아있어도 UI/운영에서 제외)
+        if (!activeSet.has(tid)) continue;
+
         const r = normalizeRun(tid, runs.value[tid]);
 
-        // ✅ running만 종료 체크
         if (r.status !== 'running') continue;
 
         const end = Number(r.endsAtMs || 0);
@@ -181,17 +187,11 @@ export function usePreviewRuns() {
 
         if (now >= end) {
           if (autoAssignUnlocked.value) {
-            // ✅ 자동화 연구 완료 후: 즉시 다음 운행 자동 개시(끊김 없이 계속)
             startRunNow(tid, now);
           } else {
-            // ✅ 자동화 연구 전: "0s 후 대기" 상태로 고정(시간 멈춤)
-            //    - 다음 시간 세팅 금지
-            //    - 수동 버튼이 눌릴 때만 startRunNow()
             runs.value[tid] = {
               ...r,
               status: 'ready',
-              // ✅ 완료 대기 상태에서는 시간 계산을 하지 않으므로 값은 굳이 필요 없지만,
-              //    디버그/정합성 관점에서 종료시각은 유지해도 됨.
               startedAtMs: null,
               endsAtMs: end,
               durationSec: r.durationSec || 0,
@@ -225,12 +225,12 @@ export function usePreviewRuns() {
   });
 
   function remainingMsOf(transportId) {
-    // ✅ clockMs를 읽어서 템플릿이 매초 리렌더 되게 함
     const tick = clockMs.value;
 
-    const r = normalizeRun(transportId, runs.value?.[transportId]);
+    // ✅ 정책상 비활성 대상이면 남은시간은 0으로 취급(표시 안 하게 됨)
+    if (!previewActiveIds.value.has(transportId)) return 0;
 
-    // ✅ 핵심: running일 때만 시간이 흐름. ready/idle은 무조건 0ms
+    const r = normalizeRun(transportId, runs.value?.[transportId]);
     if (r.status !== 'running') return 0;
 
     const end = Number(r.endsAtMs || 0);
@@ -244,6 +244,8 @@ export function usePreviewRuns() {
   }
 
   function statusOf(transportId) {
+    // ✅ 정책상 비활성 대상이면 idle로 취급(표시/버튼 로직 안정화)
+    if (!previewActiveIds.value.has(transportId)) return 'idle';
     const r = normalizeRun(transportId, runs.value?.[transportId]);
     return r.status;
   }
@@ -251,24 +253,28 @@ export function usePreviewRuns() {
   function startManualRun(transportId) {
     if (!previewUnlocked.value) return false;
 
-    // ✅ 자동화 연구가 끝나면 수동 운행은 금지(버튼도 안 보이게 할 거지만, 로직도 잠금)
+    // ✅ 비활성 대상(해금 안됨/대상 아님)은 수동 시작 금지
+    if (!previewActiveIds.value.has(transportId)) return false;
+
     if (autoAssignUnlocked.value) return false;
 
     const r = normalizeRun(transportId, runs.value?.[transportId]);
-
-    // ✅ 요구사항: 자동화 연구 전에는 "운행 완료 후 ready에서"만 수동 시작
     if (r.status !== 'ready') return false;
 
     startRunNow(transportId, Date.now());
     saveLocal({ runs: runs.value });
 
-    // 버튼 누른 즉시 화면 갱신
     clockMs.value = Date.now();
     return true;
   }
 
+  // ✅ UI에 내보내는 리스트 자체를 “활성 대상만” 필터링
   const runList = computed(() => {
-    const arr = Object.values(runs.value || {}).map((r) => normalizeRun(r.transportId, r));
+    const activeSet = previewActiveIds.value;
+    const arr = Object.values(runs.value || {})
+      .map((r) => normalizeRun(r.transportId, r))
+      .filter((r) => activeSet.has(r.transportId));
+
     return arr.sort((a, b) => String(a.transportId).localeCompare(String(b.transportId)));
   });
 

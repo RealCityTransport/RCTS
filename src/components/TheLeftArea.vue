@@ -66,7 +66,7 @@
 
           <hr class="divider" />
 
-          <!-- ✅ 프리뷰 잠금/오픈: 연구 완료로만 -->
+          <!-- ✅ 프리뷰 잠금/오픈: useTransportUnlocks의 판정으로 통일 -->
           <div v-if="!previewStarterFleetUnlocked" class="lock-box">
             <p class="box-title">🔒 프리뷰 차량 운행 잠김</p>
             <p class="box-desc">
@@ -77,9 +77,9 @@
               (테스트도 연구 완료 후에만 활성화됩니다.)
             </p>
 
-            <div v-if="!hasAnyStarterTransportUnlocked" class="preview-placeholder">
+            <div v-if="!hasAnyPreviewCandidateUnlocked" class="preview-placeholder">
               <p class="placeholder-text">
-                참고: 버스/트럭/철도 중 하나라도 해금하면 프리뷰 연구를 진행할 수 있어요.
+                참고: 프리뷰 대상 운송수단 중 하나라도 해금하면 프리뷰 연구를 진행할 수 있어요.
               </p>
             </div>
           </div>
@@ -93,7 +93,9 @@
             </p>
 
             <div v-if="previewRunList.length === 0" class="preview-placeholder">
-              <p class="placeholder-text">프리뷰 운행 데이터가 없습니다. (해금된 운송수단 확인 필요)</p>
+              <p class="placeholder-text">
+                프리뷰 적용 가능한 해금 운송수단이 없습니다. (해금/프리뷰 대상 설정 확인)
+              </p>
             </div>
 
             <div v-else class="preview-data">
@@ -128,7 +130,6 @@
                   </div>
 
                   <div class="preview-right" v-else>
-                    <!-- ✅ 요구사항: 시간 다 흐르면 무조건 '0s 후 대기' -->
                     <div class="preview-idle-text">0s 후 대기</div>
                     <button
                       class="preview-btn"
@@ -180,20 +181,18 @@ import { useVehicles } from '@/composables/useVehicles';
 import { useResearch } from '@/composables/useResearch';
 import { usePreviewRuns } from '@/composables/usePreviewRuns';
 
-const { transportTypes, unlockedTransports: unlockedRef } = useTransportUnlocks();
 const research = useResearch();
+
+// ✅ useTransportUnlocks에서 “프리뷰 판정/설정”을 단일 소스로 사용
+const {
+  transportTypes,
+  unlockedTransports: unlockedRef,
+  previewStarterFleetUnlocked,
+  previewConfig,
+} = useTransportUnlocks();
 
 const financeUnlocked = computed(() => !!research.completedIds.value?.has?.('sys_unlock_finance'));
 const previewFinanceUnlocked = computed(() => !!research.completedIds.value?.has?.('sys_unlock_finance'));
-
-const previewStarterFleetUnlocked = computed(() => {
-  return !!research.completedIds.value?.has?.('sys_preview_starter_vehicles');
-});
-
-const hasAnyStarterTransportUnlocked = computed(() => {
-  const ids = new Set((unlockedRef.value || []).map((x) => x.id));
-  return ids.has('bus') || ids.has('truck') || ids.has('rail');
-});
 
 const { selectedTransportId, setSelectedTransportId } = useVehicles();
 const unlockedTransports = computed(() => unlockedRef.value || []);
@@ -201,6 +200,20 @@ const unlockedTransports = computed(() => unlockedRef.value || []);
 const selectedTransport = computed(() => {
   if (!selectedTransportId.value) return null;
   return (transportTypes.value || []).find((t) => t.id === selectedTransportId.value) || null;
+});
+
+// ✅ 프리뷰 대상(연구 effect transports) 중 하나라도 해금되어 있는지 힌트용
+const hasAnyPreviewCandidateUnlocked = computed(() => {
+  const unlockedIds = new Set((unlockedRef.value || []).map((x) => x.id));
+  const cfg = previewConfig.value;
+
+  // previewConfig가 없거나 transports가 비어있으면(설정 미정/구버전) 기본 후보로 처리
+  const candidates =
+    cfg && Array.isArray(cfg.transports) && cfg.transports.length > 0
+      ? cfg.transports
+      : ['bus', 'truck', 'rail'];
+
+  return candidates.some((id) => unlockedIds.has(id));
 });
 
 // ✅ 프리뷰 운행 데이터
@@ -219,7 +232,7 @@ function transportNameOf(id) {
 </script>
 
 <style scoped>
-/* 기존 스타일 그대로 + 프리뷰 데이터 표시만 추가 */
+/* (오빠 원본 스타일 그대로) */
 
 .left-area {
   background: var(--area-bg-color-left);
@@ -414,7 +427,6 @@ function transportNameOf(id) {
 
 .preview-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 
-/* running */
 .preview-pill {
   font-size: 11px;
   padding: 3px 8px;
@@ -425,7 +437,6 @@ function transportNameOf(id) {
 }
 .preview-remain { font-size: 12px; font-weight: 900; opacity: 0.95; }
 
-/* idle/ready */
 .preview-idle-text{
   font-size: 12px;
   font-weight: 900;
