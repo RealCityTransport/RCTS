@@ -103,22 +103,42 @@
                   <div class="preview-sub">{{ r.routeName }}</div>
                 </div>
 
-                <!-- ✅ 상태 분기: running / idle -->
-                <div class="preview-right" v-if="statusOf(r.transportId) === 'running'">
-                  <div class="preview-pill">운행중</div>
-                  <div class="preview-remain mono">{{ remainingOf(r.transportId) }}</div>
-                </div>
+                <!-- =========================
+                     ✅ 자동화 연구 완료: 버튼 없음, 계속 흐르는 UI
+                     ========================= -->
+                <template v-if="autoAssignUnlocked">
+                  <div class="preview-right" v-if="statusOf(r.transportId) === 'running'">
+                    <div class="preview-pill">운행중</div>
+                    <div class="preview-remain mono">{{ remainingOf(r.transportId) }}</div>
+                  </div>
 
-                <div class="preview-right" v-else>
-                  <div class="preview-idle-text">운행대기</div>
-                  <button
-                    class="preview-btn"
-                    type="button"
-                    @click="startManualRun(r.transportId)"
-                  >
-                    수동 운행 시작
-                  </button>
-                </div>
+                  <div class="preview-right" v-else>
+                    <div class="preview-idle-text">자동 배정중</div>
+                    <div class="preview-remain mono">00:00</div>
+                  </div>
+                </template>
+
+                <!-- =========================
+                     ✅ 자동화 연구 미완료: 0s 후 대기 + 수동 버튼
+                     ========================= -->
+                <template v-else>
+                  <div class="preview-right" v-if="statusOf(r.transportId) === 'running'">
+                    <div class="preview-pill">운행중</div>
+                    <div class="preview-remain mono">{{ remainingOf(r.transportId) }}</div>
+                  </div>
+
+                  <div class="preview-right" v-else>
+                    <!-- ✅ 요구사항: 시간 다 흐르면 무조건 '0s 후 대기' -->
+                    <div class="preview-idle-text">0s 후 대기</div>
+                    <button
+                      class="preview-btn"
+                      type="button"
+                      @click="startManualRun(r.transportId)"
+                    >
+                      수동 운행 시작
+                    </button>
+                  </div>
+                </template>
               </div>
             </div>
           </div>
@@ -189,6 +209,7 @@ const {
   remainingOf,
   statusOf,
   startManualRun,
+  autoAssignUnlocked,
 } = usePreviewRuns();
 
 function transportNameOf(id) {
@@ -404,7 +425,7 @@ function transportNameOf(id) {
 }
 .preview-remain { font-size: 12px; font-weight: 900; opacity: 0.95; }
 
-/* idle */
+/* idle/ready */
 .preview-idle-text{
   font-size: 12px;
   font-weight: 900;
