@@ -5,6 +5,7 @@ import { db } from '@/plugins/firebase/config';
 import { useKstTime } from './useKstTime';
 
 import { researchCatalog, getResearchDef } from '@/data/research/catalog';
+import { useTimeFormat } from '@/composables/useTimeFormat';
 
 // 저장/자동저장 설정 (LocalStorage) — "설정"이므로 유지
 const LS_SAVE_ENABLED = 'rcts.research.saveEnabled';
@@ -37,37 +38,25 @@ function isHardLockedResearchId(id) {
   if (!HARD_LOCK_RESEARCH_IDS.has(id)) return false;
 
   const def = getResearchDef(id);
-  // 카탈로그에서 enabled:false로 내려둔 경우만 최종 잠금
   return def?.enabled === false;
 }
 
 // ===== 전역 상태(싱글톤) =====
 const firstUnlockTransportId = ref(null);
-
-// 완료 연구(로그인 시 Firebase로만 저장)
 const completedIds = ref(new Set());
-
-// 진행 중 연구(단일)
 const activeResearch = ref(null); // { id, startedAtMs, endsAtMs }
+const queuedResearchIds = ref([]);
 
-// ✅ 예약(대기열): 다중 큐
-const queuedResearchIds = ref([]); // string[]
-
-// 파생 효과 캐시
-const unlockedTransportTiers = ref({}); // { [transportId]: number } 최고 티어
+const unlockedTransportTiers = ref({});
 const incomeMultiplier = ref(1.0);
 
-// ✅ 연구 속도 효과
-const researchSpeedLevel = ref(0); // v2: 레벨1부터 5% 감산이므로 0부터
-const researchDurationMultiplier = ref(1.0); // durationSec에 곱해질 값 (작을수록 빠름)
+const researchSpeedLevel = ref(0);
+const researchDurationMultiplier = ref(1.0);
 
-// ✅ 예약 레벨 (기본 1개, Lv2=3개, Lv3=5개)
 const queueReserveLevel = ref(1);
 
-// ✅ 도시 스케일(향후 UI/게이트용)
-const cityScale = ref('NONE'); // NONE | REGION | CITY | COUNTRY | STATE | PLANET
+const cityScale = ref('NONE');
 
-// ✅ 기능 해금 상태(향후 시스템 게이트용)
 const unlockedFeatures = ref({
   vehicle: false,
   route: false,
@@ -123,7 +112,7 @@ function queueLimitByLevel(level) {
   const lv = Math.max(1, Math.min(3, Number(level || 1)));
   if (lv === 1) return 1;
   if (lv === 2) return 3;
-  return 5; // lv === 3
+  return 5;
 }
 
 // ===== 저장 토글 =====
@@ -203,7 +192,6 @@ function scheduleNextAutoSave() {
     autoSaveTimerId = null;
   }
 
-  // 자동저장은 로그인+로드완료에서만
   if (!autoSaveEnabled.value) return stopAutoSave();
   if (!saveEnabled.value) return stopAutoSave();
   if (!currentUid.value) return stopAutoSave();
@@ -280,18 +268,15 @@ function isTier1TransportUnlock(def) {
   );
 }
 
-// ✅ 기능 오픈(SYSTEM) 연구인지 판단(고정 8시간, 효율 미적용)
 function isSystemFixedResearch(def) {
   if (!def) return false;
   if (def.timePolicy === 'FIXED') return true;
   return def.type === 'SYSTEM';
 }
 
-// ✅ 연구 효율 적용 대상인지 판단
 function isScalableResearch(def) {
   if (!def) return false;
   if (def.timePolicy === 'SCALABLE') return true;
-  // 하위호환: timePolicy 미지정이면 기존처럼 효율 적용(단, SYSTEM은 제외)
   if (def.timePolicy == null) return !isSystemFixedResearch(def);
   return false;
 }
@@ -344,7 +329,6 @@ function recomputeEffects() {
         if (Number.isFinite(lv)) rsLevel = Math.max(rsLevel, lv);
       }
 
-      // ✅ 예약 레벨 효과
       if (eff.type === 'QUEUE_RESERVE_LEVEL') {
         const lv = Number(eff.level || 1);
         if (Number.isFinite(lv)) reserveLv = Math.max(reserveLv, lv);
@@ -369,7 +353,6 @@ function recomputeEffects() {
 
   researchSpeedLevel.value = rsLevel;
 
-  // ✅ 레벨당 -5% (Lv1=5%, Lv2=10% ...)
   const raw = 1 - 0.05 * Math.max(0, rsLevel);
   researchDurationMultiplier.value = Math.max(0.2, raw);
 
@@ -378,18 +361,12 @@ function recomputeEffects() {
 
   queueReserveLevel.value = Math.max(1, Math.min(3, reserveLv));
 
-  // ✅ 예약 슬롯이 줄어드는 경우 초과분은 안전하게 잘라냄
   const limit = queueLimitByLevel(queueReserveLevel.value);
   if (queuedResearchIds.value.length > limit) {
     queuedResearchIds.value = queuedResearchIds.value.slice(0, limit);
   }
 }
 
-/**
- * ✅ 오빠 요구:
- * - tier2 이상은 항상 노출
- * - tier1은 reveal 규칙
- */
 const visibleCatalog = computed(() => {
   return researchCatalog.filter((def) => {
     const tier = Number(def?.tier || 1);
@@ -398,7 +375,6 @@ const visibleCatalog = computed(() => {
   });
 });
 
-// 첫 해금 후보(transportId 추출)
 const transportIdsTier1 = computed(() => {
   const set = new Set();
   for (const r of researchCatalog) {
@@ -415,11 +391,6 @@ const transportIdsTier1 = computed(() => {
 const needsFirstUnlockSelection = computed(() => !firstUnlockTransportId.value);
 const firstUnlockCandidates = computed(() => transportIdsTier1.value.map((id) => ({ id })));
 
-// =======================================================
-// ✅ OR 게이트(프리뷰 차량추가 연구용)
-// - 버스/트럭/철도 중 하나라도 해금(티어1 완료)되면 연구 가능
-// - requires(AND)로는 표현 못하므로 엔진에서 상태로 처리
-// =======================================================
 function hasAnyStarterTransportUnlocked() {
   return (
     completedIds.value.has('unlock_bus_t1') ||
@@ -428,11 +399,6 @@ function hasAnyStarterTransportUnlocked() {
   );
 }
 
-/**
- * ✅ 상태 머신
- * - 1차 해금 이후 “나머지 티어1 운송 해금 연구”는 전부 available
- * - 프리뷰 차량추가(sys_preview_starter_vehicles)는 OR 게이트 적용
- */
 function getStatus(researchId) {
   const def = getResearchDef(researchId);
   if (!def) return 'unknown';
@@ -447,19 +413,12 @@ function getStatus(researchId) {
 
   if (def.enabled === false) return 'comingSoon';
 
-  // ✅ OR 게이트: 프리뷰 차량추가
   if (researchId === 'sys_preview_starter_vehicles') {
-    // "최초 해금 선택 전"에는 어차피 시작 못하지만, 상태도 잠금으로 보여주는 게 자연스러움
     if (!firstUnlockTransportId.value) return 'locked';
-
-    // 버스/트럭/철도 중 하나라도 해금되면 available
     if (!hasAnyStarterTransportUnlocked()) return 'locked';
-
-    // 나머지 기본조건 OK면 available
     return 'available';
   }
 
-  // ✅ 첫 해금 이후: 나머지 티어1 운송수단 해금 연구는 전부 available
   if (tier === 1 && isTier1TransportUnlock(def) && !!firstUnlockTransportId.value) {
     return 'available';
   }
@@ -468,7 +427,6 @@ function getStatus(researchId) {
   return 'available';
 }
 
-// Tier1 운송 해금 연구 id 찾기(첫 해금 즉시 완료용)
 function findTier1UnlockResearchId(transportId) {
   const node = researchCatalog.find(
     (r) =>
@@ -484,7 +442,6 @@ function findTier1UnlockResearchId(transportId) {
   return node?.id ?? null;
 }
 
-// ===== Firebase 저장/로드 =====
 function canSave() {
   if (!saveEnabled.value) return false;
   if (!currentUid.value) return false;
@@ -534,7 +491,6 @@ function applyRemoteState(remote) {
     activeResearch.value = null;
   }
 
-  // ✅ 마이그레이션: queuedResearchId -> queuedResearchIds
   const qArr = Array.isArray(remote?.queuedResearchIds)
     ? remote.queuedResearchIds.filter((x) => typeof x === 'string')
     : [];
@@ -549,7 +505,6 @@ function applyRemoteState(remote) {
 
   queuedResearchIds.value = merged;
 
-  // 구버전 마이그레이션: transports[].locked=false → tier1 완료로 승격
   if (completedIds.value.size === 0 && Array.isArray(remote?.transports)) {
     for (const t of remote.transports) {
       if (!t || typeof t.id !== 'string') continue;
@@ -598,7 +553,6 @@ const scheduleSave = () => {
   }, 800);
 };
 
-// ===== Public Actions =====
 function setFirstUnlockTransport(transportId) {
   if (!transportId) return;
   if (firstUnlockTransportId.value) return;
@@ -607,8 +561,6 @@ function setFirstUnlockTransport(transportId) {
   if (!researchId) return;
 
   firstUnlockTransportId.value = transportId;
-
-  // 첫 해금은 즉시 완료
   completedIds.value.add(researchId);
 
   recomputeEffects();
@@ -616,7 +568,6 @@ function setFirstUnlockTransport(transportId) {
 }
 
 function startResearchInternal(researchId) {
-  // ✅ 긴급 잠금: 엔진 레벨에서 시작 자체 차단
   if (isHardLockedResearchId(researchId)) return { ok: false, reason: 'COMING_SOON' };
 
   const def = getResearchDef(researchId);
@@ -658,12 +609,7 @@ function startResearchInternal(researchId) {
   return { ok: true, instant: false };
 }
 
-/**
- * - 진행중이면 큐에 추가(레벨 기반 제한)
- * - 비어있으면 즉시 시작
- */
 function startResearch(researchId) {
-  // ✅ 긴급 잠금: UI/상태 꼬여도 엔진에서 차단
   if (isHardLockedResearchId(researchId)) return { ok: false, reason: 'COMING_SOON' };
 
   const limit = queueLimitByLevel(queueReserveLevel.value);
@@ -711,16 +657,20 @@ function getResearchProgress(researchId) {
   return Math.max(0, Math.min(100, (elapsed / total) * 100));
 }
 
+/**
+ * ✅ 변경: 공통 포맷터 적용
+ * - 00h 제거 / 00m 제거 규칙 적용
+ * - KST 미준비/비활성은 0s
+ */
 function getResearchRemainingTime(researchId) {
-  if (!activeResearch.value || activeResearch.value.id !== researchId) return '00h 00m 00s';
-  if (!isKstReady.value) return '00h 00m 00s';
+  const { formatRemainSec } = useTimeFormat();
+
+  if (!activeResearch.value || activeResearch.value.id !== researchId) return '0s';
+  if (!isKstReady.value) return '0s';
 
   const diff = Math.max(0, activeResearch.value.endsAtMs - nowKstMs());
   const s = Math.floor(diff / 1000);
-  const h = String(Math.floor(s / 3600)).padStart(2, '0');
-  const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-  const sec = String(s % 60).padStart(2, '0');
-  return `${h}h ${m}m ${sec}s`;
+  return formatRemainSec(s);
 }
 
 // 로그인 시: 원격 로드
@@ -787,19 +737,16 @@ function clearUserState() {
   recomputeEffects();
 }
 
-// ✅ 긴급 잠금: 진행/예약 중인 대상 연구를 즉시 정리
 watchEffect(() => {
   if (isHydrating) return;
 
   let changed = false;
 
-  // 진행중인 연구가 잠금 대상이면 즉시 취소
   if (activeResearch.value?.id && isHardLockedResearchId(activeResearch.value.id)) {
     activeResearch.value = null;
     changed = true;
   }
 
-  // 예약 큐에서 잠금 대상 제거
   if (Array.isArray(queuedResearchIds.value) && queuedResearchIds.value.length > 0) {
     const filtered = queuedResearchIds.value.filter((id) => !isHardLockedResearchId(id));
     if (filtered.length !== queuedResearchIds.value.length) {
@@ -811,7 +758,6 @@ watchEffect(() => {
   if (changed) scheduleSave();
 });
 
-// ✅ 연구 완료 판정 + 예약 자동 실행(큐)
 watchEffect(() => {
   if (!isKstReady.value) return;
 

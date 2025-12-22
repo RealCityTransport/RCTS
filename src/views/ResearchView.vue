@@ -96,20 +96,20 @@
       </div>
     </section>
 
-    <!-- 2) 최초 해금(즉시) -->
+    <!-- 2) 연구 가능(예약 가능) -->
     <section class="panel">
-      <h2 class="panel-title">최초 해금(즉시)</h2>
+      <h2 class="panel-title">연구 가능(예약 가능)</h2>
       <p class="panel-desc">
-        최초 1개 운송수단은 즉시 해금됩니다. 이후에는 모든 운송수단 해금이 연구 대기로 이동합니다.
+        아래 항목은 지금 바로 시작하거나(진행 중이면 예약) 할 수 있습니다. 최초 해금이 필요한 경우 “즉시 해금”으로 표시됩니다.
       </p>
 
       <div v-if="!isHydrated" class="empty">불러오는 중…</div>
-
-      <div v-else-if="!needsFirstUnlockSelection" class="empty">
-        최초 해금이 완료되었습니다.
+      <div v-else-if="availableSorted.length === 0 && firstUnlockList.length === 0" class="empty">
+        현재 시작 가능한 연구가 없습니다.
       </div>
 
       <div v-else class="list">
+        <!-- ✅ 최초 해금(즉시)도 같은 리스트 흐름으로 -->
         <article v-for="r in firstUnlockList" :key="r.key" class="card">
           <div class="card-left">
             <div class="icon">{{ r.icon }}</div>
@@ -120,6 +120,7 @@
               <div class="name">{{ r.title }}</div>
               <div class="meta">
                 <span class="pill time">즉시</span>
+                <span class="pill" v-if="needsFirstUnlockSelection">필수</span>
               </div>
             </div>
             <div class="hint2" v-if="r.desc">{{ r.desc }}</div>
@@ -135,23 +136,11 @@
             </button>
           </div>
         </article>
-      </div>
-    </section>
 
-    <!-- 3) 프리뷰(맛보기) / REAL -->
-    <section class="panel">
-      <h2 class="panel-title">프리뷰(맛보기)</h2>
-      <p class="panel-desc">
-        차량/재정 본 시스템 개방 전에 제공되는 맛보기 연구입니다. 여기서 “프리뷰 차량 활성화”를 진행하세요.
-      </p>
-
-      <div v-if="!isHydrated" class="empty">불러오는 중…</div>
-      <div v-else-if="previewList.length === 0" class="empty">현재 가능한 프리뷰 연구가 없습니다.</div>
-
-      <div v-else class="list">
-        <article v-for="r in previewList" :key="r.id" class="card">
+        <!-- ✅ 일반 연구(available) -->
+        <article v-for="r in availableSorted" :key="r.id" class="card">
           <div class="card-left">
-            <div class="icon">{{ r.icon }}</div>
+            <div class="icon">{{ iconOf(r) }}</div>
           </div>
 
           <div class="card-mid">
@@ -159,12 +148,14 @@
               <div class="name">{{ r.title }}</div>
               <div class="meta">
                 <span class="pill time">{{ r.durationLabel }}</span>
+                <span v-if="r.fixed" class="pill fixed">고정</span>
                 <span class="pill" v-if="activeResearch">대기</span>
                 <span class="pill" v-else>가능</span>
               </div>
             </div>
 
             <div class="hint2" v-if="r.desc">{{ r.desc }}</div>
+            <div class="hint2" v-if="r.fixed">연구 효율 미적용 · 완료 시 시스템이 즉시 개방됩니다.</div>
           </div>
 
           <div class="card-right">
@@ -180,184 +171,18 @@
       </div>
     </section>
 
-    <!-- (이하 섹션들은 기존 그대로 유지하되 버튼 disable 로직만 큐제한을 사용) -->
+    <!-- 3) 잠김 연구 리스트 -->
     <section class="panel">
-      <h2 class="panel-title">기능 오픈 (고정 8시간)</h2>
+      <h2 class="panel-title">잠김 연구 리스트</h2>
       <p class="panel-desc">
-        세계의 큰 기능(차량/노선/건설/재정/도시)을 개방합니다. 이 연구는 고정 시간이며 연구 효율의 영향을 받지 않습니다.
+        아직 시작할 수 없는 연구입니다. 선행 연구 완료 또는 업데이트 반영 시 해금됩니다.
       </p>
 
       <div v-if="!isHydrated" class="empty">불러오는 중…</div>
-      <div v-else-if="systemList.length === 0" class="empty">현재 가능한 기능 오픈 연구가 없습니다.</div>
+      <div v-else-if="lockedSorted.length === 0" class="empty">잠김/개발중 항목이 없습니다.</div>
 
       <div v-else class="list">
-        <article v-for="r in systemList" :key="r.id" class="card">
-          <div class="card-left">
-            <div class="icon">🧩</div>
-          </div>
-
-          <div class="card-mid">
-            <div class="name-row">
-              <div class="name">{{ r.title }}</div>
-              <div class="meta">
-                <span class="pill time">{{ r.durationLabel }}</span>
-                <span class="pill fixed">고정</span>
-                <span class="pill" v-if="activeResearch">대기</span>
-                <span class="pill" v-else>가능</span>
-              </div>
-            </div>
-
-            <div class="hint2" v-if="r.desc">{{ r.desc }}</div>
-            <div class="hint2">연구 효율 미적용 · 완료 시 시스템이 즉시 개방됩니다.</div>
-          </div>
-
-          <div class="card-right">
-            <button
-              class="btn primary"
-              :disabled="!isHydrated || (activeResearch && isQueueFull && !isQueued(r.id))"
-              @click="startOrQueue(r.id)"
-            >
-              {{ buttonLabel(r.id) }}
-            </button>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2 class="panel-title">도시 해금/확장</h2>
-      <p class="panel-desc">
-        지역 → 시 → 나라 → 국가 → 행성 단위로 확장됩니다. 운송수단(항공/해상/우주)의 연구 조건으로 연결됩니다.
-      </p>
-
-      <div v-if="!isHydrated" class="empty">불러오는 중…</div>
-      <div v-else-if="cityList.length === 0" class="empty">현재 가능한 도시 확장 연구가 없습니다.</div>
-
-      <div v-else class="list">
-        <article v-for="r in cityList" :key="r.id" class="card">
-          <div class="card-left">
-            <div class="icon">🏙️</div>
-          </div>
-
-          <div class="card-mid">
-            <div class="name-row">
-              <div class="name">{{ r.title }}</div>
-              <div class="meta">
-                <span class="pill time">{{ r.durationLabel }}</span>
-                <span class="pill" v-if="activeResearch">대기</span>
-                <span class="pill" v-else>가능</span>
-              </div>
-            </div>
-
-            <div class="hint2" v-if="r.desc">{{ r.desc }}</div>
-          </div>
-
-          <div class="card-right">
-            <button
-              class="btn primary"
-              :disabled="!isHydrated || (activeResearch && isQueueFull && !isQueued(r.id))"
-              @click="startOrQueue(r.id)"
-            >
-              {{ buttonLabel(r.id) }}
-            </button>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2 class="panel-title">운송수단 해금</h2>
-      <p class="panel-desc">
-        최초 1개 즉시 해금 이후, 나머지 운송수단 해금은 연구로 진행됩니다.
-      </p>
-
-      <div v-if="!isHydrated" class="empty">불러오는 중…</div>
-      <div v-else-if="transportList.length === 0" class="empty">현재 가능한 운송수단 연구가 없습니다.</div>
-
-      <div v-else class="list">
-        <article v-for="r in transportList" :key="r.id" class="card">
-          <div class="card-left">
-            <div class="icon">{{ r.icon }}</div>
-          </div>
-
-          <div class="card-mid">
-            <div class="name-row">
-              <div class="name">{{ r.title }}</div>
-              <div class="meta">
-                <span class="pill time">{{ r.durationLabel }}</span>
-                <span class="pill" v-if="activeResearch">대기</span>
-                <span class="pill" v-else>가능</span>
-              </div>
-            </div>
-
-            <div class="hint2" v-if="r.desc">{{ r.desc }}</div>
-          </div>
-
-          <div class="card-right">
-            <button
-              class="btn primary"
-              :disabled="!isHydrated || (activeResearch && isQueueFull && !isQueued(r.id))"
-              @click="startOrQueue(r.id)"
-            >
-              {{ buttonLabel(r.id) }}
-            </button>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2 class="panel-title">효율 연구</h2>
-      <p class="panel-desc">
-        연구 시간을 단축하는 효율 연구입니다. 기능 오픈(고정 8시간)에는 적용되지 않습니다.
-      </p>
-
-      <div v-if="!isHydrated" class="empty">불러오는 중…</div>
-      <div v-else-if="effList.length === 0" class="empty">현재 가능한 효율 연구가 없습니다.</div>
-
-      <div v-else class="list">
-        <article v-for="r in effList" :key="r.id" class="card">
-          <div class="card-left">
-            <div class="icon">⚙️</div>
-          </div>
-
-          <div class="card-mid">
-            <div class="name-row">
-              <div class="name">{{ r.title }}</div>
-              <div class="meta">
-                <span class="pill time">{{ r.durationLabel }}</span>
-                <span class="pill" v-if="activeResearch">대기</span>
-                <span class="pill" v-else>가능</span>
-              </div>
-            </div>
-
-            <div class="hint2" v-if="r.desc">{{ r.desc }}</div>
-          </div>
-
-          <div class="card-right">
-            <button
-              class="btn primary"
-              :disabled="!isHydrated || (activeResearch && isQueueFull && !isQueued(r.id))"
-              @click="startOrQueue(r.id)"
-            >
-              {{ buttonLabel(r.id) }}
-            </button>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2 class="panel-title">잠김 및 개발중</h2>
-      <p class="panel-desc">
-        2차(레벨2) 연구는 노출되지만, 현재는 개발중 또는 잠김 상태일 수 있습니다.
-      </p>
-
-      <div v-if="!isHydrated" class="empty">불러오는 중…</div>
-      <div v-else-if="lockedList.length === 0" class="empty">잠김/개발중 항목이 없습니다.</div>
-
-      <div v-else class="list">
-        <article v-for="r in lockedList" :key="r.id" class="card">
+        <article v-for="r in lockedSorted" :key="r.id" class="card">
           <div class="card-left">
             <div class="icon">🔒</div>
           </div>
@@ -434,19 +259,40 @@ function isFixedOf(researchId) {
   return isFixedDef(defOf(researchId));
 }
 
+/**
+ * ✅ 데이터 연동 표기(정확한 시간 표기)
+ */
+function formatDurationHuman(sec) {
+  const s = Math.max(0, Number(sec || 0));
+  if (!s) return '즉시';
+
+  if (s < 3600) {
+    const mins = Math.max(1, Math.round(s / 60));
+    return `${mins}분`;
+  }
+
+  const hours = Math.floor(s / 3600);
+  const mins = Math.round((s % 3600) / 60);
+
+  if (mins > 0) return `${hours}시간 ${mins}분`;
+  return `${hours}시간`;
+}
+
 function durationLabel(def) {
   const sec = Number(def?.durationSec || 0);
-  if (!sec) return '즉시';
-  const h = Math.round(sec / 3600);
   const fixed = isFixedDef(def);
-  return fixed ? `고정: ${h}시간` : `연구: ${h}시간`;
+
+  const human = formatDurationHuman(sec);
+  if (human === '즉시') return '즉시';
+
+  return fixed ? `고정: ${human}` : `연구: ${human}`;
 }
 
 function durationLabelOf(researchId) {
   return durationLabel(defOf(researchId));
 }
 
-// ---- 리스트(기존 ResearchView 분류 로직) ----
+// ---- 최초 해금(즉시) 리스트 ----
 function findTier1TransportId(def) {
   const eff = (def.effects || []).find(e => e?.type === 'UNLOCK_TRANSPORT_TIER' && Number(e?.tier || 1) === 1);
   return eff?.transportId || null;
@@ -474,61 +320,62 @@ const firstUnlockList = computed(() => {
   return list.map(def => toFirstUnlockItem(def, candidatesSet)).filter(Boolean);
 });
 
-// ✅ 프리뷰(REAL) 섹션: sys_preview_* 계열만 노출 (난잡함 방지)
-function isPreviewReal(def) {
-  if (!def) return false;
-  if (def.type !== 'REAL') return false;
-  return String(def.id || '').startsWith('sys_preview_');
+// ---- 핵심: available / locked 를 "한 리스트"로 정리 + 가나다 정렬 ----
+function koSortByTitle(a, b) {
+  const ta = String(a?.title ?? '').trim();
+  const tb = String(b?.title ?? '').trim();
+  return ta.localeCompare(tb, 'ko');
 }
 
-const previewList = computed(() => (research.visibleCatalog.value || [])
-  .filter(def => research.getStatus(def.id) === 'available' && isPreviewReal(def))
-  .map(def => ({
+function toUiItem(def) {
+  return {
     id: def.id,
-    title: def.title,
-    desc: def.desc,
+    title: def.title ?? def.id,
+    desc: def.desc ?? '',
     durationLabel: durationLabel(def),
-    icon: '🧪',
-  }))
-);
+    fixed: isFixedDef(def),
+    type: def.type,
+    domain: def.domain,
+  };
+}
 
-const systemList = computed(() => (research.visibleCatalog.value || [])
-  .filter(def => research.getStatus(def.id) === 'available' && (def.type === 'SYSTEM' || def.timePolicy === 'FIXED'))
-  .map(def => ({ id: def.id, title: def.title, desc: def.desc, durationLabel: durationLabel(def) }))
-);
+const availableSorted = computed(() => {
+  const list = (research.visibleCatalog.value || [])
+    .filter(def => research.getStatus(def.id) === 'available')
+    .map(toUiItem)
+    .sort(koSortByTitle);
 
-const cityList = computed(() => (research.visibleCatalog.value || [])
-  .filter(def => research.getStatus(def.id) === 'available' && def.type === 'CITY')
-  .map(def => ({ id: def.id, title: def.title, desc: def.desc, durationLabel: durationLabel(def) }))
-);
+  return list;
+});
 
-const transportList = computed(() => (research.visibleCatalog.value || [])
-  .filter(def => research.getStatus(def.id) === 'available' && def.type === 'TRANSPORT')
-  .map(def => ({ id: def.id, title: def.title, desc: def.desc, durationLabel: durationLabel(def), icon: '🚚' }))
-);
+const lockedSorted = computed(() => {
+  const list = (research.visibleCatalog.value || [])
+    .map(def => {
+      const st = research.getStatus(def.id);
+      if (st !== 'locked' && st !== 'comingSoon') return null;
+      return {
+        ...toUiItem(def),
+        status: st,
+        statusLabel: st === 'comingSoon' ? '개발중' : '잠김',
+        lockReason: '선행 연구가 필요합니다.',
+      };
+    })
+    .filter(Boolean)
+    .sort(koSortByTitle);
 
-const effList = computed(() => (research.visibleCatalog.value || [])
-  .filter(def => research.getStatus(def.id) === 'available' && def.type === 'EFFICIENCY')
-  .map(def => ({ id: def.id, title: def.title, desc: def.desc, durationLabel: durationLabel(def) }))
-);
+  return list;
+});
 
-const lockedList = computed(() => (research.visibleCatalog.value || [])
-  .map(def => {
-    const st = research.getStatus(def.id);
-    if (st !== 'locked' && st !== 'comingSoon') return null;
-    return {
-      id: def.id,
-      status: st,
-      statusLabel: st === 'comingSoon' ? '개발중' : '잠김',
-      title: def.title ?? def.id,
-      desc: def.desc ?? '',
-      durationLabel: durationLabel(def),
-      fixed: isFixedDef(def),
-      lockReason: '선행 연구가 필요합니다.',
-    };
-  })
-  .filter(Boolean)
-);
+// ---- 아이콘 매핑(가독성용) ----
+function iconOf(r) {
+  const t = String(r?.type || '');
+  if (t === 'SYSTEM') return '🧩';
+  if (t === 'CITY') return '🏙️';
+  if (t === 'TRANSPORT') return '🚚';
+  if (t === 'EFFICIENCY') return '⚙️';
+  if (String(r?.id || '').startsWith('sys_preview_')) return '🧪';
+  return '🔬';
+}
 
 // ---- 버튼 라벨/상태 ----
 function isQueued(id) {
@@ -545,27 +392,21 @@ function buttonLabel(id) {
 function pickFirstUnlock(transportId) {
   research.setFirstUnlockTransport(transportId);
 }
-
 function startOrQueue(researchId) {
   research.startResearch(researchId);
 }
-
 function cancelQueue(researchId) {
   research.cancelQueuedResearch(researchId);
 }
-
 function cancelAllQueue() {
   research.cancelAllQueuedResearch();
 }
-
 function researchProgress(researchId) {
   return research.getResearchProgress(researchId);
 }
-
 function researchRemaining(researchId) {
   return research.getResearchRemainingTime(researchId);
 }
-
 function saveNow(payload) {
   research.saveNow(payload);
 }
@@ -575,18 +416,14 @@ function debugDump() {
   console.log('queueReserveLevel:', queueReserveLevel.value);
   console.log('queueLimit:', queueLimit.value);
   console.log('queuedResearchIds:', queuedResearchIds.value);
+
+  const pv = (research.visibleCatalog.value || []).filter(d => String(d?.id || '').startsWith('sys_preview_'));
+  console.log('[Preview durations]', pv.map(d => ({ id: d.id, sec: d.durationSec, label: durationLabel(d) })));
 }
 </script>
 
 <style scoped>
-/* =========================================================
-   ResearchView Layout Refinement
-   - Page owns scroll (no max-height hacks)
-   - Mobile: cards stack, buttons full width
-   - Scrollbar hidden but scroll works
-   ========================================================= */
-
-/* 스크롤은 유지하되 스크롤바 제거(숨김) */
+/* 기존 스타일 그대로 유지 */
 .research-page {
   width: 100%;
   height: 100%;
@@ -657,7 +494,6 @@ function debugDump() {
   gap: 10px;
 }
 
-/* 카드 (데스크톱) */
 .card {
   display: grid;
   grid-template-columns: 44px 1fr 120px;
@@ -789,9 +625,6 @@ function debugDump() {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
-/* =========================================================
-   Mobile optimization
-   ========================================================= */
 @media (max-width: 900px) {
   .research-page {
     padding: 14px;

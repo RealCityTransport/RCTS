@@ -49,6 +49,11 @@
           </div>
 
           <div class="drawer-body">
+            <!-- ✅ 최상단: 프리뷰 운행 -->
+            <button class="drawer-item drawer-item-preview" type="button" @click="go('/home/preview')">
+              프리뷰 운행
+            </button>
+
             <button class="drawer-item" type="button" @click="go('/home/research')">연구</button>
             <button class="drawer-item" type="button" @click="go('/home/vehicles')">차량</button>
             <button class="drawer-item" type="button" @click="go('/home/line')">노선</button>
@@ -83,9 +88,6 @@ const route = useRoute();
 
 const isMenuOpen = ref(false);
 
-function openMenu() {
-  isMenuOpen.value = true;
-}
 function closeMenu() {
   isMenuOpen.value = false;
 }
@@ -101,6 +103,7 @@ function go(path) {
 /* 현재 페이지 타이틀(모바일 헤더용) */
 const currentTitle = computed(() => {
   const p = route.path || '';
+  if (p.includes('/home/preview')) return '프리뷰 운행';
   if (p.includes('/home/research')) return '연구';
   if (p.includes('/home/vehicles')) return '차량';
   if (p.includes('/home/line')) return '노선';
@@ -140,8 +143,6 @@ onBeforeUnmount(() => {
 <style scoped>
 /* =========================================================
    CENTER AREA
-   - Desktop: tab nav
-   - Mobile: hamburger + drawer (fix missing City/Settings)
    ========================================================= */
 
 .center-content-wrapper{
@@ -219,7 +220,7 @@ onBeforeUnmount(() => {
   display:flex;
   flex-direction:column;
   align-items:stretch;
-  overflow:hidden; /* 페이지가 스크롤 담당 */
+  overflow:hidden;
 }
 
 /* =========================================================
@@ -345,6 +346,12 @@ onBeforeUnmount(() => {
 
 .drawer-item:active{
   transform: translateY(1px);
+}
+
+/* ✅ 프리뷰 운행 강조(원치 않으면 지워도 됨) */
+.drawer-item-preview{
+  border-color: rgba(120,255,120,0.22);
+  background: rgba(120,255,120,0.10);
 }
 
 .drawer-foot{

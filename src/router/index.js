@@ -8,15 +8,18 @@ import VehiclesView from '../views/VehiclesView.vue';         // 차량
 import LineView from '../views/LineView.vue';                 // 노선
 import ConstructionView from '../views/ConstructionView.vue'; // 건설
 import FinanceView from '../views/FinanceView.vue';           // 재정
-import CityView from '../views/CityView.vue';                 // ✅ 도시 (추가)
+import CityView from '../views/CityView.vue';                 // 도시
 
 import SettingsView from '../views/settings/SettingsView.vue';
 import DataManagerView from '../views/settings/DataManagerView.vue';
 
+// ✅ 신규: 모바일에서 "프리뷰 운행"을 센터 메인컨텐츠로 보여줄 전용 View
+import PreviewRunsView from '../views/PreviewRunsView.vue';
+
 const routes = [
   {
     path: '/',
-    redirect: '/home/research', // ✅ 루트는 연구로
+    redirect: '/home/research',
   },
   {
     path: '/home',
@@ -24,8 +27,16 @@ const routes = [
     children: [
       {
         path: '',
-        redirect: '/home/research', // ✅ /home 진입 시 연구로
+        redirect: '/home/research',
       },
+
+      // ✅ 신규: 프리뷰 운행
+      {
+        path: 'preview',
+        name: 'PreviewRuns',
+        component: PreviewRunsView,
+      },
+
       {
         path: 'research',
         name: 'Research',

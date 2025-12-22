@@ -3,7 +3,10 @@
     <TheTopBar />
 
     <div class="main-layout">
-      <TheLeftArea class="layout-area left-area" />
+      <!-- 데스크톱: 기존 그대로 -->
+      <TheLeftArea class="layout-area left-area desktop-only" />
+
+      <!-- 센터는 항상 -->
       <TheCenterArea class="layout-area center-area" />
     </div>
   </div>
@@ -59,13 +62,15 @@ import TheCenterArea from '@/components/TheCenterArea.vue';
   border-right:none;
 }
 
-/* ✅ 모바일: 무조건 센터만 */
+/* ✅ 모바일: 센터만 */
+.desktop-only{ display:flex; }
+
 @media (max-width: 768px){
   .main-layout{
     flex-direction:column;
   }
-  .left-area{
-    display:none !important;
+  .desktop-only{
+    display:none !important; /* LeftArea 숨김 */
   }
   .center-area{
     width:100%;
@@ -75,8 +80,6 @@ import TheCenterArea from '@/components/TheCenterArea.vue';
   .layout-area{
     border:none;
   }
-
-  /* 모바일 전용 톤(원하면 더 과감히) */
   .game-wrapper{
     background:#0b0f16;
   }

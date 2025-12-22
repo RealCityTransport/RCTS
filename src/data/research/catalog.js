@@ -17,9 +17,22 @@
  * - timePolicy:
  *    - FIXED    : 고정 시간(효율 미적용). 기능오픈 8시간 규칙 적용 대상.
  *    - SCALABLE : 효율 적용 가능(연구 효율화 영향 받음)
+ *
+ * NOTE (프리뷰 정책 - 오빠 확정 반영 + 시간 조정)
+ * - 프리뷰 관련 연구는 2개만 유지
+ * - 1) 프리뷰 차량 운행: 30분
+ * - 2) 프리뷰 운행 자동화: 1시간
+ * - 프리뷰 운행 시간: 운송수단 관계없이 30분~3시간 랜덤
+ * - (자동화 연구 완료 전) 0초 -> 운행대기 + 버튼으로 수동 개시
+ * - (자동화 연구 완료 후) 0초 -> 자동으로 다음 운행 개시 (엔진/프리뷰 런 로직에서 적용)
+ *
+ * NOTE (정리)
+ * - 메뉴(차량/노선/건설/재정/도시)와 연결될 QOL/기반 연구들은
+ *   현재 메뉴 개발이 미완이므로 카다로그에서 제거(보류)함.
  */
 
 const HOUR = 3600;
+const MIN = 60;
 const DUR_SYSTEM_FIXED = 8 * HOUR;
 
 export const researchCatalog = [
@@ -98,7 +111,7 @@ export const researchCatalog = [
   },
 
   // =========================================================
-  // [REAL] 프리뷰: 프리뷰 차량추가 (1h)  -> 노선 재분배(2h) -> 노선 자동배정(4h)
+  // [REAL] 프리뷰 (2개만 유지)
   //
   // 요구 반영:
   // - 버스/트럭/철도 "하나라도" 해금되면 연구 가능 (OR 조건)
@@ -110,50 +123,40 @@ export const researchCatalog = [
     type: 'REAL',
     domain: 'vehicle',
     timePolicy: 'SCALABLE',
-    title: '프리뷰 차량추가',
-    desc: '차량 본시스템(8시간) 전에 맛보기로, 해금된 운송수단의 프리뷰 차량이 자동 운행됩니다. (1시간, 효율 적용)',
+    title: '프리뷰 차량 운행',
+    desc: '해금된 운송수단(버스/트럭/철도)에 프리뷰 운행 시간이 부여됩니다. 운행이 끝나면 "운행대기" 상태가 되며, 버튼으로 다음 운행을 수동 개시합니다. (30분, 효율 적용)',
     tier: 1,
-    durationSec: 1 * HOUR,
-    requires: [], // ✅ OR 조건은 엔진에서 처리
+    durationSec: 30 * MIN,
+    requires: [],
     revealAfter: [],
     enabled: true,
     effects: [
       {
         type: 'UNLOCK_STARTER_FLEET_PREVIEW',
         transports: ['bus', 'truck', 'rail'],
-        runTimeMinSec: 30 * 60,
-        runTimeMaxSec: 2 * HOUR,
+        runTimeMinSec: 30 * MIN,
+        runTimeMaxSec: 3 * HOUR,
         countPerTransport: 1,
+        mode: 'MANUAL',
       },
     ],
   },
   {
-    id: 'sys_preview_route_redistribution',
+    id: 'sys_preview_auto_assign',
     type: 'REAL',
-    domain: 'route',
+    domain: 'simulation',
     timePolicy: 'SCALABLE',
-    title: '프리뷰 노선 재분배',
-    desc: '프리뷰 차량의 노선을 재배정(롤링)할 수 있습니다. (2시간, 효율 적용)',
+    title: '프리뷰 운행 자동화',
+    desc: '프리뷰 운행이 종료되면 자동으로 다음 운행이 시작됩니다. (1시간, 효율 적용)',
     tier: 1,
-    durationSec: 2 * HOUR,
+    durationSec: 1 * HOUR,
     requires: ['sys_preview_starter_vehicles'],
     revealAfter: [],
     enabled: true,
-    effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'preview_route_redistribution' }],
-  },
-  {
-    id: 'sys_preview_auto_assign',
-    type: 'REAL',
-    domain: 'route',
-    timePolicy: 'SCALABLE',
-    title: '프리뷰 노선 자동배정',
-    desc: '프리뷰 운행이 종료되면 자동으로 다음 운행이 시작됩니다. (노선 유지, 시간 재배정) (4시간, 효율 적용)',
-    tier: 1,
-    durationSec: 4 * HOUR,
-    requires: ['sys_preview_route_redistribution'],
-    revealAfter: [],
-    enabled: true,
-    effects: [{ type: 'UNLOCK_FEATURE', featureKey: 'preview_auto_assign' }],
+    effects: [
+      { type: 'UNLOCK_FEATURE', featureKey: 'preview_auto_assign' },
+      { type: 'SET_PREVIEW_RUN_MODE', mode: 'AUTO' },
+    ],
   },
 
   // =========================================================
@@ -410,80 +413,6 @@ export const researchCatalog = [
     revealAfter: [],
     enabled: true,
     effects: [{ type: 'RESEARCH_SPEED_LEVEL', level: 5 }],
-  },
-
-  // =========================================================
-  // [REAL/기반] 리얼 파트로 이어질 기반 연구 (효율 적용 가능)
-  // =========================================================
-  {
-    id: 'qol_4h_01',
-    type: 'REAL',
-    domain: 'simulation',
-    timePolicy: 'SCALABLE',
-    title: '물류 통계 시스템 도입',
-    desc: '운송 데이터 집계를 고도화합니다. (추후 UI/지표 해금)',
-    tier: 1,
-    durationSec: 4 * HOUR,
-    requires: [],
-    revealAfter: [],
-    enabled: true,
-    effects: [],
-  },
-  {
-    id: 'qol_4h_02',
-    type: 'REAL',
-    domain: 'simulation',
-    timePolicy: 'SCALABLE',
-    title: '정비 프로토콜 표준화',
-    desc: '정비/고장 시스템 기반을 마련합니다. (추후 컨텐츠 연결)',
-    tier: 1,
-    durationSec: 4 * HOUR,
-    requires: [],
-    revealAfter: [],
-    enabled: true,
-    effects: [],
-  },
-  {
-    id: 'qol_8h_01',
-    type: 'REAL',
-    domain: 'simulation',
-    timePolicy: 'SCALABLE',
-    title: '운송 관제 센터 구축',
-    desc: '관제/노선 최적화 컨텐츠의 기반을 구축합니다.',
-    tier: 1,
-    durationSec: 8 * HOUR,
-    requires: [],
-    revealAfter: [],
-    enabled: true,
-    effects: [],
-  },
-  {
-    id: 'qol_8h_02',
-    type: 'REAL',
-    domain: 'simulation',
-    timePolicy: 'SCALABLE',
-    title: '대형 허브 터미널 설계',
-    desc: '허브/환승 시스템 컨텐츠의 기반을 구축합니다.',
-    tier: 1,
-    durationSec: 8 * HOUR,
-    requires: [],
-    revealAfter: [],
-    enabled: true,
-    effects: [],
-  },
-  {
-    id: 'qol_8h_03',
-    type: 'REAL',
-    domain: 'simulation',
-    timePolicy: 'SCALABLE',
-    title: '국가 단위 물류 협약',
-    desc: '장거리/국제 운송 확장 컨텐츠의 기반을 구축합니다.',
-    tier: 1,
-    durationSec: 8 * HOUR,
-    requires: [],
-    revealAfter: [],
-    enabled: true,
-    effects: [],
   },
 
   // =========================================================

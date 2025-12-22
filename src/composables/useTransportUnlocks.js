@@ -18,43 +18,83 @@ function findUnlockResearchId(transportId, tier = 1) {
 }
 
 /**
- * 기본차량 프리뷰 연구(effect) 찾기
- * - catalog.js에 추가한 UNLOCK_STARTER_FLEET_PREVIEW를 인식
+ * ✅ 프리뷰 연구(effect) 전체 수집
+ * - UNLOCK_STARTER_FLEET_PREVIEW effect가 포함된 연구가 여러 개여도 안전
  */
-function findStarterFleetPreviewResearch() {
-  const node = researchCatalog.find((r) =>
+function findAllStarterFleetPreviewResearches() {
+  const nodes = researchCatalog.filter((r) =>
     (r.effects || []).some((e) => e?.type === 'UNLOCK_STARTER_FLEET_PREVIEW')
   );
-  if (!node) return { researchId: null, config: null };
 
-  const eff = (node.effects || []).find((e) => e?.type === 'UNLOCK_STARTER_FLEET_PREVIEW') || null;
+  const items = nodes.map((node) => {
+    const eff =
+      (node.effects || []).find((e) => e?.type === 'UNLOCK_STARTER_FLEET_PREVIEW') || null;
 
-  const config = eff
-    ? {
-        transports: Array.isArray(eff.transports) ? eff.transports.filter(Boolean) : [],
-        runTimeMinSec: Number(eff.runTimeMinSec || 0),
-        runTimeMaxSec: Number(eff.runTimeMaxSec || 0),
-        countPerTransport: Number(eff.countPerTransport || 1),
-      }
-    : null;
+    const config = eff
+      ? {
+          transports: Array.isArray(eff.transports) ? eff.transports.filter(Boolean) : [],
+          runTimeMinSec: Number(eff.runTimeMinSec || 0),
+          runTimeMaxSec: Number(eff.runTimeMaxSec || 0),
+          countPerTransport: Number(eff.countPerTransport || 1),
+        }
+      : null;
 
-  return { researchId: node.id, config };
+    return {
+      researchId: node.id,
+      config,
+    };
+  });
+
+  return items;
 }
 
 export function useTransportUnlocks() {
   const research = useResearch();
 
-  // ---- 프리뷰(기본차량 자동운행) 상태 ----
-  const starterFleetPreview = computed(() => findStarterFleetPreviewResearch());
+  // ---- 프리뷰(기본차량) 관련 연구들(복수) ----
+  const previewResearches = computed(() => findAllStarterFleetPreviewResearches());
 
-  const previewResearchId = computed(() => starterFleetPreview.value.researchId);
-  const previewConfig = computed(() => starterFleetPreview.value.config);
-
-  // 연구 완료 여부(완료 Set 기반)
+  /**
+   * ✅ 프리뷰 완료 판정(핵심)
+   * - 프리뷰 연구가 여러 개여도, 하나라도 완료면 프리뷰 오픈
+   */
   const previewStarterFleetUnlocked = computed(() => {
-    const rid = previewResearchId.value;
-    if (!rid) return false;
-    return !!research.completedIds.value?.has?.(rid);
+    const doneSet = research.completedIds.value;
+    const list = previewResearches.value || [];
+    if (!doneSet || list.length === 0) return false;
+    return list.some((x) => x?.researchId && doneSet.has(x.researchId));
+  });
+
+  /**
+   * ✅ UI 디버그/표시용 “현재 프리뷰 연구 ID”
+   * - 완료된 게 있으면 그걸 우선 노출
+   * - 없으면 첫 번째 후보 노출
+   */
+  const previewResearchId = computed(() => {
+    const doneSet = research.completedIds.value;
+    const list = previewResearches.value || [];
+    if (!list.length) return null;
+
+    const completedOne = doneSet
+      ? list.find((x) => x?.researchId && doneSet.has(x.researchId))
+      : null;
+
+    return (completedOne?.researchId ?? list[0]?.researchId) || null;
+  });
+
+  /**
+   * 프리뷰 설정값(완료된 연구의 config 우선, 없으면 첫 후보 config)
+   */
+  const previewConfig = computed(() => {
+    const doneSet = research.completedIds.value;
+    const list = previewResearches.value || [];
+    if (!list.length) return null;
+
+    const completedOne = doneSet
+      ? list.find((x) => x?.researchId && doneSet.has(x.researchId))
+      : null;
+
+    return completedOne?.config ?? list[0]?.config ?? null;
   });
 
   // 프리뷰가 적용될 운송수단 목록(기본: bus/truck/rail)
@@ -90,14 +130,9 @@ export function useTransportUnlocks() {
         researchFinishTime = new Date(research.activeResearch.value.endsAtMs);
       }
 
-      /**
-       * ✅ 프리뷰 표시용 필드
-       * - 실제 “랜덤 운행 타이머”는 다음 단계(사이드바 레이아웃+프리뷰 타이머 composable)에서 붙임
-       * - 지금은 "프리뷰 가능/활성" 여부만 UI가 쓸 수 있게 제공
-       */
+      // ✅ 프리뷰 표시용
       const previewEligible = appliesSet.has(id); // bus/truck/rail 등
       const previewActive = !!previewUnlocked && !locked && previewEligible;
-
       const previewLabel = previewActive ? '프리뷰 운행 가능' : null;
 
       return {
@@ -148,7 +183,7 @@ export function useTransportUnlocks() {
     getResearchProgress,
     getResearchRemainingTime,
 
-    // 프리뷰(기본차량 자동운행) 공개 API
+    // 프리뷰 공개 API
     previewResearchId,
     previewConfig,
     previewStarterFleetUnlocked,
