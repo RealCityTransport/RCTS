@@ -45,7 +45,7 @@ function normalizeRun(transportId, r) {
     // ✅ 상태 정의:
     // idle   : (초기/미시작) - 기존 호환용
     // running: 운행중(시간 흐름)
-    // ready  : 운행 완료 후 0s에서 대기(수동 시작 대기)
+    // ready  : 운행 완료 후 대기(수동 시작 대기)
     status: 'idle', // running | idle | ready
     startedAtMs: null,
     endsAtMs: null,
@@ -86,7 +86,6 @@ export function usePreviewRuns() {
   );
 
   // ✅ "프리뷰에 실제로 표시/운행할 대상" = previewActive인 운송수단만
-  // - previewActive는 useTransportUnlocks에서 (프리뷰 연구완료 + 해금 + 대상)까지 다 반영됨
   const previewActiveIds = computed(() => {
     const list = transportTypes.value || [];
     return new Set(list.filter((t) => t?.previewActive).map((t) => t.id));
@@ -138,6 +137,42 @@ export function usePreviewRuns() {
     };
   }
 
+  /**
+   * ✅ 핵심 복구 로직
+   * - 자동화 연구가 켜져있으면(=autoAssignUnlocked)
+   *   ready/idle 상태가 남아있더라도 자동으로 다음 운행을 시작해야 한다.
+   * - (자동화 연구 완료 순간, 혹은 새로고침 후에도) "00:00 멈춤" 방지
+   */
+  function ensureAutoRuns(nowMs = Date.now()) {
+    if (!previewUnlocked.value) return false;
+    if (!autoAssignUnlocked.value) return false;
+
+    const ids = previewActiveIds.value;
+    if (!ids || ids.size === 0) return false;
+
+    let changed = false;
+
+    for (const tid of ids) {
+      const r = normalizeRun(tid, runs.value?.[tid]);
+
+      // ✅ 자동화 모드에서는 running이 아니면 즉시 재시작
+      if (r.status !== 'running') {
+        startRunNow(tid, nowMs);
+        changed = true;
+      } else {
+        // running인데 endsAtMs가 비어있거나 이상하면 재시작(데이터 꼬임 방지)
+        const end = Number(r.endsAtMs || 0);
+        if (!end || end <= nowMs) {
+          startRunNow(tid, nowMs);
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) saveLocal({ runs: runs.value });
+    return changed;
+  }
+
   // ---- 프리뷰 활성화 시: "previewActive" 대상에 대해서만 초기 운행 1회 자동 생성 ----
   watchEffect(() => {
     if (!previewUnlocked.value) return;
@@ -156,6 +191,9 @@ export function usePreviewRuns() {
     }
 
     if (changed) saveLocal({ runs: runs.value });
+
+    // ✅ 자동화 모드면, 혹시 기존 ready/idle이 남아있어도 즉시 복구
+    ensureAutoRuns(Date.now());
   });
 
   // ---- 틱: (1) clock 갱신으로 화면 초당 업데이트 (2) running 종료 처리 ----
@@ -170,12 +208,16 @@ export function usePreviewRuns() {
       if (!previewUnlocked.value) return;
 
       const now = clockMs.value;
-      const activeSet = previewActiveIds.value; // ✅ 현재 활성 대상
+      const activeSet = previewActiveIds.value;
       let changed = false;
 
+      // ✅ 자동화 모드면, ready/idle로 멈춘 것부터 먼저 복구
+      if (autoAssignUnlocked.value) {
+        const fixed = ensureAutoRuns(now);
+        if (fixed) changed = true;
+      }
+
       for (const tid of Object.keys(runs.value || {})) {
-        // ✅ 현재 정책상 프리뷰 대상이 아니면 “운행 로직”도 적용하지 않음
-        // (로컬에 남아있어도 UI/운영에서 제외)
         if (!activeSet.has(tid)) continue;
 
         const r = normalizeRun(tid, runs.value[tid]);
@@ -187,8 +229,10 @@ export function usePreviewRuns() {
 
         if (now >= end) {
           if (autoAssignUnlocked.value) {
+            // ✅ 자동화 연구 완료 후: 즉시 다음 운행 자동 개시
             startRunNow(tid, now);
           } else {
+            // ✅ 자동화 연구 전: 대기 상태로 고정
             runs.value[tid] = {
               ...r,
               status: 'ready',
@@ -227,7 +271,6 @@ export function usePreviewRuns() {
   function remainingMsOf(transportId) {
     const tick = clockMs.value;
 
-    // ✅ 정책상 비활성 대상이면 남은시간은 0으로 취급(표시 안 하게 됨)
     if (!previewActiveIds.value.has(transportId)) return 0;
 
     const r = normalizeRun(transportId, runs.value?.[transportId]);
@@ -244,7 +287,6 @@ export function usePreviewRuns() {
   }
 
   function statusOf(transportId) {
-    // ✅ 정책상 비활성 대상이면 idle로 취급(표시/버튼 로직 안정화)
     if (!previewActiveIds.value.has(transportId)) return 'idle';
     const r = normalizeRun(transportId, runs.value?.[transportId]);
     return r.status;
@@ -253,9 +295,9 @@ export function usePreviewRuns() {
   function startManualRun(transportId) {
     if (!previewUnlocked.value) return false;
 
-    // ✅ 비활성 대상(해금 안됨/대상 아님)은 수동 시작 금지
     if (!previewActiveIds.value.has(transportId)) return false;
 
+    // ✅ 자동화 연구가 끝나면 수동 시작 금지
     if (autoAssignUnlocked.value) return false;
 
     const r = normalizeRun(transportId, runs.value?.[transportId]);
