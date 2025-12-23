@@ -13,13 +13,14 @@
         else if (p.startsWith(repoRoot + "/preview/")) base = repoRoot + "/preview/";
         else if (p.startsWith(repoRoot + "/staging/")) base = repoRoot + "/staging/";
 
-        // base 이후 경로(+쿼리+해시)를 redirect로 넘김
+        // base 이후 경로(+쿼리+해시)
         const restPath = p.slice(base.length - 1);
         const query = location.search || "";
         const hash = location.hash || "";
+        const redirect = restPath + query + hash;
 
-        const redirect = encodeURIComponent(restPath + query + hash);
-        location.replace(base + "?redirect=" + redirect);
+        sessionStorage.setItem("rcts:redirect", redirect);
+        location.replace(base);
       })();
     </script>
   </head>

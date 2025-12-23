@@ -2,7 +2,6 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <!-- 채널별 base: /RCTS/, /RCTS/test/, /RCTS/preview/ ... -->
     <base href="/RCTS/test/" />
     <link rel="icon" href="/RCTS/test/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -12,23 +11,20 @@
       rel="stylesheet"
     />
 
-    <!-- ✅ 반드시 앱 부팅 전에 실행 -->
     <script>
       (function () {
-        const params = new URLSearchParams(window.location.search);
-        const redirect = params.get("redirect");
+        const redirect = sessionStorage.getItem("rcts:redirect");
         if (!redirect) return;
+        sessionStorage.removeItem("rcts:redirect");
 
         const base = document.querySelector("base")?.getAttribute("href") || "/";
         const baseNoTrail = base.endsWith("/") ? base.slice(0, -1) : base;
 
-        const decoded = decodeURIComponent(redirect);
-        const next = baseNoTrail + (decoded.startsWith("/") ? decoded : "/" + decoded);
-
+        const next = baseNoTrail + (redirect.startsWith("/") ? redirect : "/" + redirect);
         history.replaceState(null, "", next);
       })();
     </script>
-    <script type="module" crossorigin src="/RCTS/test/assets/index-B5Y1jupz.js"></script>
+    <script type="module" crossorigin src="/RCTS/test/assets/index-DX29O6Rn.js"></script>
     <link rel="stylesheet" crossorigin href="/RCTS/test/assets/index-BwYV4TGe.css">
   </head>
 
