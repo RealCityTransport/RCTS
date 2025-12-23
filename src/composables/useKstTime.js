@@ -1,46 +1,52 @@
-// useKstTime.js
-import { ref } from 'vue'
+// src/composables/useKstTime.js
+import { ref, computed } from 'vue'
+import { useServerTime } from '@/composables/useServerTime'
 
+// 전역 싱글톤
 const kstDate = ref(null)
-const kstString = ref('')
 const isKstTimeReady = ref(false)
-let timer = null
 
-const pad2 = (n) => String(n).padStart(2, '0')
+let timerId = null
+let initialized = false
 
-const getKSTDate = () => {
-  const now = new Date()
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000
-  return new Date(utc + 9 * 60 * 60 * 1000)
-}
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000
 
-const formatKST = (date) => {
-  if (!(date instanceof Date)) return '로딩중...'
-  const Y = date.getFullYear()
-  const M = pad2(date.getMonth() + 1)
-  const D = pad2(date.getDate())
-  const h = pad2(date.getHours())
-  const m = pad2(date.getMinutes())
-  return `${Y}. ${M}. ${D}. ${h}:${m}`
+function computeKstDate(serverNowMs) {
+  // serverNowMs는 UTC 기반 ms. 여기에 KST 오프셋 더해서 "KST 기준 시각"을 만든다.
+  return new Date(serverNowMs + KST_OFFSET_MS)
 }
 
 export function initializeKstTimeTracker() {
-  if (timer) return
+  if (initialized) return
+  initialized = true
 
-  const update = () => {
-    kstDate.value = getKSTDate()
-    kstString.value = formatKST(kstDate.value)
-    if (!isKstTimeReady.value) isKstTimeReady.value = true
+  const { serverNowMs } = useServerTime()
+
+  const tick = () => {
+    kstDate.value = computeKstDate(serverNowMs())
+    isKstTimeReady.value = true
   }
 
-  update()
-  timer = setInterval(update, 1000)
+  tick()
+  timerId = setInterval(tick, 1000) // 1초 해상도면 연구/프리뷰 충분히 안정적
+}
+
+export function stopKstTimeTracker() {
+  if (timerId) {
+    clearInterval(timerId)
+    timerId = null
+  }
+  initialized = false
+  isKstTimeReady.value = false
+  kstDate.value = null
 }
 
 export function useKstTime() {
+  const isReady = computed(() => isKstTimeReady.value && kstDate.value instanceof Date)
+
   return {
     kstDate,
-    kstString,
-    isKstTimeReady
+    isKstTimeReady,
+    isKstReady: isReady,
   }
 }

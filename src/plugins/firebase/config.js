@@ -1,6 +1,7 @@
 // src/plugins/firebase/config.js
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
+import { getDatabase } from 'firebase/database'
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -22,11 +23,14 @@ const app = initializeApp(firebaseConfig)
 
 const auth = getAuth(app)
 
-// ✅ 권장: 단일 탭 퍼시스턴스(멀티탭 충돌 방지)
+// ✅ Firestore (권장 캐시 설정)
 const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentSingleTabManager(),
   }),
 })
 
-export { auth, db }
+// ✅ RTDB (서버 시간 오프셋 용도)
+const rtdb = getDatabase(app)
+
+export { app, auth, db, rtdb }
