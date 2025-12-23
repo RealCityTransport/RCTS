@@ -47,18 +47,24 @@ jobs:
             echo "base=/RCTS/" >> $GITHUB_OUTPUT
             echo "remote=true" >> $GITHUB_OUTPUT
             echo "world=prod" >> $GITHUB_OUTPUT
+            echo "persist=true" >> $GITHUB_OUTPUT
+            echo "rtdb=enabled" >> $GITHUB_OUTPUT
           elif [ "$REF_NAME" = "deploy/test" ]; then
             echo "channel=test" >> $GITHUB_OUTPUT
             echo "dest=test" >> $GITHUB_OUTPUT
             echo "base=/RCTS/test/" >> $GITHUB_OUTPUT
             echo "remote=false" >> $GITHUB_OUTPUT
             echo "world=test" >> $GITHUB_OUTPUT
+            echo "persist=false" >> $GITHUB_OUTPUT
+            echo "rtdb=disabled" >> $GITHUB_OUTPUT
           else
             echo "channel=preview" >> $GITHUB_OUTPUT
             echo "dest=preview" >> $GITHUB_OUTPUT
             echo "base=/RCTS/preview/" >> $GITHUB_OUTPUT
             echo "remote=false" >> $GITHUB_OUTPUT
             echo "world=preview" >> $GITHUB_OUTPUT
+            echo "persist=false" >> $GITHUB_OUTPUT
+            echo "rtdb=disabled" >> $GITHUB_OUTPUT
           fi
 
       - name: Build
@@ -67,20 +73,23 @@ jobs:
           # ✅ vite.config.js에서 읽음
           VITE_BASE: ${{ steps.vars.outputs.base }}
 
-          # ✅ 앱 내부 정책 분기용(오빠가 이미 쓰는 값들)
+          # ✅ 앱 내부 정책 분기용
           VITE_DEPLOY_CHANNEL: ${{ steps.vars.outputs.channel }}
           VITE_WORLD: ${{ steps.vars.outputs.world }}
 
           # ✅ 원격 저장 on/off
-          # - prod: true
-          # - test/preview: false (저장 안 됨 정책)
           VITE_REMOTE_ENABLED: ${{ steps.vars.outputs.remote }}
+
+          # ✅ Firestore IndexedDB persistence on/off (test/preview 강제 OFF)
+          VITE_FIRESTORE_PERSISTENCE_ENABLED: ${{ steps.vars.outputs.persist }}
+
+          # ✅ RTDB URL은 prod에서만 주입 (test/preview는 빈값으로 강제)
+          # - IMPORTANT: 아래 secret 이름은 오빠 리포지토리에 맞춰 하나로 통일해줘
+          VITE_FB_DATABASE_URL: ${{ steps.vars.outputs.rtdb == 'enabled' && secrets.VITE_FB_DATABASE_URL || '' }}
 
       - name: Deploy (prod root / test / preview)
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-
-          # ✅ prod는 루트, test/preview는 폴더로
           destination_dir: ${{ steps.vars.outputs.dest }}
