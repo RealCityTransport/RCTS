@@ -5,13 +5,13 @@
       <!-- DESKTOP TAB NAV -->
       <nav class="main-content-nav desktop-only" aria-label="Main navigation">
         <ul class="nav-list">
-          <li class="nav-item"><router-link to="/home/research">연구</router-link></li>
-          <li class="nav-item"><router-link to="/home/vehicles">차량</router-link></li>
-          <li class="nav-item"><router-link to="/home/line">노선</router-link></li>
-          <li class="nav-item"><router-link to="/home/construction">건설</router-link></li>
-          <li class="nav-item"><router-link to="/home/finance">재정</router-link></li>
-          <li class="nav-item"><router-link to="/home/city">도시</router-link></li>
-          <li class="nav-item"><router-link to="/home/settings">설정</router-link></li>
+          <li class="nav-item"><router-link :to="paths.research">연구</router-link></li>
+          <li class="nav-item"><router-link :to="paths.vehicles">차량</router-link></li>
+          <li class="nav-item"><router-link :to="paths.line">노선</router-link></li>
+          <li class="nav-item"><router-link :to="paths.construction">건설</router-link></li>
+          <li class="nav-item"><router-link :to="paths.finance">재정</router-link></li>
+          <li class="nav-item"><router-link :to="paths.city">도시</router-link></li>
+          <li class="nav-item"><router-link :to="paths.settings">설정</router-link></li>
         </ul>
       </nav>
 
@@ -50,17 +50,21 @@
 
           <div class="drawer-body">
             <!-- ✅ 최상단: 프리뷰 운행 -->
-            <button class="drawer-item drawer-item-preview" type="button" @click="go('/home/preview')">
+            <button
+              class="drawer-item drawer-item-preview"
+              type="button"
+              @click="go(paths.preview)"
+            >
               프리뷰 운행
             </button>
 
-            <button class="drawer-item" type="button" @click="go('/home/research')">연구</button>
-            <button class="drawer-item" type="button" @click="go('/home/vehicles')">차량</button>
-            <button class="drawer-item" type="button" @click="go('/home/line')">노선</button>
-            <button class="drawer-item" type="button" @click="go('/home/construction')">건설</button>
-            <button class="drawer-item" type="button" @click="go('/home/finance')">재정</button>
-            <button class="drawer-item" type="button" @click="go('/home/city')">도시</button>
-            <button class="drawer-item" type="button" @click="go('/home/settings')">설정</button>
+            <button class="drawer-item" type="button" @click="go(paths.research)">연구</button>
+            <button class="drawer-item" type="button" @click="go(paths.vehicles)">차량</button>
+            <button class="drawer-item" type="button" @click="go(paths.line)">노선</button>
+            <button class="drawer-item" type="button" @click="go(paths.construction)">건설</button>
+            <button class="drawer-item" type="button" @click="go(paths.finance)">재정</button>
+            <button class="drawer-item" type="button" @click="go(paths.city)">도시</button>
+            <button class="drawer-item" type="button" @click="go(paths.settings)">설정</button>
           </div>
 
           <div class="drawer-foot">
@@ -80,64 +84,91 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
-const router = useRouter();
-const route = useRoute();
+const router = useRouter()
+const route = useRoute()
 
-const isMenuOpen = ref(false);
+const isMenuOpen = ref(false)
 
 function closeMenu() {
-  isMenuOpen.value = false;
+  isMenuOpen.value = false
 }
 function toggleMenu() {
-  isMenuOpen.value = !isMenuOpen.value;
+  isMenuOpen.value = !isMenuOpen.value
+}
+
+// ✅ 정식 경로 베이스
+const BASE = '/game/main'
+
+// ✅ 중앙 메뉴에서 쓰는 경로들을 한 군데로 통일
+const paths = {
+  preview: `${BASE}/preview`,
+  research: `${BASE}/research`,
+  vehicles: `${BASE}/vehicles`,
+  line: `${BASE}/line`,
+  construction: `${BASE}/construction`,
+  finance: `${BASE}/finance`,
+  city: `${BASE}/city`,
+  settings: `${BASE}/settings`,
 }
 
 function go(path) {
-  closeMenu();
-  router.push(path);
+  closeMenu()
+  router.push(path)
 }
 
-/* 현재 페이지 타이틀(모바일 헤더용) */
+/* 현재 페이지 타이틀(모바일 헤더용)
+   - 정식: /game/main/*
+   - 레거시 호환: /home/* 로 들어와도 동일 타이틀로 잡힘
+*/
 const currentTitle = computed(() => {
-  const p = route.path || '';
-  if (p.includes('/home/preview')) return '프리뷰 운행';
-  if (p.includes('/home/research')) return '연구';
-  if (p.includes('/home/vehicles')) return '차량';
-  if (p.includes('/home/line')) return '노선';
-  if (p.includes('/home/construction')) return '건설';
-  if (p.includes('/home/finance')) return '재정';
-  if (p.includes('/home/city')) return '도시';
-  if (p.includes('/home/settings')) return '설정';
-  return '메인';
-});
+  const p = route.path || ''
+
+  // 정식/레거시 둘 다 잡기
+  const isPreview = p.includes('/game/main/preview') || p.includes('/home/preview')
+  const isResearch = p.includes('/game/main/research') || p.includes('/home/research')
+  const isVehicles = p.includes('/game/main/vehicles') || p.includes('/home/vehicles')
+  const isLine = p.includes('/game/main/line') || p.includes('/home/line')
+  const isConstruction = p.includes('/game/main/construction') || p.includes('/home/construction')
+  const isFinance = p.includes('/game/main/finance') || p.includes('/home/finance')
+  const isCity = p.includes('/game/main/city') || p.includes('/home/city')
+  const isSettings = p.includes('/game/main/settings') || p.includes('/home/settings')
+
+  if (isPreview) return '프리뷰 운행'
+  if (isResearch) return '연구'
+  if (isVehicles) return '차량'
+  if (isLine) return '노선'
+  if (isConstruction) return '건설'
+  if (isFinance) return '재정'
+  if (isCity) return '도시'
+  if (isSettings) return '설정'
+  return '메인'
+})
 
 /* 라우트 바뀌면 메뉴 자동 닫기(실수 방지) */
 watch(
   () => route.fullPath,
-  () => {
-    closeMenu();
-  }
-);
+  () => closeMenu()
+)
 
 /* ESC로 닫기 + 메뉴 열렸을 때 배경 스크롤 잠금 */
 function onKeyDown(e) {
-  if (e.key === 'Escape') closeMenu();
+  if (e.key === 'Escape') closeMenu()
 }
 
 watch(isMenuOpen, (open) => {
-  document.body.style.overflow = open ? 'hidden' : '';
-});
+  document.body.style.overflow = open ? 'hidden' : ''
+})
 
 onMounted(() => {
-  window.addEventListener('keydown', onKeyDown);
-});
+  window.addEventListener('keydown', onKeyDown)
+})
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeyDown);
-  document.body.style.overflow = '';
-});
+  window.removeEventListener('keydown', onKeyDown)
+  document.body.style.overflow = ''
+})
 </script>
 
 <style scoped>

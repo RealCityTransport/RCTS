@@ -1,44 +1,51 @@
 // src/composables/useSync.js
-import { computed, watch } from 'vue';
-import { useAuth } from '@/composables/useAuth';
-import { useResearch } from '@/composables/useResearch';
+import { computed, watch } from 'vue'
+import { useAuth } from '@/composables/useAuth'
+import { useResearch } from '@/composables/useResearch'
+import { useWorld } from '@/composables/useWorld'
+import { REMOTE_ENABLED } from '@/plugins/firebase/config'
 
-// 전역 싱글톤 동기화 상태
-let isInitialized = false;
+let isInitialized = false
 
 export function useSync() {
-  const { user, authReady } = useAuth();
-  const research = useResearch();
+  const { user, authReady } = useAuth()
+  const { world } = useWorld()
+  const research = useResearch()
 
-  const uid = computed(() => user.value?.uid || null);
+  const uid = computed(() => user.value?.uid || null)
+
+  // ✅ DEV 저장/동기화 완전 차단: PROD에서만 sync 동작
+  const REMOTE_OK = computed(() => import.meta.env.PROD && !!REMOTE_ENABLED)
 
   const start = () => {
-    if (isInitialized) return;
+    // ✅ DEV면 동기화 매니저 자체를 시작하지 않음
+    if (!REMOTE_OK.value) return
+    if (isInitialized) return
 
     watch(
-      [authReady, uid],
-      async ([ready, nextUid], [prevReady, prevUid]) => {
-        if (!ready) return;
+      [authReady, uid, world],
+      ([ready, nextUid, nextWorld], [_, prevUid, prevWorld]) => {
+        if (!ready) return
 
-        // UID가 바뀌면 기존 구독 해제
-        if (prevUid && prevUid !== nextUid) {
-          research.unsubscribe();
+        const uidChanged = !!prevUid && prevUid !== nextUid
+        const worldChanged = !!prevWorld && prevWorld !== nextWorld
+
+        if (uidChanged || worldChanged) {
+          research.unsubscribe()
         }
 
         if (nextUid) {
-          // 로그인: 서버 정본 구독 시작
-          research.subscribeForUser(nextUid);
+          research.subscribeForUser(nextUid, nextWorld)
         } else {
-          // 로그아웃: 구독 해제 + 게스트 정리
-          research.unsubscribe();
-          research.clearUserState(); // 게스트 모드(로컬 정본 없음)
+          research.unsubscribe()
+          research.clearUserState()
         }
       },
       { immediate: true }
-    );
+    )
 
-    isInitialized = true;
-  };
+    isInitialized = true
+  }
 
-  return { start };
+  return { start }
 }

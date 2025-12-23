@@ -1,31 +1,35 @@
 // vite.config.js
-import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
+import { fileURLToPath } from 'node:url'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import path from 'path'; // path 모듈 임포트
+import path from 'node:path'
 
-export default defineConfig({
-  // ⭐⭐⭐ GitHub Pages 배포를 위한 base 경로 설정 ⭐⭐⭐
-  base: '/RCTS/', // 오빠의 저장소 이름과 동일하게 설정해주세요.
-                   // 예: your-username.github.io/RCTS/ 로 접근할 수 있도록.
-  plugins: [
-    vue(),
-  ],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    }
-  },
-  // ⭐⭐⭐ 로컬 개발 서버 설정 추가/수정 ⭐⭐⭐
-  server: {
-    host: '0.0.0.0', // 모든 네트워크 인터페이스에서 접근 가능하도록 설정
-    port: 5173,      // 기본 포트
-    watch: {
-      usePolling: true, // WSL2와 같은 환경에서 파일 변경을 감지하기 위해 폴링 방식 사용
+// ✅ ESM 환경에서 __dirname 정의
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+export default defineConfig(({ mode }) => {
+  // VITE_* env 로드
+  const env = loadEnv(mode, process.cwd(), 'VITE_')
+
+  // ✅ 채널별 base (기본: /RCTS/)
+  // - prod:   /RCTS/
+  // - test:   /RCTS/test/
+  // - preview:/RCTS/preview/
+  const base = env.VITE_BASE ?? '/RCTS/'
+
+  return {
+    base,
+    plugins: [vue()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+      },
     },
-    // hmr: { // 필요한 경우, HMR 연결 설정을 명시할 수도 있습니다.
-    //   overlay: false, // HMR 오류 오버레이 비활성화 (선택 사항)
-    // }
-  },
-  // ⭐⭐⭐ /로컬 개발 서버 설정 ⭐⭐⭐
+    server: {
+      host: '0.0.0.0',
+      port: 5173,
+      watch: { usePolling: true },
+    },
+  }
 })
