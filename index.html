@@ -11,29 +11,27 @@
       href="https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/web/SUIT-Variable.css"
       rel="stylesheet"
     />
-  </head>
-  <body>
-    <div id="app"></div>
-    <!-- Vite 엔트리는 절대경로로 -->
-    <script type="module" src="/src/main.js"></script>
 
-    <!-- GitHub Pages 404 redirect 복원 -->
+    <!-- ✅ 반드시 앱 부팅 전에 실행 -->
     <script>
       (function () {
         const params = new URLSearchParams(window.location.search);
         const redirect = params.get("redirect");
         if (!redirect) return;
 
-        // base: "/RCTS/" or "/RCTS/test/" ...
         const base = document.querySelector("base")?.getAttribute("href") || "/";
         const baseNoTrail = base.endsWith("/") ? base.slice(0, -1) : base;
 
-        // redirect는 "/something" 형태로 오게 만들 거임(404.html에서)
         const decoded = decodeURIComponent(redirect);
         const next = baseNoTrail + (decoded.startsWith("/") ? decoded : "/" + decoded);
 
         history.replaceState(null, "", next);
       })();
     </script>
+  </head>
+
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
