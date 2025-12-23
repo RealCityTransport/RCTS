@@ -1,26 +1,51 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
+    <meta name="robots" content="noindex" />
     <script>
       (function () {
-        const repoRoot = "/RCTS";
-        const p = location.pathname;
+        // GitHub Pages 프로젝트 페이지 기본 베이스
+        // (오빠 정책: /RCTS/ 아래에 prod/test/preview/가 존재)
+        var BASE = "/RCTS";
 
-        // 채널 판별
-        let base = repoRoot + "/";
-        if (p.startsWith(repoRoot + "/test/")) base = repoRoot + "/test/";
-        else if (p.startsWith(repoRoot + "/preview/")) base = repoRoot + "/preview/";
-        else if (p.startsWith(repoRoot + "/staging/")) base = repoRoot + "/staging/";
+        // 현재 경로 (/RCTS/test/home/research 등)
+        var path = window.location.pathname || "/";
+        var search = window.location.search || "";
+        var hash = window.location.hash || "";
 
-        // base 이후 경로(+쿼리+해시)
-        const restPath = p.slice(base.length - 1);
-        const query = location.search || "";
-        const hash = location.hash || "";
-        const redirect = restPath + query + hash;
+        // BASE 제거 후 상대경로 획득
+        var relative = path.indexOf(BASE) === 0 ? path.slice(BASE.length) : path;
 
-        sessionStorage.setItem("rcts:redirect", redirect);
-        location.replace(base);
+        // /test, /preview 판별
+        var parts = relative.split("/").filter(Boolean);
+        var first = parts[0] || "";
+
+        var channel = "";
+        if (first === "test" || first === "preview" || first === "staging" || first === "dev") {
+          channel = first;
+          parts = parts.slice(1); // 채널 제거 후 나머지 path만
+        }
+
+        // 리다이렉트로 넘길 내부 라우트 경로
+        // 예: /home/research
+        var redirectPath = "/" + parts.join("/");
+        if (redirectPath === "/") {
+          // 루트면 그대로 둠
+          redirectPath = "/";
+        }
+
+        // 최종 target
+        // prod    -> /RCTS/?redirect=/home/research
+        // test    -> /RCTS/test/?redirect=/home/research
+        // preview -> /RCTS/preview/?redirect=/home/research
+        var target =
+          BASE +
+          (channel ? "/" + channel : "") +
+          "/?redirect=" +
+          encodeURIComponent(redirectPath + search + hash);
+
+        window.location.replace(target);
       })();
     </script>
   </head>
