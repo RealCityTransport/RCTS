@@ -1,5 +1,10 @@
 # .github/workflows/deploy.yml
 name: Deploy Channels to GitHub Pages
+run-name: >
+  Deploy channel =
+  ${{ github.ref_name == 'deploy/prod' && 'prod'
+    || github.ref_name == 'deploy/test' && 'test'
+    || 'preview' }}
 
 on:
   push:
