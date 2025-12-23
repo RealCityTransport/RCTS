@@ -1,6 +1,12 @@
 // src/composables/useResearch.js
 import { ref, computed, watchEffect } from 'vue';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+  onSnapshot,
+} from 'firebase/firestore';
 import { db } from '@/plugins/firebase/config';
 import { useKstTime } from './useKstTime';
 
@@ -8,7 +14,7 @@ import { researchCatalog, getResearchDef } from '@/data/research/catalog';
 import { useTimeFormat } from '@/composables/useTimeFormat';
 
 // 저장/자동저장 설정 (LocalStorage) — "설정"이므로 유지
-const LS_SAVE_ENABLED = 'rcts.research.saveEnabled';
+const LS_SAVE_ENABLED = 'rcts.research.saveEnabled'; // 의미: 자동저장/배경 저장 허용
 const LS_AUTOSAVE_ENABLED = 'rcts.research.autosave.enabled';
 const LS_AUTOSAVE_BASE = 'rcts.research.autosave.base';
 const LS_AUTOSAVE_INTERVAL = 'rcts.research.autosave.intervalMin';
@@ -22,8 +28,6 @@ function nowKstMs() {
 
 // =======================================================
 // ✅ 긴급 잠금(실서비스 핫픽스)
-// - catalog.js에서 enabled:false로 내려둔 5개 연구
-// - "새로 시작"뿐 아니라, "진행중/예약중"도 즉시 취소
 // =======================================================
 const HARD_LOCK_RESEARCH_IDS = new Set([
   'sys_unlock_vehicle',
@@ -74,7 +78,10 @@ const currentUid = ref(null);
 let saveDebounceTimer = null;
 let isHydrating = false;
 
-// 저장 ON/OFF
+// Firestore 구독 핸들
+let unsubscribeFn = null;
+
+// 저장 ON/OFF (의미를 "자동/배경 저장 허용"으로 축소)
 const saveEnabled = ref(loadBool(LS_SAVE_ENABLED, true));
 
 // 자동 저장 설정
@@ -120,6 +127,8 @@ function setSaveEnabled(v) {
   saveEnabled.value = !!v;
   saveBool(LS_SAVE_ENABLED, saveEnabled.value);
 
+  // saveEnabled=false는 "자동/배경 저장"만 중지한다.
+  // 핵심 액션(연구 시작/완료 등)의 커밋은 막지 않는 방향이 서버 정본 정책에 더 안전함.
   if (!saveEnabled.value) {
     if (saveDebounceTimer) {
       clearTimeout(saveDebounceTimer);
@@ -442,12 +451,18 @@ function findTier1UnlockResearchId(transportId) {
   return node?.id ?? null;
 }
 
-function canSave() {
-  if (!saveEnabled.value) return false;
+// 서버 정본 정책: 로그인 상태 + 로드 완료 + 하이드레이션 중 아님이면 커밋 가능
+function canCommit() {
   if (!currentUid.value) return false;
   if (!isStateLoaded.value) return false;
   if (isHydrating) return false;
   return true;
+}
+
+// "배경/자동 저장" 허용 여부 (설정)
+function canBackgroundSave() {
+  if (!saveEnabled.value) return false;
+  return canCommit();
 }
 
 function serializeState() {
@@ -505,6 +520,7 @@ function applyRemoteState(remote) {
 
   queuedResearchIds.value = merged;
 
+  // legacy migration hook
   if (completedIds.value.size === 0 && Array.isArray(remote?.transports)) {
     for (const t of remote.transports) {
       if (!t || typeof t.id !== 'string') continue;
@@ -519,7 +535,8 @@ function applyRemoteState(remote) {
 }
 
 async function saveNow({ reason = 'manual' } = {}) {
-  if (!canSave()) return;
+  // 핵심 커밋(수동/액션)은 saveEnabled와 무관하게 가능해야 서버 정본이 안전함.
+  if (!canCommit()) return;
 
   if (saveDebounceTimer) {
     clearTimeout(saveDebounceTimer);
@@ -545,7 +562,8 @@ async function saveNow({ reason = 'manual' } = {}) {
 }
 
 const scheduleSave = () => {
-  if (!canSave()) return;
+  // 배경/디바운스 저장은 saveEnabled 설정을 존중
+  if (!canBackgroundSave()) return;
 
   if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
   saveDebounceTimer = setTimeout(async () => {
@@ -564,7 +582,9 @@ function setFirstUnlockTransport(transportId) {
   completedIds.value.add(researchId);
 
   recomputeEffects();
-  scheduleSave();
+
+  // 이건 유저 액션이므로 saveEnabled와 무관하게 즉시 커밋해도 됨.
+  saveNow({ reason: 'firstUnlock' });
 }
 
 function startResearchInternal(researchId) {
@@ -595,7 +615,7 @@ function startResearchInternal(researchId) {
   if (durSec <= 0) {
     completedIds.value.add(researchId);
     recomputeEffects();
-    scheduleSave();
+    saveNow({ reason: 'instantComplete' });
     return { ok: true, instant: true };
   }
 
@@ -605,7 +625,7 @@ function startResearchInternal(researchId) {
     endsAtMs: now + durSec * 1000,
   };
 
-  scheduleSave();
+  saveNow({ reason: 'startResearch' });
   return { ok: true, instant: false };
 }
 
@@ -625,7 +645,7 @@ function startResearch(researchId) {
     if (st !== 'available') return { ok: false, reason: st.toUpperCase() };
 
     queuedResearchIds.value = [...queuedResearchIds.value, researchId].slice(0, limit);
-    scheduleSave();
+    saveNow({ reason: 'queueAdd' });
     return { ok: true, queued: true };
   }
 
@@ -637,13 +657,13 @@ function cancelQueuedResearch(researchId) {
   const next = before.filter((id) => id !== researchId);
   if (next.length === before.length) return;
   queuedResearchIds.value = next;
-  scheduleSave();
+  saveNow({ reason: 'queueCancel' });
 }
 
 function cancelAllQueuedResearch() {
   if (queuedResearchIds.value.length === 0) return;
   queuedResearchIds.value = [];
-  scheduleSave();
+  saveNow({ reason: 'queueCancelAll' });
 }
 
 function getResearchProgress(researchId) {
@@ -657,11 +677,6 @@ function getResearchProgress(researchId) {
   return Math.max(0, Math.min(100, (elapsed / total) * 100));
 }
 
-/**
- * ✅ 변경: 공통 포맷터 적용
- * - 00h 제거 / 00m 제거 규칙 적용
- * - KST 미준비/비활성은 0s
- */
 function getResearchRemainingTime(researchId) {
   const { formatRemainSec } = useTimeFormat();
 
@@ -673,9 +688,14 @@ function getResearchRemainingTime(researchId) {
   return formatRemainSec(s);
 }
 
-// 로그인 시: 원격 로드
-async function loadForUser(uid) {
-  if (!uid) return;
+// ==============================
+// 서버 정본: 구독 기반 로드
+// ==============================
+function unsubscribe() {
+  if (unsubscribeFn) {
+    unsubscribeFn();
+    unsubscribeFn = null;
+  }
 
   if (saveDebounceTimer) {
     clearTimeout(saveDebounceTimer);
@@ -683,37 +703,77 @@ async function loadForUser(uid) {
   }
   stopAutoSave();
 
+  currentUid.value = null;
+  isStateLoaded.value = false;
+  isHydrating = false;
+}
+
+function subscribeForUser(uid) {
+  if (!uid) return;
+
+  // 기존 구독 정리
+  unsubscribe();
+
   currentUid.value = uid;
   isLoadingFirebaseData.value = true;
   isStateLoaded.value = false;
 
-  try {
-    const refDoc = doc(db, 'users', uid, 'research', 'state');
-    const snap = await getDoc(refDoc);
+  const refDoc = doc(db, 'users', uid, 'research', 'state');
 
-    isHydrating = true;
-    if (snap.exists()) {
-      applyRemoteState(snap.data());
-      console.log('useResearch: Firebase 상태 로드 완료');
-    } else {
-      console.log('useResearch: Firebase 문서 없음 (초기 상태)');
-      recomputeEffects();
+  // 최초 문서가 없을 수 있으므로: 1) 구독, 2) 없으면 초기 생성(선택)
+  unsubscribeFn = onSnapshot(
+    refDoc,
+    async (snap) => {
+      isHydrating = true;
+
+      try {
+        if (snap.exists()) {
+          applyRemoteState(snap.data());
+          // console.log('useResearch: onSnapshot 적용 완료');
+        } else {
+          // 문서 없음: 초기 상태 확정 + (원하면) 서버에 초기 문서 생성
+          recomputeEffects();
+
+          // "서버 정본"을 강하게 유지하려면 초기 문서를 만들어두는 게 좋다.
+          // 단, 하이드레이션 중 무한루프 방지를 위해 isHydrating 상태에서 직접 setDoc 한다.
+          const payload = {
+            ...serializeState(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            lastSaveReason: 'init',
+          };
+          await setDoc(refDoc, payload, { merge: true });
+        }
+      } catch (e) {
+        console.error('useResearch: onSnapshot apply failed:', e);
+      } finally {
+        isHydrating = false;
+        isLoadingFirebaseData.value = false;
+        isStateLoaded.value = true;
+
+        // 자동저장 옵션 동기화
+        syncAutoSave(true);
+      }
+    },
+    (err) => {
+      isHydrating = false;
+      isLoadingFirebaseData.value = false;
+      isStateLoaded.value = false;
+      stopAutoSave();
+      console.error('useResearch: onSnapshot error:', err);
     }
-    isHydrating = false;
-
-    isStateLoaded.value = true;
-    syncAutoSave(true);
-  } catch (e) {
-    isHydrating = false;
-    console.error('useResearch: Firebase 로드 실패:', e);
-    isStateLoaded.value = false;
-    stopAutoSave();
-  } finally {
-    isLoadingFirebaseData.value = false;
-  }
+  );
 }
 
+// (레거시 호환) 기존 코드가 loadForUser를 부르면 구독으로 연결
+async function loadForUser(uid) {
+  subscribeForUser(uid);
+}
+
+// ===== 사용자 상태 정리 =====
 function clearUserState() {
+  // 서버 정본이므로 로그아웃 시에는 "구독 해제 + 메모리 상태 초기화"
+  // (게스트로도 계속 플레이하게 할 거면 여기 정책을 바꾸면 됨)
   becomeGuestMode();
 
   firstUnlockTransportId.value = null;
@@ -737,6 +797,7 @@ function clearUserState() {
   recomputeEffects();
 }
 
+// ===== watchEffect (기존 유지) =====
 watchEffect(() => {
   if (isHydrating) return;
 
@@ -755,7 +816,10 @@ watchEffect(() => {
     }
   }
 
-  if (changed) scheduleSave();
+  if (changed) {
+    // 정책: 하드락 변경은 서버 정본에 반영되어야 하므로 즉시 커밋
+    saveNow({ reason: 'hardLockCleanup' });
+  }
 });
 
 watchEffect(() => {
@@ -781,7 +845,7 @@ watchEffect(() => {
       }
     }
 
-    scheduleSave();
+    saveNow({ reason: 'researchComplete' });
   }
 });
 
@@ -836,12 +900,19 @@ export function useResearch() {
 
     isKstTimeReady,
 
+    // 구독 기반
+    subscribeForUser,
+    unsubscribe,
+
+    // 레거시 호환
     loadForUser,
     clearUserState,
 
+    // 저장 API
     saveNow,
     scheduleSave,
 
+    // 설정(자동/배경 저장)
     saveEnabled,
     setSaveEnabled,
 
