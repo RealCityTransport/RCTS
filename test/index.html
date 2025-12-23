@@ -1,25 +1,40 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <base href="/RCTS/" />
-    <link rel="icon" href="favicon.png" />
+    <!-- 채널별 base: /RCTS/, /RCTS/test/, /RCTS/preview/ ... -->
+    <base href="/RCTS/test/" />
+    <link rel="icon" href="/RCTS/test/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RCTS</title>
-    <link href="https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/web/SUIT-Variable.css" rel="stylesheet">
-    <script type="module" crossorigin src="/RCTS/test/assets/index-4P6DQVPQ.js"></script>
-    <link rel="stylesheet" crossorigin href="/RCTS/test/assets/index-D0eaWtG1.css">
+    <link
+      href="https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/web/SUIT-Variable.css"
+      rel="stylesheet"
+    />
+    <script type="module" crossorigin src="/RCTS/test/assets/index-B5Y1jupz.js"></script>
+    <link rel="stylesheet" crossorigin href="/RCTS/test/assets/index-BwYV4TGe.css">
   </head>
   <body>
     <div id="app"></div>
+    <!-- Vite 엔트리는 절대경로로 -->
+
+    <!-- GitHub Pages 404 redirect 복원 -->
+    <script>
+      (function () {
+        const params = new URLSearchParams(window.location.search);
+        const redirect = params.get("redirect");
+        if (!redirect) return;
+
+        // base: "/RCTS/" or "/RCTS/test/" ...
+        const base = document.querySelector("base")?.getAttribute("href") || "/";
+        const baseNoTrail = base.endsWith("/") ? base.slice(0, -1) : base;
+
+        // redirect는 "/something" 형태로 오게 만들 거임(404.html에서)
+        const decoded = decodeURIComponent(redirect);
+        const next = baseNoTrail + (decoded.startsWith("/") ? decoded : "/" + decoded);
+
+        history.replaceState(null, "", next);
+      })();
+    </script>
   </body>
 </html>
-<script>
-  (function () {
-    const params = new URLSearchParams(window.location.search);
-    const redirect = params.get('redirect');
-    if (redirect) {
-      history.replaceState(null, '', '/RCTS' + redirect);
-    }
-  })();
-</script>
