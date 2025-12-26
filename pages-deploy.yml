@@ -1,0 +1,34 @@
+name: 깃허브 페이지 배포
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Pages Artifact 업로드
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./out/test   # 👉 여기 경로만 너 프로젝트에 맞게 유지/수정하면 됨
+
+      - name: GitHub Pages 배포
+        id: deployment
+        uses: actions/deploy-pages@v4
