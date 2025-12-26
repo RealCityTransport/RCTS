@@ -2,11 +2,14 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <!-- ✅ GitHub Pages에서 /RCTS/를 루트로 쓰도록 고정 -->
-    <base href="/RCTS/" />
 
-    <!-- 파비콘도 /RCTS/ 기준 고정 -->
-    <link rel="icon" href="/RCTS/favicon.png" />
+    <!-- ✅ Vite가 base 설정을 넣어줄 자리 -->
+    <!--   - 개발: "/"
+    <!--   - GitHub Pages (RCTS): "/RCTS/" -->
+    <base href="%BASE_URL%" />
+
+    <!-- 파비콘: base 기준으로 -->
+    <link rel="icon" href="%BASE_URL%favicon.png" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RCTS</title>
@@ -17,9 +20,6 @@
       rel="stylesheet"
     />
 
-    <!-- 빌드된 CSS (Vite 결과물) -->
-    <link rel="stylesheet" href="/RCTS/assets/index-BwYV4TGe.css" />
-
     <!-- 🔁 깊은 링크 복구용 스크립트 (sessionStorage 사용) -->
     <script>
       (function () {
@@ -27,11 +27,15 @@
         if (!redirect) return;
         sessionStorage.removeItem("rcts:redirect");
 
-        const base = document.querySelector("base")?.getAttribute("href") || "/";
+        const base =
+          document.querySelector("base")?.getAttribute("href") || "/";
         const baseNoTrail = base.endsWith("/") ? base.slice(0, -1) : base;
 
+        // 예: base = "/RCTS/", redirect = "/idle" → "/RCTS/idle"
         const next =
-          baseNoTrail + (redirect.startsWith("/") ? redirect : "/" + redirect);
+          baseNoTrail +
+          (redirect.startsWith("/") ? redirect : "/" + redirect);
+
         history.replaceState(null, "", next);
       })();
     </script>
@@ -40,7 +44,8 @@
   <body>
     <div id="app"></div>
 
-    <!-- ✅ 빌드된 JS 번들 (Vite 결과물) -->
-    <script type="module" src="/RCTS/assets/index-DX29O6Rn.js"></script>
+    <!-- ✅ 여기서는 항상 "소스 엔트리"만 가리켜야 함 -->
+    <!-- Vite가 빌드할 때 이것을 보고 assets 번들을 만들어 줌 -->
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
