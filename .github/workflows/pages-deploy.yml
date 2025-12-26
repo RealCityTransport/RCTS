@@ -20,14 +20,31 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: 저장소 체크아웃
         uses: actions/checkout@v4
 
+      - name: Node 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: Vue 빌드
+        run: npm run build
+
       - name: Pages Artifact 업로드
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./out/test   # 👉 여기 경로만 너 프로젝트에 맞게 유지/수정하면 됨
+          # Vue(Vite/CLI) 기본 빌드 출력 폴더
+          path: ./dist
 
       - name: GitHub Pages 배포
         id: deployment
