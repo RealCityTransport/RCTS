@@ -2,15 +2,25 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <base href="%BASE_URL%" />
-    <link rel="icon" href="%BASE_URL%favicon.png" />
+    <!-- ✅ GitHub Pages에서 /RCTS/를 루트로 쓰도록 고정 -->
+    <base href="/RCTS/" />
+
+    <!-- 파비콘도 /RCTS/ 기준 고정 -->
+    <link rel="icon" href="/RCTS/favicon.png" />
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RCTS</title>
+
+    <!-- SUIT 폰트 (그대로 유지) -->
     <link
       href="https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/web/SUIT-Variable.css"
       rel="stylesheet"
     />
 
+    <!-- 빌드된 CSS (Vite 결과물) -->
+    <link rel="stylesheet" href="/RCTS/assets/index-BwYV4TGe.css" />
+
+    <!-- 🔁 깊은 링크 복구용 스크립트 (sessionStorage 사용) -->
     <script>
       (function () {
         const redirect = sessionStorage.getItem("rcts:redirect");
@@ -20,7 +30,8 @@
         const base = document.querySelector("base")?.getAttribute("href") || "/";
         const baseNoTrail = base.endsWith("/") ? base.slice(0, -1) : base;
 
-        const next = baseNoTrail + (redirect.startsWith("/") ? redirect : "/" + redirect);
+        const next =
+          baseNoTrail + (redirect.startsWith("/") ? redirect : "/" + redirect);
         history.replaceState(null, "", next);
       })();
     </script>
@@ -28,6 +39,8 @@
 
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
+
+    <!-- ✅ 빌드된 JS 번들 (Vite 결과물) -->
+    <script type="module" src="/RCTS/assets/index-DX29O6Rn.js"></script>
   </body>
 </html>
