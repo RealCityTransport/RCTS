@@ -54,9 +54,10 @@ type VillageBusResearchState = {
   peakRushDone: boolean
 }
 
+// 자동 저장/리더 관리
 const AUTO_SAVE_INTERVAL_MS = 10 * 60 * 1000 // 10분 자동 저장 간격
-const LEADER_EXPIRE_MS = 30 * 1000 // 30초 리더 타임아웃
-const LEADER_HEARTBEAT_MS = 15 * 1000 // 15초마다 리더 하트비트
+const LEADER_EXPIRE_MS = 5 * 1000 // 5초 리더 타임아웃
+const LEADER_HEARTBEAT_MS = 2 * 1000 // 2초마다 리더 하트비트
 
 // 로컬 개발 환경 여부
 const IS_LOCALHOST =
@@ -401,13 +402,13 @@ export function useIdletestView() {
       board: state.lastBoard || 0,
       deboard: state.lastDeboard || 0,
       passengers: state.currentPassengers || 0,
-      // ⚠ 이 값은 "루프 내 전체 정류장 정차 수" (왕복 포함 20/40칸 등) 기준
+      // 루프 내 전체 정류장 수 (왕복 포함)
       stopsPerLoop,
       capacity: baseCapacity,
     }
   })
 
-  // 물리 정류장 수 (왕복 기준 표시용: 20개 정류장 → 10개 점, 40개 → 20개 점)
+  // 물리 정류장 수 (왕복 기준: 20개 정류장 → 10개, 40개 → 20개)
   const busUniqueStops = computed(() => {
     const totalStops = busLastStopInfo.value.stopsPerLoop
     if (totalStops <= 0) return 1
@@ -845,9 +846,7 @@ export function useIdletestView() {
               )
             : 0
 
-        // ─────────────────────────────
-        // 버스 상태 텍스트 (정류장/이동/승하차 연출)
-        // ─────────────────────────────
+        // 버스 상태 텍스트
         const last = busLastStopInfo.value
         const lastLoopIndex = last.loopIndex || 0
         const lastStopsPerLoop =
@@ -862,16 +861,12 @@ export function useIdletestView() {
           if (inDwell) {
             // 정류장 정차 중
             if (lastLoopIndex === 0) {
-              // 아직 승하차 이력 없음
               statusText = `${currentStopIndex}번 정류장 정차중`
             } else if (lastLoopIndex === 1) {
-              // 첫 정류장: 승차만
               statusText = `${currentStopIndex}번 정류장 정차중 승차 ${board}명`
             } else if (lastLoopIndex === lastStopsPerLoop) {
-              // 마지막 정류장: 전원 하차 → 0명
               statusText = `${currentStopIndex}번 정류장 정차중 하차 ${deboard}명 → 0명`
             } else {
-              // 중간 정류장: 승차 + 하차
               statusText = `${currentStopIndex}번 정류장 정차중 승차 ${board}명, 하차 ${deboard}명`
             }
           } else {
@@ -1202,7 +1197,7 @@ export function useIdletestView() {
     (now) => {
       const nowMs = now
 
-      // 리더 하트비트: 15초마다 leaderLastSeenAt 갱신
+      // 리더 하트비트: 2초마다 leaderLastSeenAt 갱신
       if (user.value && isLeader.value && !IS_LOCALHOST) {
         if (nowMs - lastLeaderHeartbeatMs >= LEADER_HEARTBEAT_MS) {
           lastLeaderHeartbeatMs = nowMs
