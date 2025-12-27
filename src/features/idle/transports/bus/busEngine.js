@@ -1,7 +1,6 @@
 // src/features/idle/transports/bus/busEngine.js
 import {
   VILLAGE_BUS_BASE_CONFIG,
-  VILLAGE_BUS_DEMAND_PARAMS,
   BUS_CYCLE_SEC,
   BUS_DWELL_SEC,
   BUS_TRAVEL_SEC,
@@ -11,6 +10,29 @@ import {
 function randomInt(min, max) {
   if (max <= min) return min
   return Math.floor(Math.random() * (max - min + 1)) + min
+}
+
+/**
+ * 왕복 루프에서 "세그먼트 인덱스(1~총세그먼트)"를
+ * 실제 물리 정류장 번호(1~N→N~1)로 매핑
+ *
+ * - uniqueStops: 왕복 기준 물리 정류장 수 (예: 10)
+ * - 세그먼트 인덱스는 1~(2 * uniqueStops) 구간을 가정
+ */
+export function mapSegmentToLineStop(segmentIndex, uniqueStops) {
+  if (uniqueStops <= 1) return 1
+
+  const N = uniqueStops
+  const seg = Math.max(1, Math.floor(segmentIndex))
+  const maxSeg = 2 * N
+  const clamped = Math.min(seg, maxSeg)
+
+  if (clamped <= N) {
+    // 1 ~ N : 정방향 1 → N
+    return clamped
+  }
+  // N+1 ~ 2N : 역방향 N → 1
+  return 2 * N + 1 - clamped
 }
 
 /**
@@ -37,8 +59,21 @@ export function applyVillageBusResearchToState(lineState) {
 /**
  * 마을버스 정류장 단위 시뮬레이션
  * - lineState: 현재 버스 라인 상태 (순수 객체)
- * - stopCount: 처리할 정류장 개수
+ * - stopCount: 처리할 "정류장 정차" 횟수
  * - return: { nextState, income }
+ *
+ * 규칙:
+ * - 정류장 정차 시점마다 승·하차 처리
+ * - 첫 정류장:
+ *   - 승차만 작동 (하차 없음)
+ *   - 여유 좌석이 있다면 1명~여유좌석 랜덤 승차
+ * - 마지막 정류장:
+ *   - 현재 탑승 인원 전부 하차
+ *   - 추가 승차 없음 (board = 0)
+ * - 중간 정류장:
+ *   - 하차: 현재 탑승 인원에서 랜덤 (0~현재탑승인원)
+ *   - 승차: 하차 후 남은 인원 기준, 여유 좌석(정원-현재탑승) 1~여유좌석 랜덤 승차
+ * - 수익: 각 정류장에서 "승차 인원 × 기본요금" 즉시 정산
  */
 export function simulateVillageBusStops(lineState, stopCount) {
   if (stopCount <= 0) {
@@ -49,72 +84,85 @@ export function simulateVillageBusStops(lineState, stopCount) {
   }
 
   const conf = VILLAGE_BUS_BASE_CONFIG
-  const demand = VILLAGE_BUS_DEMAND_PARAMS
-
   const state = { ...lineState }
 
-  const capacity = state.capacity
+  const capacity =
+    typeof state.capacity === 'number'
+      ? state.capacity
+      : VILLAGE_BUS_BASE_CONFIG.baseCapacity
+
   const stopsPerLoop =
     state.stopsPerLoop || VILLAGE_BUS_BASE_CONFIG.baseStopsPerLoop
 
-  let currentPassengers = state.currentPassengers
+  const totalStops = stopsPerLoop
+  const uniqueStops = Math.max(1, Math.floor(totalStops / 2))
+
+  let currentPassengers =
+    typeof state.currentPassengers === 'number'
+      ? state.currentPassengers
+      : 0
+
   let income = 0
 
   for (let i = 0; i < stopCount; i += 1) {
     const loopStopIndex =
       (state.stopsProcessedInThisLoop % stopsPerLoop) + 1
 
-    // 하차
-    const deboard =
-      currentPassengers > 0 ? randomInt(0, currentPassengers) : 0
-    currentPassengers -= deboard
+    const physicalStopIndex = mapSegmentToLineStop(
+      loopStopIndex,
+      uniqueStops,
+    )
 
-    // 탑승
-    const freeSeats = capacity - currentPassengers
+    let deboard = 0
     let board = 0
 
-    if (freeSeats > 0) {
-      const isRush =
-        state.research.peakRushDone &&
-        Math.random() < demand.rushEventChance
-
-      if (isRush) {
-        const minAfter = Math.round(capacity * demand.rushFillMinRatio)
-        const targetAfter = randomInt(minAfter, capacity)
-        const needed = Math.max(0, targetAfter - currentPassengers)
-        board = Math.min(freeSeats, needed)
-      } else {
-        const targetAfter = Math.round(capacity * demand.targetLoadRatio)
-        const desiredDiff = targetAfter - currentPassengers
-        const maxBoardTowardTarget =
-          desiredDiff > 0
-            ? desiredDiff + demand.extraBoardLeeway
-            : Math.max(1, Math.floor(capacity * 0.1))
-
-        const maxBoard = Math.min(
-          freeSeats,
-          Math.max(0, maxBoardTowardTarget),
-        )
-
-        if (maxBoard > 0) {
-          board = randomInt(0, maxBoard)
-        }
+    if (loopStopIndex === 1) {
+      // 1) 첫 정류장: 승차만 작동 (하차 없음)
+      const freeSeats = Math.max(0, capacity - currentPassengers)
+      if (freeSeats > 0) {
+        // 최소 1명 이상 승차
+        board = randomInt(1, freeSeats)
+        currentPassengers += board
+      }
+    } else if (loopStopIndex === stopsPerLoop) {
+      // 2) 마지막 정류장: 현재 탑승 인원 전부 하차, 승차 없음
+      deboard = currentPassengers
+      currentPassengers = 0
+      board = 0
+    } else {
+      // 3) 중간 정류장: 하차 + 승차 동시에
+      if (currentPassengers > 0) {
+        // 하차: 현재 탑승 인원에서 랜덤
+        deboard = randomInt(0, currentPassengers)
+        currentPassengers -= deboard
       }
 
-      currentPassengers += board
+      const freeSeats = Math.max(0, capacity - currentPassengers)
+      if (freeSeats > 0) {
+        // 승차: 여유 좌석 기준 1~여유좌석 랜덤
+        board = randomInt(1, freeSeats)
+        currentPassengers += board
+      }
     }
 
-    // 승차 인원 기준 수익 정산
+    // 수익: 승차 인원 × 기본요금
     income += board * conf.fare
 
-    state.stopsProcessedInThisLoop += 1
+    // 상태 기록 (UI용)
+    state.stopsProcessedInThisLoop =
+      (state.stopsProcessedInThisLoop || 0) + 1
+
+    // 루프 인덱스/물리 인덱스 모두 저장
     state.lastStopIndex = loopStopIndex
+    state.lastLoopStopIndex = loopStopIndex
+    state.lastPhysicalStopIndex = physicalStopIndex
     state.lastBoard = board
     state.lastDeboard = deboard
+    state.lastPassengers = currentPassengers
   }
 
   state.currentPassengers = currentPassengers
-  state.totalIncome += income
+  state.totalIncome = (state.totalIncome || 0) + income
 
   return {
     nextState: state,
@@ -124,48 +172,130 @@ export function simulateVillageBusStops(lineState, stopCount) {
 
 /**
  * 버스 한 루프에 필요한 전체 운행 시간(초)
+ *
+ * - lineState.stopsPerLoop 는 "루프 내 정류장 정차 횟수" 개념
+ *   (예: 물리 정류장 10개 왕복이면 20 정차, 확장 시 40 정차 등)
+ * - 각 정류장마다 정차는 항상 발생
+ * - 이동은 (정류장 수 - 1)번만 발생하는 구조로 계산
  */
 export function getBusRunDuration(lineState) {
   const stops =
     lineState.stopsPerLoop || VILLAGE_BUS_BASE_CONFIG.baseStopsPerLoop
-  return stops * BUS_CYCLE_SEC
+
+  // 정차 시간: 모든 정류장에서 BUS_DWELL_SEC
+  const totalDwell = stops * BUS_DWELL_SEC
+
+  // 이동 시간: 마지막 정류장 이후에는 더 이동하지 않는다고 보고 (stops - 1)번
+  const totalTravel = Math.max(0, stops - 1) * BUS_TRAVEL_SEC
+
+  return totalDwell + totalTravel
 }
 
 /**
- * (필요하면) 현재 버스 슬롯의 정류장/phase 정보를 계산하는 헬퍼
- * - 지금은 View 쪽에서 직접 계산하고 있으니,
- *   나중에 더 분리하고 싶으면 여기로 옮겨도 됨.
+ * 현재 버스 슬롯의 정류장/방향/위치 정보를 계산하는 헬퍼
+ *
+ * - lineState: 현재 라인 상태
+ * - runMeta: 슬롯의 운행 메타 (startedAtMs, durationSec 등)
+ * - nowMs: 기준 시각 (Date.now())
  */
 export function getBusPhaseInfo(lineState, runMeta, nowMs) {
-  const totalSec = runMeta.durationSec || getBusRunDuration(lineState)
+  const baseStops =
+    lineState.stopsPerLoop || VILLAGE_BUS_BASE_CONFIG.baseStopsPerLoop
+
+  const stopsPerLoop = baseStops > 0 ? baseStops : 1
+  const uniqueStops = Math.max(1, Math.floor(stopsPerLoop / 2))
+
+  if (!runMeta) {
+    return {
+      stopsPerLoop,
+      uniqueStops,
+      segmentIndex: 0,
+      physicalStopIndex: 0,
+      nextPhysicalStopIndex: 0,
+      direction: 'forward',
+      inDwell: false,
+      dwellRemainingSec: 0,
+      travelRemainingSec: 0,
+      trackPositionRatio: 0,
+    }
+  }
+
+  const totalSec =
+    runMeta.durationSec || getBusRunDuration(lineState) || 1
   const elapsedSec = Math.max(0, (nowMs - runMeta.startedAtMs) / 1000)
   const clamped =
     totalSec > 0 ? Math.min(elapsedSec, totalSec - 0.001) : 0
 
-  const stopsPerLoop =
-    lineState.stopsPerLoop || VILLAGE_BUS_BASE_CONFIG.baseStopsPerLoop
+  // 루프 내 세그먼트 인덱스 (1 ~ stopsPerLoop)
+  const segmentIndexBase = Math.floor(clamped / BUS_CYCLE_SEC)
+  const segmentIndex = Math.min(stopsPerLoop, segmentIndexBase + 1)
 
-  const stopIndexBase = Math.floor(clamped / BUS_CYCLE_SEC)
-  const currentStopIndex = Math.min(stopsPerLoop, stopIndexBase + 1)
+  // 상행/하행 판별 + 물리 정류장 번호
+  const direction =
+    segmentIndex <= uniqueStops ? 'forward' : 'backward'
+  const physicalStopIndex = mapSegmentToLineStop(
+    segmentIndex,
+    uniqueStops,
+  )
 
-  const withinStop = clamped % BUS_CYCLE_SEC
-  const inDwell = withinStop < BUS_DWELL_SEC
+  // 세그먼트 내에서 정차/이동 상태 및 잔여 시간
+  const withinSegment = clamped % BUS_CYCLE_SEC
+  const inDwell = withinSegment < BUS_DWELL_SEC
 
   let dwellRemainingSec = 0
   let travelRemainingSec = 0
 
   if (inDwell) {
-    dwellRemainingSec = BUS_DWELL_SEC - withinStop
+    dwellRemainingSec = BUS_DWELL_SEC - withinSegment
+    travelRemainingSec = 0
   } else {
-    const travelElapsed = withinStop - BUS_DWELL_SEC
+    const travelElapsed = withinSegment - BUS_DWELL_SEC
     travelRemainingSec = Math.max(0, BUS_TRAVEL_SEC - travelElapsed)
+    dwellRemainingSec = 0
+  }
+
+  // 다음 물리 정류장 번호 (표시용)
+  let nextPhysicalStopIndex = physicalStopIndex
+  if (direction === 'forward') {
+    nextPhysicalStopIndex = Math.min(uniqueStops, physicalStopIndex + 1)
+  } else {
+    nextPhysicalStopIndex = Math.max(1, physicalStopIndex - 1)
+  }
+
+  // 선 위에서의 물방울 위치 (0~1)
+  let trackPositionRatio = 0
+  if (uniqueStops > 1) {
+    let segmentTravelProgress = 0
+    if (!inDwell && BUS_TRAVEL_SEC > 0) {
+      const travelElapsed = withinSegment - BUS_DWELL_SEC
+      segmentTravelProgress = Math.min(
+        1,
+        Math.max(0, travelElapsed / BUS_TRAVEL_SEC),
+      )
+    }
+
+    const fromIdx = physicalStopIndex
+    const toIdx = nextPhysicalStopIndex
+    const base = fromIdx - 1
+    const offset = (toIdx - fromIdx) * segmentTravelProgress
+    const logicalPosition = base + offset
+
+    trackPositionRatio = Math.min(
+      1,
+      Math.max(0, logicalPosition / (uniqueStops - 1)),
+    )
   }
 
   return {
-    currentStopIndex,
+    stopsPerLoop,
+    uniqueStops,
+    segmentIndex,
+    physicalStopIndex,
+    nextPhysicalStopIndex,
+    direction,
     inDwell,
     dwellRemainingSec,
     travelRemainingSec,
-    stopsPerLoop,
+    trackPositionRatio,
   }
 }

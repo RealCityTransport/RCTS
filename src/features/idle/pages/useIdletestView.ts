@@ -16,13 +16,66 @@ import {
   simulateVillageBusStops,
   applyVillageBusResearchToState,
   getBusRunDuration,
+  getBusPhaseInfo,
+  mapSegmentToLineStop,
 } from '@/features/idle/transports/bus/busEngine'
 
 import { useFirebaseAuth } from '@/composables/useFirebaseAuth'
 import { db } from '@/libs/firebase'
-import { doc, onSnapshot, setDoc } from 'firebase/firestore'
+import { doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore'
+
+/**
+ * 이 브라우저 탭을 식별하는 임시 clientId
+ * (새로고침/다른 탭은 다른 값)
+ */
+function createClientId() {
+  return (
+    'idle_' +
+    Math.random().toString(36).slice(2) +
+    '_' +
+    Date.now().toString(36)
+  )
+}
+
+const CLIENT_ID = createClientId()
+
+// 슬롯 운행 메타 타입 (ownerClientId 추가)
+type SlotRunMeta = {
+  startedAtMs: number
+  durationSec: number
+  stopsProcessed?: number
+  ownerClientId?: string
+}
+
+// 연구 상태 타입 (필수 boolean)
+type VillageBusResearchState = {
+  capacityUpgradeDone: boolean
+  lineExtensionDone: boolean
+  peakRushDone: boolean
+}
+
+const AUTO_SAVE_INTERVAL_MS = 10 * 60 * 1000 // 10분 자동 저장 간격
+const LEADER_EXPIRE_MS = 5 * 60 * 1000 // 5분
+
+// 로컬 개발 환경 여부
+const IS_LOCALHOST =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1')
 
 export function useIdletestView() {
+  // ─────────────────────────────────────────────
+  // 내부 시계 (실제 시간 기준, 0.2초마다 업데이트 → 진행/정류장 위치 계산용)
+  // ─────────────────────────────────────────────
+  const logicNowMs = ref(Date.now())
+  let logicTimer: ReturnType<typeof setInterval> | null = null
+
+  if (typeof window !== 'undefined') {
+    logicTimer = setInterval(() => {
+      logicNowMs.value = Date.now()
+    }, 200) // 0.2초마다 갱신
+  }
+
   // ─────────────────────────────────────────────
   // 기본 상수
   // ─────────────────────────────────────────────
@@ -49,7 +102,7 @@ export function useIdletestView() {
       baseSlots: 10,
       baseIncomePerSlot: 1500,
       researchDescription:
-        '마을버스: 기본요금 1,500원, 정원 25명(연구 시 40명), 기본 20개 정류장(연구 시 40개) 운행. 정류장마다 30초 정차 후 5분 이동하며, 승차 인원 기준으로 수익을 정산합니다.',
+        '마을버스: 기본요금 1,500원, 정원 25명(연구 시 40명), 기본 20개 정류장(왕복 기준 10개 정류장) 운행. 정류장마다 30초 정차 후 5분 이동하며, 승차 인원 기준으로 수익을 정산합니다.',
     },
     {
       key: 'truck',
@@ -113,13 +166,6 @@ export function useIdletestView() {
     },
   ] as const
 
-  // 연구 상태 타입 (필수 boolean)
-  type VillageBusResearchState = {
-    capacityUpgradeDone: boolean
-    lineExtensionDone: boolean
-    peakRushDone: boolean
-  }
-
   const transportConfigMap = transportConfigs.reduce(
     (map, cfg) => {
       map[cfg.key] = cfg
@@ -134,7 +180,7 @@ export function useIdletestView() {
     .map((t) => t.key as string)
 
   // ─────────────────────────────────────────────
-  // 게임 시간
+  // 게임 시간 (표시용 표준시간)
   // ─────────────────────────────────────────────
   const { gameTime } = useGameTime({
     initialSpeed: 1,
@@ -169,16 +215,16 @@ export function useIdletestView() {
   }
 
   // ─────────────────────────────────────────────
+  // 리더 디바이스 관리
+  // ─────────────────────────────────────────────
+  const isLeader = ref(false)
+  let lastAutoSaveMs = 0
+  let beforeUnloadHandler: (() => void) | null = null
+
+  // ─────────────────────────────────────────────
   // 마을버스 라인 상태
   // ─────────────────────────────────────────────
   const villageBusState = ref(createInitialVillageBusState())
-
-  function getGameTimeMs(v = gameTime.value) {
-    if (!v) return 0
-    if (v instanceof Date) return v.getTime()
-    const n = Number(v)
-    return Number.isNaN(n) ? 0 : n
-  }
 
   // ─────────────────────────────────────────────
   // 운송수단/해금 관련
@@ -323,15 +369,43 @@ export function useIdletestView() {
 
   const busLastStopInfo = computed(() => {
     const state = villageBusState.value
+    const stopsPerLoop =
+      state.stopsPerLoop || VILLAGE_BUS_BASE_CONFIG.baseStopsPerLoop
+    const baseCapacity =
+      state.capacity || VILLAGE_BUS_BASE_CONFIG.baseCapacity
+
+    const totalStops = stopsPerLoop
+    const uniqueStops = Math.max(1, Math.floor(totalStops / 2))
+
+    const loopIndexRaw =
+      (state as any).lastLoopStopIndex ||
+      (state as any).lastStopIndex ||
+      0
+
+    let physicalIndexRaw =
+      (state as any).lastPhysicalStopIndex || 0
+
+    if (!physicalIndexRaw && loopIndexRaw > 0 && uniqueStops >= 1) {
+      physicalIndexRaw = mapSegmentToLineStop(loopIndexRaw, uniqueStops)
+    }
+
     return {
-      index: state.lastStopIndex || 0,
+      loopIndex: loopIndexRaw,
+      physicalIndex: physicalIndexRaw,
       board: state.lastBoard || 0,
       deboard: state.lastDeboard || 0,
       passengers: state.currentPassengers || 0,
-      stopsPerLoop:
-        state.stopsPerLoop || VILLAGE_BUS_BASE_CONFIG.baseStopsPerLoop,
-      capacity: state.capacity || VILLAGE_BUS_BASE_CONFIG.baseCapacity,
+      // ⚠ 이 값은 "루프 내 전체 정류장 정차 수" (왕복 포함 20/40칸 등) 기준
+      stopsPerLoop,
+      capacity: baseCapacity,
     }
+  })
+
+  // 물리 정류장 수 (왕복 기준 표시용: 20개 정류장 → 10개 점, 40개 → 20개 점)
+  const busUniqueStops = computed(() => {
+    const totalStops = busLastStopInfo.value.stopsPerLoop
+    if (totalStops <= 0) return 1
+    return Math.max(1, Math.floor(totalStops / 2))
   })
 
   const busResearchList = computed(() => {
@@ -386,10 +460,7 @@ export function useIdletestView() {
   })
 
   const slotAutomation = ref<Record<string, boolean>>({})
-  const slotRunMeta = ref<Record<
-    string,
-    { startedAtMs: number; durationSec: number; stopsProcessed?: number }
-  >>({})
+  const slotRunMeta = ref<Record<string, SlotRunMeta>>({})
   const slotUnlockMeta = ref<
     Record<string, { startedAtMs: number; durationSec: number }>
   >({})
@@ -405,6 +476,7 @@ export function useIdletestView() {
   // ─────────────────────────────────────────────
   let idleUnsubscribe: (() => void) | null = null
   let saveTimeout: ReturnType<typeof setTimeout> | null = null
+  let lastSaveRequestMs = 0
 
   function getIdleDocRef(uid: string) {
     return doc(db, 'idleStates', uid)
@@ -446,6 +518,7 @@ export function useIdletestView() {
   }
 
   function buildSavePayload() {
+    const now = Date.now()
     return {
       idleFunds: idleFunds.value,
       unlockedTransports: unlockedTransports.value,
@@ -454,28 +527,17 @@ export function useIdletestView() {
       slotRunMeta: slotRunMeta.value,
       slotUnlockMeta: slotUnlockMeta.value,
       slotActiveFlag: slotActiveFlag.value,
-    }
-  }
-
-  // ★ 즉시 저장용 헬퍼 (중요 액션에 사용)
-  async function saveIdleStateNow() {
-    const uid = user.value?.uid
-    if (!uid) return
-
-    try {
-      const refDoc = getIdleDocRef(uid)
-      const payload = buildSavePayload()
-      console.log('[idle] saveIdleStateNow', uid, payload)
-      await setDoc(refDoc, payload, { merge: true })
-      console.log('[idle] saveIdleStateNow success', uid)
-    } catch (err) {
-      console.error('idle state save failed (now):', err)
+      // 리더 메타
+      leaderClientId: isLeader.value ? CLIENT_ID : null,
+      leaderLastSeenAt: isLeader.value ? now : null,
+      lastSavedAt: now,
     }
   }
 
   function scheduleSaveIdleState() {
     const uidAtSchedule = user.value?.uid
     if (!uidAtSchedule) return
+    if (!isLeader.value) return
 
     if (saveTimeout !== null) {
       clearTimeout(saveTimeout)
@@ -484,7 +546,6 @@ export function useIdletestView() {
     saveTimeout = setTimeout(async () => {
       saveTimeout = null
 
-      // 실행 시점에 유저가 바뀌었거나 로그아웃되어 있으면 저장 스킵
       if (!user.value || user.value.uid !== uidAtSchedule) {
         console.log('[idle] skip save: user changed or logged out', {
           uidAtSchedule,
@@ -502,7 +563,44 @@ export function useIdletestView() {
       } catch (err) {
         console.error('idle state save failed:', err)
       }
-    }, 1000)
+    }, 800)
+  }
+
+  function requestSave(force = false) {
+    const now = Date.now()
+
+    if (!force) {
+      if (now - lastSaveRequestMs < 5000) {
+        return
+      }
+    }
+
+    lastSaveRequestMs = now
+    scheduleSaveIdleState()
+  }
+
+  function attachBeforeUnload(uid: string) {
+    if (typeof window === 'undefined') return
+    if (beforeUnloadHandler) return
+
+    beforeUnloadHandler = () => {
+      if (!isLeader.value) return
+      const refDoc = getIdleDocRef(uid)
+      const payload = buildSavePayload()
+      payload.leaderClientId = null
+      setDoc(refDoc, payload, { merge: true }).catch(() => {
+        // best-effort
+      })
+    }
+
+    window.addEventListener('beforeunload', beforeUnloadHandler)
+  }
+
+  function detachBeforeUnload() {
+    if (typeof window === 'undefined') return
+    if (!beforeUnloadHandler) return
+    window.removeEventListener('beforeunload', beforeUnloadHandler)
+    beforeUnloadHandler = null
   }
 
   watch(
@@ -515,6 +613,12 @@ export function useIdletestView() {
 
       if (!uid) {
         console.log('[idle] user logged out, unsubscribe idleStates', oldUid)
+        detachBeforeUnload()
+
+        // 로그아웃 상태:
+        // - localhost에서는 저장 없이 로직만 동작해야 하므로 리더로 취급
+        // - 배포 환경에서는 리더 아님
+        isLeader.value = IS_LOCALHOST
         return
       }
 
@@ -524,11 +628,56 @@ export function useIdletestView() {
         refDoc,
         (snap) => {
           if (snap.exists()) {
-            console.log('[idle] snapshot exists', uid, snap.data())
-            applyRemoteState(snap.data())
+            const data = snap.data()
+            console.log('[idle] snapshot exists', uid, data)
+            applyRemoteState(data)
+
+            const leaderId = data.leaderClientId as string | undefined
+            const leaderLastSeenAt = data.leaderLastSeenAt as number | undefined
+            const nowWall = Date.now()
+
+            if (IS_LOCALHOST) {
+              if (!isLeader.value || leaderId !== CLIENT_ID) {
+                console.log('[idle] localhost: force leader takeover')
+                isLeader.value = true
+                attachBeforeUnload(uid)
+                requestSave(true)
+              }
+              return
+            }
+
+            let shouldTakeLeadership = false
+
+            if (!leaderId) {
+              shouldTakeLeadership = true
+            } else if (!leaderLastSeenAt) {
+              shouldTakeLeadership = true
+            } else if (nowWall - leaderLastSeenAt > LEADER_EXPIRE_MS) {
+              shouldTakeLeadership = true
+            }
+
+            if (shouldTakeLeadership) {
+              console.log('[idle] leader expired or empty, take leadership', {
+                leaderId,
+                leaderLastSeenAt,
+                nowWall,
+              })
+              isLeader.value = true
+              attachBeforeUnload(uid)
+              requestSave(true)
+            } else {
+              isLeader.value = leaderId === CLIENT_ID
+              if (isLeader.value) {
+                attachBeforeUnload(uid)
+              } else {
+                detachBeforeUnload()
+              }
+            }
           } else {
             console.log('[idle] snapshot not exists (new doc)', uid)
-            scheduleSaveIdleState()
+            isLeader.value = true
+            attachBeforeUnload(uid)
+            requestSave(true)
           }
         },
         (err) => {
@@ -539,50 +688,38 @@ export function useIdletestView() {
     { immediate: true },
   )
 
-  watch(
-    [
-      idleFunds,
-      unlockedTransports,
-      villageBusState,
-      slotAutomation,
-      slotRunMeta,
-      slotUnlockMeta,
-      slotActiveFlag,
-    ],
-    () => {
-      if (!user.value) return
-      scheduleSaveIdleState()
-    },
-    { deep: true },
-  )
-
   onUnmounted(() => {
     if (idleUnsubscribe) idleUnsubscribe()
     if (saveTimeout !== null) {
       clearTimeout(saveTimeout)
     }
+    if (logicTimer !== null) {
+      clearInterval(logicTimer)
+      logicTimer = null
+    }
+    detachBeforeUnload()
   })
 
   // ─────────────────────────────────────────────
-  // 슬롯 빌드 (UI용)
+  // 슬롯 빌드 (UI용) — 0.2초마다 정류장/방향/남은 시간 재계산
   // ─────────────────────────────────────────────
   const transportSlots = computed(() => {
-    const result: Record<
-      string,
-      Array<ReturnType<typeof buildSlot>>
-    > = {}
-    const nowMs = getGameTimeMs()
+    // 의존성 명시: 매 0.2초 재계산
+    const nowMs = logicNowMs.value
+
+    const result: Record<string, Array<ReturnType<typeof buildSlot>>> = {}
 
     const busState = villageBusState.value
     const busStopsPerLoop =
       busState.stopsPerLoop || VILLAGE_BUS_BASE_CONFIG.baseStopsPerLoop
+    const busUnique = Math.max(1, Math.floor(busStopsPerLoop / 2))
 
     function buildSlot(type: string, index: number) {
       const id = index + 1
       const key = slotKey(type, id)
-      const autoEnabled = !!slotAutomation.value[key]
       const runMeta = slotRunMeta.value[key]
       const unlockInfo = slotUnlockMeta.value[key]
+      const autoEnabled = !!slotAutomation.value[key]
       const extraActive = !!slotActiveFlag.value[key]
 
       let isRunning = false
@@ -594,17 +731,29 @@ export function useIdletestView() {
         totalSec = runMeta?.durationSec || getRunDurationSec('bus')
       }
 
+      let elapsedMs = 0
+      let elapsedSec = 0
+
       if (runMeta) {
-        const elapsedSec = Math.max(0, (nowMs - runMeta.startedAtMs) / 1000)
+        elapsedMs = Math.max(0, nowMs - runMeta.startedAtMs)
+        elapsedSec = elapsedMs / 1000
+
         if (elapsedSec < totalSec) {
           isRunning = true
-          progress = Math.min(1, elapsedSec / totalSec)
           remainingSec = Math.max(0, totalSec - elapsedSec)
         } else {
           isRunning = false
-          progress = 1
           remainingSec = 0
         }
+      }
+
+      // 진행 비율
+      if (runMeta && totalSec > 0) {
+        const durationMs = totalSec * 1000
+        const ratio = Math.min(1, Math.max(0, elapsedMs / durationMs))
+        progress = ratio
+      } else {
+        progress = 0
       }
 
       let isUnlocking = false
@@ -644,30 +793,78 @@ export function useIdletestView() {
         }
       }
 
+      // 버스용 정류장/방향/잔여 시간 + 물방울 위치 + 상태 텍스트
       let currentStopIndex = 0
+      let nextStopIndex = 0
+      let direction: 'forward' | 'backward' = 'forward'
       let inDwell = false
       let dwellRemainingSec = 0
       let travelRemainingSec = 0
+      let trackPositionRatio = 0
+      let statusText = ''
 
       if (type === 'bus' && runMeta) {
-        const elapsedSec = Math.max(0, (nowMs - runMeta.startedAtMs) / 1000)
-        const clamped =
-          totalSec > 0 ? Math.min(elapsedSec, totalSec - 0.001) : 0
-        const stopIndexBase = Math.floor(clamped / BUS_CYCLE_SEC)
-        currentStopIndex = Math.min(
-          busStopsPerLoop,
-          stopIndexBase + 1,
-        )
-        const withinStop = clamped % BUS_CYCLE_SEC
-        inDwell = withinStop < BUS_DWELL_SEC
+        const phase = getBusPhaseInfo(busState, runMeta, nowMs)
 
-        if (inDwell) {
-          dwellRemainingSec = BUS_DWELL_SEC - withinStop
-          travelRemainingSec = 0
-        } else {
-          const travelElapsed = withinStop - BUS_DWELL_SEC
-          travelRemainingSec = Math.max(0, BUS_TRAVEL_SEC - travelElapsed)
-          dwellRemainingSec = 0
+        const uniqueStops = phase.uniqueStops || busUnique
+
+        direction = phase.direction === 'backward' ? 'backward' : 'forward'
+        currentStopIndex = Math.max(
+          1,
+          Math.min(uniqueStops, phase.physicalStopIndex || 0),
+        )
+        nextStopIndex = Math.max(
+          1,
+          Math.min(uniqueStops, phase.nextPhysicalStopIndex || currentStopIndex),
+        )
+        inDwell = !!phase.inDwell
+        dwellRemainingSec = phase.dwellRemainingSec || 0
+        travelRemainingSec = phase.travelRemainingSec || 0
+        trackPositionRatio =
+          uniqueStops > 1
+            ? Math.min(
+                1,
+                Math.max(0, phase.trackPositionRatio ?? 0),
+              )
+            : 0
+
+        // ─────────────────────────────
+        // 버스 상태 텍스트 (정류장/이동/승하차 연출)
+        // ─────────────────────────────
+        const last = busLastStopInfo.value
+        const lastLoopIndex = last.loopIndex || 0
+        const lastStopsPerLoop =
+          last.stopsPerLoop || busStopsPerLoop
+        const board = last.board || 0
+        const deboard = last.deboard || 0
+        const passengers = last.passengers || 0
+        const capacity =
+          last.capacity || VILLAGE_BUS_BASE_CONFIG.baseCapacity
+
+        if (isUnlocked) {
+          if (inDwell) {
+            // 정류장 정차 중
+            if (lastLoopIndex === 0) {
+              // 아직 승하차 이력 없음
+              statusText = `${currentStopIndex}번 정류장 정차중`
+            } else if (lastLoopIndex === 1) {
+              // 첫 정류장: 승차만
+              statusText = `${currentStopIndex}번 정류장 정차중 승차 ${board}명`
+            } else if (lastLoopIndex === lastStopsPerLoop) {
+              // 마지막 정류장: 전원 하차 → 0명
+              statusText = `${currentStopIndex}번 정류장 정차중 하차 ${deboard}명 → 0명`
+            } else {
+              // 중간 정류장: 승차 + 하차
+              statusText = `${currentStopIndex}번 정류장 정차중 승차 ${board}명, 하차 ${deboard}명`
+            }
+          } else {
+            // 이동 중
+            if (lastLoopIndex === 0) {
+              statusText = `이동중 ${currentStopIndex}→${nextStopIndex} 정류장`
+            } else {
+              statusText = `이동중 ${currentStopIndex}→${nextStopIndex} 정류장 승차 ${board}명, 하차 ${deboard}명, 탑승자 ${passengers}/${capacity}명`
+            }
+          }
         }
       }
 
@@ -684,16 +881,23 @@ export function useIdletestView() {
         remainingSec,
         remainingText: formatRemainingText(remainingSec, isRunning),
         routeName,
+
+        // 버스 정류장 표시용
+        currentStopIndex,
+        nextStopIndex,
+        direction,
+        inDwell,
+        dwellRemainingSec,
+        travelRemainingSec,
+        trackPositionRatio,
+        statusText,
+
         isUnlocking,
         unlockProgress,
         unlockRemainingSec,
         unlockRemainingText: formatUnlockRemainingText(
           unlockRemainingSec,
         ),
-        currentStopIndex,
-        inDwell,
-        dwellRemainingSec,
-        travelRemainingSec,
       }
     }
 
@@ -710,12 +914,20 @@ export function useIdletestView() {
     return result
   })
 
+  // ─────────────────────────────────────────────
+  // 슬롯/운행 제어
+  // ─────────────────────────────────────────────
   function setActiveMenu(key: string) {
     if (key !== 'bus') return
     activeMenu.value = key
   }
 
   function unlockTransport(type: string) {
+    if (!isLeader.value) {
+      console.log('[idle] unlockTransport ignored: not leader')
+      return
+    }
+
     if (type !== 'bus') return
     if (unlockedTransports.value.includes(type)) return
 
@@ -729,13 +941,14 @@ export function useIdletestView() {
     }
 
     unlockedTransports.value = [...unlockedTransports.value, type]
-
-    // ★ 버스 해금 후 즉시 저장
-    void saveIdleStateNow()
+    requestSave(true)
   }
 
-  function createInitialBusRunMeta(nowMs: number) {
-    const durationSec = getBusRunDuration(villageBusState.value)
+  function createInitialBusRunMeta(nowMs: number): {
+    meta: SlotRunMeta
+    income: number
+  } {
+    const durationSec = getRunDurationSec('bus')
 
     const { nextState, income } = simulateVillageBusStops(
       villageBusState.value,
@@ -743,16 +956,22 @@ export function useIdletestView() {
     )
     villageBusState.value = nextState
 
-    const meta = {
+    const meta: SlotRunMeta = {
       startedAtMs: nowMs,
       durationSec,
       stopsProcessed: 1,
+      ownerClientId: CLIENT_ID,
     }
 
     return { meta, income }
   }
 
   function handleClickRunSlot(type: string, id: number) {
+    if (!isLeader.value) {
+      console.log('[idle] runSlot ignored: not leader')
+      return
+    }
+
     if (!transportTypes.includes(type)) return
     if (!unlockedTransports.value.includes(type)) return
 
@@ -760,8 +979,10 @@ export function useIdletestView() {
     const meta = slotRunMeta.value[key]
     if (meta) return
 
-    const nowMs = getGameTimeMs()
-    const nextMeta = { ...slotRunMeta.value }
+    const nowMs = logicNowMs.value
+    const nextMeta: Record<string, SlotRunMeta> = {
+      ...slotRunMeta.value,
+    }
 
     if (type === 'bus') {
       const { meta: busMeta, income } = createInitialBusRunMeta(nowMs)
@@ -773,15 +994,20 @@ export function useIdletestView() {
       nextMeta[key] = {
         startedAtMs: nowMs,
         durationSec,
+        ownerClientId: CLIENT_ID,
       }
       slotRunMeta.value = nextMeta
     }
 
-    // ★ 수동 운행 시작 시 즉시 저장
-    void saveIdleStateNow()
+    requestSave(true)
   }
 
   function handleToggleAuto(type: string, id: number) {
+    if (!isLeader.value) {
+      console.log('[idle] toggleAuto ignored: not leader')
+      return
+    }
+
     if (!transportTypes.includes(type)) return
     if (!unlockedTransports.value.includes(type)) return
 
@@ -796,8 +1022,10 @@ export function useIdletestView() {
     const nextAuto = { ...slotAutomation.value, [key]: true }
 
     if (!slotRunMeta.value[key]) {
-      const nowMs = getGameTimeMs()
-      const nextMeta = { ...slotRunMeta.value }
+      const nowMs = logicNowMs.value
+      const nextMeta: Record<string, SlotRunMeta> = {
+        ...slotRunMeta.value,
+      }
 
       if (type === 'bus') {
         const { meta: busMeta, income } = createInitialBusRunMeta(nowMs)
@@ -809,18 +1037,22 @@ export function useIdletestView() {
         nextMeta[key] = {
           startedAtMs: nowMs,
           durationSec,
+          ownerClientId: CLIENT_ID,
         }
         slotRunMeta.value = nextMeta
       }
     }
 
     slotAutomation.value = nextAuto
-
-    // ★ 자동운행 설정 시 즉시 저장
-    void saveIdleStateNow()
+    requestSave(true)
   }
 
   function handleClickActivateEmptySlot(type: string, id: number) {
+    if (!isLeader.value) {
+      console.log('[idle] activateSlot ignored: not leader')
+      return
+    }
+
     if (!transportTypes.includes(type)) return
     if (!unlockedTransports.value.includes(type)) return
     if (id === 1) return
@@ -834,7 +1066,7 @@ export function useIdletestView() {
     if (idleFunds.value < cost) return
     idleFunds.value -= cost
 
-    const nowMs = getGameTimeMs()
+    const nowMs = logicNowMs.value
 
     slotUnlockMeta.value = {
       ...slotUnlockMeta.value,
@@ -844,11 +1076,15 @@ export function useIdletestView() {
       },
     }
 
-    // ★ 슬롯 활성화 준비 시작도 즉시 저장
-    void saveIdleStateNow()
+    requestSave(true)
   }
 
   function handleDeleteActiveSlot(type: string, id: number) {
+    if (!isLeader.value) {
+      console.log('[idle] deleteSlot ignored: not leader')
+      return
+    }
+
     if (!transportTypes.includes(type)) return
     if (!unlockedTransports.value.includes(type)) return
     if (id === 1) return
@@ -870,11 +1106,15 @@ export function useIdletestView() {
     slotRunMeta.value = nextRunMeta
     slotUnlockMeta.value = nextUnlockMeta
 
-    // ★ 슬롯 삭제도 즉시 저장
-    void saveIdleStateNow()
+    requestSave(true)
   }
 
   function handleClickBusResearch(key: string) {
+    if (!isLeader.value) {
+      console.log('[idle] busResearch ignored: not leader')
+      return
+    }
+
     const cfg = VILLAGE_BUS_RESEARCH_CATALOG[key]
     if (!cfg) return
 
@@ -906,33 +1146,101 @@ export function useIdletestView() {
       research,
     }
 
-    // ★ 연구 상태 변경도 즉시 저장
-    void saveIdleStateNow()
+    requestSave(true)
   }
 
   function handleStartBusReconfig() {
+    if (!isLeader.value) {
+      console.log('[idle] busReconfig ignored: not leader')
+      return
+    }
+
     if (!busHasUnappliedUpgrade.value) return
     if (busReconfigMeta.value) return
 
-    const nowMs = getGameTimeMs()
+    const nowMs = logicNowMs.value
     busReconfigMeta.value = {
       startedAtMs: nowMs,
       durationSec: BUS_RECONFIG_SEC,
     }
 
-    // (busReconfigMeta는 지금 payload에 안 넣고 있어서 저장은 안 하지만,
-    // 나중에 필요해지면 buildSavePayload에 포함시키면 됨)
+    requestSave(true)
   }
 
-  watch(
-    gameTime,
-    () => {
-      const nowMs = getGameTimeMs()
+  function handleManualSave() {
+    if (!user.value) return
+    if (!isLeader.value) {
+      console.log('[idle] manualSave ignored: not leader')
+      return
+    }
+    requestSave(true)
+  }
 
-      let currentRunMeta = { ...slotRunMeta.value }
+  // ─────────────────────────────────────────────
+  // 상태 전체 초기화 + Firestore 문서 삭제
+  // ─────────────────────────────────────────────
+  async function handleResetIdleState() {
+    const uid = user.value?.uid
+    if (!uid) {
+      console.log('[idle] reset ignored: no user')
+      return
+    }
+
+    if (!isLeader.value && !IS_LOCALHOST) {
+      console.log('[idle] reset ignored: not leader')
+      return
+    }
+
+    console.log('[idle] reset: local state reset start')
+
+    // 로컬 상태 초기화
+    idleFunds.value = 0
+    unlockedTransports.value = []
+    villageBusState.value = createInitialVillageBusState()
+    slotAutomation.value = {}
+    slotRunMeta.value = {}
+    slotUnlockMeta.value = {}
+    slotActiveFlag.value = {}
+    busReconfigMeta.value = null
+
+    try {
+      const refDoc = getIdleDocRef(uid)
+      console.log('[idle] reset: delete idleStates doc', uid)
+      await deleteDoc(refDoc)
+      console.log('[idle] reset: delete success')
+      // 이후 onSnapshot에서 문서 없음으로 감지 → 새로운 상태로 다시 저장됨
+    } catch (err) {
+      console.error('idle reset failed:', err)
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // 시간 흐름에 따른 슬롯/버스 상태 업데이트 + 자동 저장
+  // (실제 시간인 logicNowMs 기준, 0.2초마다 호출됨)
+  // ─────────────────────────────────────────────
+  watch(
+    logicNowMs,
+    (now) => {
+      const nowMs = now
+
+      // 10분 자동 저장 (로그인 + 리더일 때만)
+      if (user.value && isLeader.value) {
+        if (nowMs - lastAutoSaveMs >= AUTO_SAVE_INTERVAL_MS) {
+          lastAutoSaveMs = nowMs
+          requestSave(true)
+        }
+      }
+
+      let currentRunMeta: Record<string, SlotRunMeta> = {
+        ...slotRunMeta.value,
+      }
       let totalIncome = 0
 
       for (const [key, meta] of Object.entries(currentRunMeta)) {
+        if (meta.ownerClientId && meta.ownerClientId !== CLIENT_ID) {
+          continue
+        }
+
         const elapsedSec = Math.max(
           0,
           (nowMs - meta.startedAtMs) / 1000,
@@ -944,7 +1252,7 @@ export function useIdletestView() {
           const totalStops =
             state.stopsPerLoop || VILLAGE_BUS_BASE_CONFIG.baseStopsPerLoop
           const durationSec =
-            meta.durationSec || totalStops * BUS_CYCLE_SEC
+            meta.durationSec || getBusRunDuration(villageBusState.value)
 
           const alreadyProcessed = meta.stopsProcessed || 0
           const shouldProcessed = Math.min(
@@ -961,7 +1269,7 @@ export function useIdletestView() {
             )
             villageBusState.value = res.nextState
             totalIncome += res.income
-            meta.stopsProcessed = shouldProcessed
+            meta.stopsProcessed = alreadyProcessed + newStops
           }
 
           if (elapsedSec >= durationSec) {
@@ -994,6 +1302,7 @@ export function useIdletestView() {
             currentRunMeta[key] = {
               startedAtMs: nowMs,
               durationSec,
+              ownerClientId: CLIENT_ID,
             }
           } else {
             delete currentRunMeta[key]
@@ -1048,6 +1357,11 @@ export function useIdletestView() {
   )
 
   return {
+    // 리더/저장
+    isLeader,
+    handleManualSave,
+    handleResetIdleState,
+
     // 시간/자금/로그인
     formattedGameTime,
     idleFunds,
@@ -1077,6 +1391,8 @@ export function useIdletestView() {
     // 버스 관련
     villageBusState,
     busLastStopInfo,
+    busUniqueStops,
+    mapSegmentToLineStop,
     busResearchList,
     busHasUnappliedUpgrade,
     BUS_RECONFIG_SEC,

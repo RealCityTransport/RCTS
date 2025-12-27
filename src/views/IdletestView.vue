@@ -8,7 +8,7 @@
           <h1 class="idle-title">RCTS-테스트환경임.</h1>
         </div>
 
-        <!-- 환경 선택 허브 링크 + 로그인 영역 -->
+        <!-- 환경 선택 허브 링크 + 로그인/저장 영역 -->
         <div class="idle-header-actions">
           <RouterLink
             to="/entry-connector"
@@ -43,6 +43,28 @@
               </button>
             </template>
           </div>
+
+          <!-- 수동 저장 버튼 (로그인 + 리더 전용) -->
+          <button
+            v-if="isLoggedIn"
+            type="button"
+            class="manual-save-button"
+            :disabled="!isLeader"
+            @click="handleManualSave"
+          >
+            상태 저장
+          </button>
+
+          <!-- 기존 데이터 삭제 버튼 (로그인 + 리더 전용) -->
+          <button
+            v-if="isLoggedIn"
+            type="button"
+            class="manual-reset-button"
+            :disabled="!isLeader"
+            @click="handleResetIdleState"
+          >
+            기존 데이터 삭제
+          </button>
         </div>
       </div>
 
@@ -150,7 +172,7 @@
               <button
                 type="button"
                 class="research-item-button"
-                :disabled="item.done || idleFunds < item.cost"
+                :disabled="item.done || idleFunds < item.cost || !isLeader"
                 @click="handleClickBusResearch(item.key)"
               >
                 <template v-if="item.done">
@@ -158,6 +180,9 @@
                 </template>
                 <template v-else-if="idleFunds < item.cost">
                   자금 부족
+                </template>
+                <template v-else-if="!isLeader">
+                  리더 기기에서만 가능
                 </template>
                 <template v-else>
                   연구하기
@@ -171,7 +196,7 @@
             <div class="bus-config-line">
               현재 적용 중: 정원
               {{ villageBusState.capacity }}명 · 정류장
-              {{ villageBusState.stopsPerLoop }}개
+              {{ busUniqueStops }}개 (왕복 기준)
             </div>
 
             <div
@@ -189,7 +214,7 @@
               <button
                 type="button"
                 class="bus-config-button"
-                :disabled="!!busReconfigMeta"
+                :disabled="!!busReconfigMeta || !isLeader"
                 @click="handleStartBusReconfig"
               >
                 버스 교체 / 노선 조정
@@ -286,34 +311,61 @@
               </span>
             </div>
 
-            <!-- 활성 슬롯: 전체 진행 바 -->
-            <div
-              v-if="slot.state === 'active'"
-              class="slot-progress"
-            >
-              <div class="slot-progress-bar">
-                <div
-                  class="slot-progress-fill"
-                  :style="{ width: (slot.progress * 100).toFixed(0) + '%' }"
-                />
-              </div>
-            </div>
-
-            <!-- 버스일 때: 정류장 단위 이동 정보 -->
+            <!-- 버스일 때: 정류장 N개 + 물방울(왕복) 트랙 + 상태 텍스트 -->
             <div
               v-if="slot.state === 'active' && activeMenu === 'bus'"
               class="slot-mini-move"
             >
+              <!-- 정류장 점 + 선 + 물방울 -->
+              <div class="slot-stop-track">
+                <div class="slot-stop-line">
+                  <div
+                    v-for="n in busUniqueStops"
+                    :key="n"
+                    class="slot-stop-node"
+                    :class="{
+                      active: n === slot.currentStopIndex && slot.inDwell,
+                    }"
+                    :style="{
+                      left:
+                        busUniqueStops > 1
+                          ? ((n - 1) / (busUniqueStops - 1)) * 100 + '%'
+                          : '50%',
+                    }"
+                  />
+                  <div
+                    class="slot-stop-droplet"
+                    :style="{
+                      left:
+                        busUniqueStops > 1
+                          ? (slot.trackPositionRatio * 100).toFixed(2) + '%'
+                          : '50%',
+                    }"
+                  />
+                </div>
+                <div class="slot-stop-meta">
+                  <span class="slot-stop-route-label">
+                    마을버스 왕복 노선
+                  </span>
+                  <span class="slot-stop-index">
+                    정류장 {{ busUniqueStops }}개
+                  </span>
+                </div>
+              </div>
+
+              <!-- 정류장/이동 텍스트 -->
               <template v-if="slot.currentStopIndex > 0">
-                <!-- 정차 시간(승차중) -->
+                <!-- 정차 시간 -->
                 <span
                   v-if="slot.inDwell"
                   class="slot-mini-text"
                 >
-                  현위치
-                  {{ slot.currentStopIndex }}/{{ busLastStopInfo.stopsPerLoop }}
-                  정류장 승차중
-                  {{ formatPhaseRemaining(slot.dwellRemainingSec) }} 남음
+                  정류장 정차
+                  {{ formatPhaseRemaining(slot.dwellRemainingSec) }} 남음 ·
+                  승차 {{ busLastStopInfo.board }}명 ·
+                  하차 {{ busLastStopInfo.deboard }}명 ·
+                  탑승
+                  {{ busLastStopInfo.passengers }}/{{ busLastStopInfo.capacity }}명
                 </span>
 
                 <!-- 이동 시간 -->
@@ -321,14 +373,8 @@
                   v-else
                   class="slot-mini-text"
                 >
-                  다음 정류장
-                  {{
-                    Math.min(
-                      slot.currentStopIndex + 1,
-                      busLastStopInfo.stopsPerLoop,
-                    )
-                  }}/{{ busLastStopInfo.stopsPerLoop }}
-                  이동중 {{ formatPhaseRemaining(slot.travelRemainingSec) }} 남음 ·
+                  이동중
+                  {{ formatPhaseRemaining(slot.travelRemainingSec) }} 남음 ·
                   승차 {{ busLastStopInfo.board }}명 ·
                   하차 {{ busLastStopInfo.deboard }}명 ·
                   탑승
@@ -362,6 +408,7 @@
                   v-if="slot.id !== 1"
                   type="button"
                   class="slot-action-button danger"
+                  :disabled="!isLeader"
                   @click="handleDeleteActiveSlot(activeMenu, slot.id)"
                 >
                   슬롯 삭제
@@ -373,16 +420,21 @@
                 <button
                   type="button"
                   class="slot-action-button"
-                  :disabled="slot.isRunning"
+                  :disabled="slot.isRunning || !isLeader"
                   @click="handleClickRunSlot(activeMenu, slot.id)"
                 >
-                  {{ slot.isRunning ? '운행 중...' : '수동 운행 시작' }}
+                  <template v-if="!isLeader">
+                    리더 기기에서만 가능
+                  </template>
+                  <template v-else>
+                    {{ slot.isRunning ? '운행 중...' : '수동 운행 시작' }}
+                  </template>
                 </button>
 
                 <button
                   type="button"
                   class="slot-action-button secondary"
-                  :disabled="!canAffordAutoRun"
+                  :disabled="!canAffordAutoRun || !isLeader"
                   @click="handleToggleAuto(activeMenu, slot.id)"
                 >
                   자동운행
@@ -396,6 +448,7 @@
                   v-if="slot.id !== 1"
                   type="button"
                   class="slot-action-button danger"
+                  :disabled="!isLeader"
                   @click="handleDeleteActiveSlot(activeMenu, slot.id)"
                 >
                   슬롯 삭제
@@ -411,13 +464,18 @@
               <button
                 type="button"
                 class="slot-action-button secondary"
-                :disabled="!canAffordSlotActivation"
+                :disabled="!canAffordSlotActivation || !isLeader"
                 @click="handleClickActivateEmptySlot(activeMenu, slot.id)"
               >
-                슬롯 활성화 준비 시작
-                <span class="btn-cost">
-                  (₩ {{ getSlotActivationCost(activeMenu).toLocaleString('ko-KR') }})
-                </span>
+                <template v-if="!isLeader">
+                  리더 기기에서만 가능
+                </template>
+                <template v-else>
+                  슬롯 활성화 준비 시작
+                  <span class="btn-cost">
+                    (₩ {{ getSlotActivationCost(activeMenu).toLocaleString('ko-KR') }})
+                  </span>
+                </template>
               </button>
             </div>
 
@@ -445,13 +503,16 @@
               <template v-if="slot.state === 'active'">
                 <template v-if="slot.autoEnabled">
                   자동으로 반복 운행되는 슬롯입니다.
+                  1번 정류장에서 {{ busUniqueStops }}번 정류장까지 갔다가,
+                  다시 1번 정류장으로 돌아오는 왕복 1루프를 반복 운행합니다.
                   각 정류장에서 30초 동안 승·하차를 처리하고 수익을 정산한 뒤,
                   5분 동안 다음 정류장으로 이동합니다.
-                  한 바퀴 운행이 끝나면 바로 다음 루프를 시작합니다.
                 </template>
                 <template v-else>
                   수동으로 운행을 시작해야 수익이 발생하는 슬롯입니다.
-                  [수동 운행 시작] 버튼을 누르면 1번 정류장부터 승차를 시작하고,
+                  [수동 운행 시작] 버튼을 누르면 1번 정류장에서 출발해
+                  {{ busUniqueStops }}번 정류장까지 이동한 뒤, 다시 1번 정류장으로 돌아오는
+                  왕복 운행을 1루프로 처리합니다.
                   정류장마다 승·하차 인원에 따라 수익이 바로 추가됩니다.
                 </template>
               </template>
@@ -537,10 +598,13 @@
           <button
             type="button"
             class="unlock-button"
-            :disabled="!canAffordTransportUnlock"
+            :disabled="!canAffordTransportUnlock || !isLeader"
             @click="unlockTransport(activeMenu)"
           >
-            <template v-if="isCurrentStarterFree">
+            <template v-if="!isLeader">
+              리더 기기에서만 가능
+            </template>
+            <template v-else-if="isCurrentStarterFree">
               {{ currentTransportLabel }} 무상 해금
             </template>
             <template v-else>
@@ -549,7 +613,7 @@
 
             <span
               class="btn-cost"
-              v-if="!isCurrentStarterFree"
+              v-if="!isCurrentStarterFree && isLeader"
             >
               (₩ {{ currentTransportUnlockCost.toLocaleString('ko-KR') }})
             </span>
@@ -570,6 +634,11 @@ import { RouterLink } from 'vue-router'
 import { useIdletestView } from '@/features/idle/pages/useIdletestView'
 
 const {
+  // 리더 여부 + 수동 저장 + 리셋
+  isLeader,
+  handleManualSave,
+  handleResetIdleState,
+
   // 시간/자금/로그인
   formattedGameTime,
   idleFunds,
@@ -599,6 +668,7 @@ const {
   // 버스 관련
   villageBusState,
   busLastStopInfo,
+  busUniqueStops,
   busResearchList,
   busHasUnappliedUpgrade,
   BUS_RECONFIG_SEC,
@@ -730,6 +800,52 @@ const {
   font-size: 0.78rem;
   color: #e5e7eb;
   white-space: nowrap;
+}
+
+/* 수동 저장 버튼 */
+.manual-save-button {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 197, 94, 0.9);
+  background: rgba(22, 101, 52, 0.85);
+  color: #e5e7eb;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.manual-save-button[disabled] {
+  opacity: 0.4;
+  cursor: default;
+  border-color: rgba(148, 163, 184, 0.8);
+  background: rgba(30, 41, 59, 0.9);
+}
+
+.manual-save-button:not([disabled]):hover {
+  background: rgba(22, 163, 74, 0.9);
+}
+
+/* 기존 데이터 삭제 버튼 */
+.manual-reset-button {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 113, 113, 0.95);
+  background: rgba(127, 29, 29, 0.9);
+  color: #fee2e2;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.manual-reset-button[disabled] {
+  opacity: 0.4;
+  cursor: default;
+  border-color: rgba(148, 163, 184, 0.8);
+  background: rgba(30, 41, 59, 0.9);
+}
+
+.manual-reset-button:not([disabled]):hover {
+  background: rgba(185, 28, 28, 0.95);
 }
 
 .idle-title {
@@ -1086,32 +1202,132 @@ const {
   opacity: 0.9;
 }
 
-.slot-progress {
-  margin-top: 4px;
-}
-
-.slot-progress-bar {
-  position: relative;
-  width: 100%;
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  overflow: hidden;
-}
-
-.slot-progress-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  border-radius: 999px;
-  background: rgba(0, 200, 140, 0.9);
-  width: 0%;
-  transition: width 0.9s linear;
-}
-
+/* 버스 정류장 트랙 (선 + 점 + 물방울) */
 .slot-mini-move {
   margin-top: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.slot-stop-track {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slot-stop-line {
+  position: relative;
+  display: block;
+  margin-top: 4px;
+  min-height: 22px;
+}
+
+/* 선 (정류장 연결 라인) */
+.slot-stop-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    to right,
+    rgba(148, 163, 184, 0.3),
+    rgba(148, 163, 184, 0.7),
+    rgba(148, 163, 184, 0.3)
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 정류장 점: 선 위에 정확한 위치로 배치 */
+.slot-stop-node {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.6);
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  transition:
+    transform 0.16s ease-out,
+    background-color 0.16s ease-out,
+    box-shadow 0.16s ease-out;
+}
+
+.slot-stop-node.active {
+  background: rgba(96, 165, 250, 1);
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.9);
+  transform: translate(-50%, -50%) scale(1.4);
+}
+
+/* 물방울 (현재 위치) – 점과 정확히 같은 레일을 따라 이동 */
+.slot-stop-droplet {
+  position: absolute;
+  top: calc(50% - 5px); /* 전체 위치 위로 5px */
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid rgba(96, 165, 250, 0.9);
+  background: radial-gradient(
+    circle at 30% 30%,
+    rgba(191, 219, 254, 1),
+    rgba(37, 99, 235, 0.5)
+  );
+  transform: translate(-50%, -90%);
+  transition:
+    left 0.18s linear,
+    transform 0.18s ease-out;
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.9);
+  z-index: 2;
+}
+
+/* 물방울 끝 삼각형 – 아래 선 쪽을 향하도록 */
+.slot-stop-droplet::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid rgba(37, 99, 235, 0.95);
+}
+
+/* 안쪽 하이라이트 */
+.slot-stop-droplet::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle at 30% 30%,
+    rgba(248, 250, 252, 0.95),
+    rgba(191, 219, 254, 0.2)
+  );
+  opacity: 0.9;
+}
+
+/* 메타 정보 */
+.slot-stop-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.slot-stop-route-label {
+  font-weight: 600;
+}
+
+.slot-stop-index {
+  font-variant-numeric: tabular-nums;
 }
 
 .slot-mini-text {
