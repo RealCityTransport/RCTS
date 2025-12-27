@@ -10,21 +10,20 @@
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RCTS - 본 서버</title>
-
-    <script>
-      // 채널 정보 (prod / preopen / test...)
-      window.VERSION_CHANNEL = 'prod';
-    </script>
-    <!-- 채널/버전 정보 로깅 or 리다이렉트용 (필요 없으면 나중에 빼도 됨) -->
-    <script src="/RCTS/version-router.js"></script>
   </head>
   <body>
-    <!-- ✅ Vue 앱이 붙을 루트 엘리먼트 -->
+    <!-- ✅ Vue 앱이 바로 그려질 영역 -->
     <div id="app"></div>
 
     <noscript>이 사이트는 JavaScript가 필요합니다.</noscript>
 
-    <!-- ✅ Vite/Vue 진입 스크립트 -->
+    <!-- ✅ 먼저 앱부터 띄운다 -->
     <script type="module" src="/src/main.js"></script>
+
+    <!-- ✅ 그리고 "가능하면" 버전 라우팅을 적용한다 (망가져도 앱은 떠 있음) -->
+    <script>
+      window.VERSION_CHANNEL = 'prod';
+    </script>
+    <script src="/RCTS/version-router.js"></script>
   </body>
 </html>
