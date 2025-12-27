@@ -9,7 +9,11 @@
 
     var channel = rawChannel.trim() || "prod";
 
-    // channels.json은 그대로 사용 (prod/test/preopen 판단용)
+    // 이미 /RCTS/versions/ 아래에 있으면 더 이상 리다이렉트하지 않음
+    if (location.pathname.startsWith("/RCTS/versions/")) {
+      return;
+    }
+
     fetch("channels.json", { cache: "no-cache" })
       .then(function (res) {
         if (!res.ok) throw new Error("channels.json load failed: " + res.status);
@@ -20,15 +24,49 @@
           throw new Error("invalid channels.json");
         }
 
-        var tag = map[channel]; // 지금은 써먹지 않아도 됨
+        var tag = map[channel];
+        tag = (tag || "").toString().trim();
 
-        // 🔹 일단은 버전 서브폴더로 가지 말고,
-        //     그냥 /RCTS/ 루트(지금 dist가 올라간 곳)만 바라보게.
-        //     (= 리다이렉트 자체를 생략해도 됨)
-        console.info("[version-router] channel=" + channel + " tag=" + tag);
+        if (!tag) {
+          console.error(
+            "[version-router] channel=" + channel + " 에 해당하는 tag 없음"
+          );
+          return;
+        }
 
-        // 리다이렉트 안 하고 현재 페이지에 머무르기
-        // 혹은 필요하면 location.replace("/RCTS/") 정도만 사용
+        // ?redirect=/something 처리 (기존 GitHub Pages SPA 리다이렉트 대응)
+        var params = new URLSearchParams(location.search);
+        var redirect = params.get("redirect") || "";
+
+        // "/RCTS/..." or "/" 로 시작하는 걸 정리
+        if (redirect.startsWith("/RCTS/")) {
+          redirect = redirect.slice("/RCTS/".length);
+        } else if (redirect.startsWith("/")) {
+          redirect = redirect.slice(1);
+        }
+
+        var targetPath = "/RCTS/versions/" + encodeURIComponent(tag) + "/";
+
+        if (redirect) {
+          targetPath += redirect;
+        }
+
+        var current = location.pathname + location.search;
+
+        if (current === targetPath) {
+          return;
+        }
+
+        console.info(
+          "[version-router] channel=" +
+            channel +
+            " tag=" +
+            tag +
+            " → " +
+            targetPath
+        );
+
+        location.replace(targetPath);
       })
       .catch(function (err) {
         console.error("[version-router] error:", err);

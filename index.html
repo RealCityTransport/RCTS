@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
 
+    <!-- GitHub Pages에서 /RCTS/를 루트로 사용 -->
     <base href="/RCTS/" />
 
     <link rel="icon" href="/RCTS/favicon.png" />
@@ -11,12 +12,19 @@
     <title>RCTS - 본 서버</title>
 
     <script>
+      // 채널 정보 (prod / preopen / test...)
       window.VERSION_CHANNEL = 'prod';
     </script>
+    <!-- 채널/버전 정보 로깅 or 리다이렉트용 (필요 없으면 나중에 빼도 됨) -->
     <script src="/RCTS/version-router.js"></script>
   </head>
   <body>
+    <!-- ✅ Vue 앱이 붙을 루트 엘리먼트 -->
+    <div id="app"></div>
+
     <noscript>이 사이트는 JavaScript가 필요합니다.</noscript>
-    <p>본 서버로 이동 중...</p>
+
+    <!-- ✅ Vite/Vue 진입 스크립트 -->
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
