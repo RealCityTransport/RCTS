@@ -26,17 +26,22 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
 
   // ✅ 1) 직접 base 지정이 있으면 최우선
-  // (필요할 때만 쓰면 됨. 기본은 채널로 자동 산출)
+  // (예: VITE_BASE=/RCTS/versions/0.02/ npm run build)
   const explicitBase = env.VITE_BASE;
 
-  // ✅ 2) 오빠가 이미 쓰는 채널 값 기반으로 base 자동 산출
+  // ✅ 2) 버전 태그 기반 base 자동 산출
+  // (예: VITE_VERSION_TAG=0.02 → /RCTS/versions/0.02/)
+  const versionTag = (env.VITE_VERSION_TAG ?? "").trim();
+
+  // ✅ 3) 채널 값 기반 base 자동 산출 (기존 정책 유지)
   const channel = (env.VITE_DEPLOY_CHANNEL ?? "").trim().toLowerCase();
 
-  // 오빠가 운영하려는 경로 정책:
+  // 운영 경로 정책:
   // prod    -> /RCTS/
   // test    -> /RCTS/test/
   // preview -> /RCTS/preview/
-  // (필요하면 staging도 추가 가능)
+  // staging -> /RCTS/staging/
+  // dev     -> /RCTS/dev/
   const channelBaseMap = {
     prod: "/RCTS/",
     production: "/RCTS/",
@@ -46,14 +51,22 @@ export default defineConfig(({ mode }) => {
     dev: "/RCTS/dev/",
   };
 
-  // 채널이 없거나 알 수 없을 때의 안전한 기본값
-  // - build(=production mode)면 prod로 취급
-  // - dev 서버면 "/" (로컬 개발은 보통 루트가 편함)
-  const computedBase =
-    channelBaseMap[channel] ??
-    (mode === "production" ? "/RCTS/" : "/");
+  let rawBase;
 
-  const base = normalizeBase(explicitBase ?? computedBase);
+  if (explicitBase) {
+    // 1순위: VITE_BASE 강제 지정
+    rawBase = explicitBase;
+  } else if (versionTag) {
+    // 2순위: 버전 태그가 있으면 /RCTS/versions/<tag>/ 로 빌드
+    rawBase = `/RCTS/versions/${versionTag}/`;
+  } else {
+    // 3순위: 채널 기반 또는 기본값
+    rawBase =
+      channelBaseMap[channel] ??
+      (mode === "production" ? "/RCTS/" : "/");
+  }
+
+  const base = normalizeBase(rawBase);
 
   return {
     base,

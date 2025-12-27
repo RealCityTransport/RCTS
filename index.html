@@ -3,49 +3,20 @@
   <head>
     <meta charset="UTF-8" />
 
-    <!-- ✅ Vite가 base 설정을 넣어줄 자리 -->
-    <!--   - 개발: "/"
-    <!--   - GitHub Pages (RCTS): "/RCTS/" -->
-    <base href="%BASE_URL%" />
+    <base href="/RCTS/" />
 
-    <!-- 파비콘: base 기준으로 -->
-    <link rel="icon" href="%BASE_URL%favicon.png" />
+    <link rel="icon" href="/RCTS/favicon.png" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RCTS</title>
+    <title>RCTS - 본 서버</title>
 
-    <!-- SUIT 폰트 (그대로 유지) -->
-    <link
-      href="https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/web/SUIT-Variable.css"
-      rel="stylesheet"
-    />
-
-    <!-- 🔁 깊은 링크 복구용 스크립트 (sessionStorage 사용) -->
     <script>
-      (function () {
-        const redirect = sessionStorage.getItem("rcts:redirect");
-        if (!redirect) return;
-        sessionStorage.removeItem("rcts:redirect");
-
-        const base =
-          document.querySelector("base")?.getAttribute("href") || "/";
-        const baseNoTrail = base.endsWith("/") ? base.slice(0, -1) : base;
-
-        // 예: base = "/RCTS/", redirect = "/idle" → "/RCTS/idle"
-        const next =
-          baseNoTrail +
-          (redirect.startsWith("/") ? redirect : "/" + redirect);
-
-        history.replaceState(null, "", next);
-      })();
+      window.VERSION_CHANNEL = 'prod';
     </script>
+    <script src="/RCTS/version-router.js"></script>
   </head>
-
   <body>
-    <div id="app"></div>
-
-    <!-- ✅ 여기서는 항상 "소스 엔트리"만 가리켜야 함 -->
-    <!-- Vite가 빌드할 때 이것을 보고 assets 번들을 만들어 줌 -->
-    <script type="module" src="/src/main.js"></script>
+    <noscript>이 사이트는 JavaScript가 필요합니다.</noscript>
+    <p>본 서버로 이동 중...</p>
   </body>
 </html>
