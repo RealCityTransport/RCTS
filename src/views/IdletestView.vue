@@ -111,8 +111,37 @@
         운송 슬롯 · {{ currentTransportLabel }}
       </h2>
 
-      <!-- 슬롯/자동운행 비용 요약 (해금된 운송수단일 때만) -->
-      <template v-if="isCurrentTransportUnlocked">
+      <!-- 버스 전용: 운영 슬롯 / 연구 슬롯 탭 (버스 해금 이후에만 표시) -->
+      <div
+        v-if="activeMenu === 'bus' && isCurrentTransportUnlocked && !isIncompleteBusType"
+        class="panel-subtabs"
+      >
+        <button
+          type="button"
+          class="panel-subtab-button"
+          :class="{ active: activeBusTab === 'slots' }"
+          @click="activeBusTab = 'slots'"
+        >
+          운영 슬롯
+        </button>
+        <button
+          type="button"
+          class="panel-subtab-button"
+          :class="{ active: activeBusTab === 'research' }"
+          @click="activeBusTab = 'research'"
+        >
+          연구 슬롯
+        </button>
+      </div>
+
+      <!-- 슬롯/자동운행 비용 요약 (해금된 운송수단일 때만, 슬롯 탭에서 보여줌) -->
+      <template
+        v-if="
+          isCurrentTransportUnlocked &&
+          !isIncompleteBusType &&
+          (activeMenu !== 'bus' || activeBusTab === 'slots')
+        "
+      >
         <p class="panel-desc">
           선택한 운송수단에 대해 최대 {{ currentSlotCount }}개의 방치형 운행 슬롯을 사용할 수 있습니다.
           첫 번째 슬롯은 기본 운행 슬롯으로, 수동 운행 또는 자동 운행으로 수익을 발생시킵니다.
@@ -120,63 +149,105 @@
         </p>
         <p class="panel-cost-hint">
           슬롯 활성화 비용:
-          <strong>₩ {{ getSlotActivationCost(activeMenu).toLocaleString('ko-KR') }}</strong>,
+          <strong>₩ {{ getSlotActivationCost(activeMenu).toLocaleString('ko-KR') }}</strong>，
           자동운행 설정 비용:
           <strong>₩ {{ getAutoRunCost(activeMenu).toLocaleString('ko-KR') }}</strong>
         </p>
       </template>
 
-      <!-- 운송수단별 연구/업그레이드 서브 영역 (슬롯 위) -->
-      <div class="panel-research">
+      <!-- 버스 연구 탭 내용 (버스 해금 + 연구 탭일 때만 표시) -->
+      <div
+        class="panel-research"
+        v-if="
+          activeMenu === 'bus' &&
+          isCurrentTransportUnlocked &&
+          !isIncompleteBusType &&
+          activeBusTab === 'research'
+        "
+      >
         <h3 class="research-title">
-          {{ currentTransportLabel }} 연구 / 업그레이드
+          마을버스 연구 / 업그레이드
         </h3>
 
         <p class="research-desc">
           {{ currentResearchDescription }}
         </p>
 
-        <!-- 버스 전용 연구/구성 -->
-        <template v-if="activeMenu === 'bus'">
-          <!-- 연구 목록 -->
-          <ul class="research-list">
-            <li
-              v-for="item in busResearchList"
-              :key="item.id"
-              class="research-item"
-            >
-              <div class="research-item-main">
-                <div class="research-item-title">
-                  {{ item.name }}
-                  <span
-                    v-if="item.done"
-                    class="research-badge done"
-                  >
-                    완료
-                  </span>
-                </div>
-                <div class="research-item-desc">
-                  {{ item.desc }}
-                </div>
+        <!-- 연구 목록 -->
+        <ul class="research-list">
+          <li
+            v-for="item in busResearchList"
+            :key="item.id"
+            class="research-item"
+          >
+            <div class="research-item-main">
+              <div class="research-item-title">
+                {{ item.name }}
+                <span
+                  v-if="item.done"
+                  class="research-badge done"
+                >
+                  완료
+                </span>
               </div>
+              <div class="research-item-desc">
+                {{ item.desc }}
+              </div>
+            </div>
 
-              <div class="research-item-meta">
-                <div class="research-meta-line">
+            <div class="research-item-meta">
+              <div class="research-meta-line">
+                <template v-if="isLockedResearchItem(item)">
+                  비용: 해금 대기 중
+                </template>
+                <template v-else>
                   비용: ₩ {{ item.cost.toLocaleString('ko-KR') }}
-                </div>
-                <div class="research-meta-line">
-                  연구 시간(개념): {{ item.timeLabel }}
-                </div>
+                </template>
               </div>
+              <div class="research-meta-line">
+                연구 시간:
+                <template v-if="isLockedResearchItem(item)">
+                  준비 중
+                </template>
+                <template v-else>
+                  {{ item.timeLabel }}
+                </template>
+                <span v-if="item.inProgress">
+                  · 진행 중: {{ item.remainingLabel }}
+                </span>
+              </div>
+            </div>
 
+            <!-- 연구 실행 / 잠금 / 완료 상태별 표시 -->
+            <div class="research-item-actions">
+              <!-- 이미 완료된 연구: 버튼 대신 텍스트만 -->
+              <span
+                v-if="item.done"
+                class="research-item-status"
+              >
+                연구가 완료되었습니다.
+              </span>
+
+              <!-- 아직 준비 안 된(해금되지 않은) 연구: 잠금 버튼 -->
               <button
+                v-else-if="isLockedResearchItem(item)"
+                type="button"
+                class="research-item-button locked"
+                disabled
+              >
+                준비 중인 연구입니다
+              </button>
+
+              <!-- 일반 연구: 실행 버튼 (1회성) -->
+              <button
+                v-else
                 type="button"
                 class="research-item-button"
-                :disabled="item.done || idleFunds < item.cost || !isLeader"
+                :disabled="item.inProgress || idleFunds < item.cost || !isLeader"
                 @click="handleClickBusResearch(item.key)"
               >
-                <template v-if="item.done">
-                  연구 완료
+                <template v-if="item.inProgress">
+                  연구 중...
                 </template>
                 <template v-else-if="idleFunds < item.cost">
                   자금 부족
@@ -188,450 +259,468 @@
                   연구하기
                 </template>
               </button>
-            </li>
-          </ul>
-
-          <!-- 현재 적용 구성 + 노선 조정 -->
-          <div class="bus-config-panel">
-            <div class="bus-config-line">
-              현재 적용 중: 정원
-              {{ villageBusState.capacity }}명 · 정류장
-              {{ busUniqueStops }}개 (왕복 기준)
             </div>
+          </li>
+        </ul>
 
-            <div
-              v-if="busHasUnappliedUpgrade"
-              class="bus-config-line"
+        <!-- 현재 적용 구성 + 노선 조정 -->
+        <div class="bus-config-panel">
+          <div class="bus-config-line">
+            현재 적용 중: 정원
+            {{ villageBusState.capacity }}명 · 정류장
+            {{ busUniqueStops }}개 (왕복 기준)
+          </div>
+
+          <div
+            v-if="busHasUnappliedUpgrade"
+            class="bus-config-line"
+          >
+            업그레이드된 구성이 대기 중입니다.
+            노선 조정을 통해 다음 운행부터 적용됩니다.
+          </div>
+
+          <div
+            v-if="busHasUnappliedUpgrade"
+            class="bus-config-actions"
+          >
+            <button
+              type="button"
+              class="bus-config-button"
+              :disabled="!!busReconfigMeta || !isLeader"
+              @click="handleStartBusReconfig"
             >
-              업그레이드된 구성이 대기 중입니다.
-              노선 조정을 통해 다음 운행부터 적용됩니다.
-            </div>
+              버스 교체 / 노선 조정
+              <span class="btn-cost">
+                (~{{ Math.round(BUS_RECONFIG_SEC / 60) }}분)
+              </span>
+            </button>
 
-            <div
-              v-if="busHasUnappliedUpgrade"
-              class="bus-config-actions"
-            >
-              <button
-                type="button"
-                class="bus-config-button"
-                :disabled="!!busReconfigMeta || !isLeader"
-                @click="handleStartBusReconfig"
-              >
-                버스 교체 / 노선 조정
-                <span class="btn-cost">
-                  (~{{ Math.round(BUS_RECONFIG_SEC / 60) }}분)
-                </span>
-              </button>
-
-              <p class="bus-config-hint-small">
-                진행 중인 운행은 기존 설정으로 마무리되고,
-                <br />
-                이후 시작하는 운행부터 업그레이드가 반영됩니다.
-                자동운행 슬롯은 다음 루프부터 새 설정으로 계속 운행합니다.
-              </p>
-            </div>
-
-            <p
-              v-if="busReconfigMeta"
-              class="bus-config-hint"
-            >
-              버스 교체 / 노선 조정 진행 중입니다.
-              잠시 후 마을버스 라인에
-              업그레이드된 정원/정류장 구성이 적용됩니다.
+            <p class="bus-config-hint-small">
+              진행 중인 운행은 기존 설정으로 마무리되고,
+              <br />
+              이후 시작하는 운행부터 업그레이드가 반영됩니다.
+              자동운행 슬롯은 다음 루프부터 새 설정으로 계속 운행합니다.
             </p>
           </div>
 
-          <p class="research-hint">
-            지금은 연구 완료 시 바로 효과를 적용하지 않고,
-            위의 [버스 교체 / 노선 조정]을 통해 실제 운행 라인에 반영합니다.
-          </p>
-        </template>
-
-        <!-- 다른 운송수단: 아직 샘플 상태 -->
-        <template v-else>
-          <button
-            type="button"
-            class="research-button"
-            disabled
+          <p
+            v-if="busReconfigMeta"
+            class="bus-config-hint"
           >
-            연구 시스템 준비 중
-          </button>
-          <p class="research-hint">
-            이 운송수단의 방치형 연구는 아직 UI만 준비된 상태입니다.
-            나중에 전용 연구 트리와 연동해줄 수 있습니다.
+            버스 교체 / 노선 조정 진행 중입니다.
+            잠시 후 마을버스 라인에
+            업그레이드된 정원/정류장 구성이 적용됩니다.
           </p>
-        </template>
+        </div>
+
+        <p class="research-hint">
+          지금은 연구 완료 시 바로 효과를 적용하지 않고,
+          위의 [버스 교체 / 노선 조정]을 통해 실제 운행 라인에 반영합니다.
+        </p>
       </div>
 
-      <!-- 현재 운송수단 해금 여부에 따라 슬롯 영역 분기 -->
-      <template v-if="isCurrentTransportUnlocked">
-        <div class="slot-list">
-          <div
-            v-for="slot in transportSlots[activeMenu]"
-            :key="slot.id"
-            class="slot-card"
-            :data-state="slot.state"
-          >
-            <div class="slot-header">
-              <span class="slot-index">
-                슬롯 {{ slot.id }}
-              </span>
+      <!-- 슬롯 영역: (버스의 경우 운영 슬롯 탭일 때만, 나머지는 항상) -->
+      <template v-if="activeMenu !== 'bus' || activeBusTab === 'slots'">
+        <!-- 현재 운송수단 해금 여부에 따라 슬롯 영역 분기 -->
+        <template v-if="isCurrentTransportUnlocked && !isIncompleteBusType">
+          <div class="slot-list">
+            <div
+              v-for="slot in transportSlots[activeMenu]"
+              :key="slot.id"
+              class="slot-card"
+              :data-state="slot.state"
+            >
+              <div class="slot-header">
+                <span class="slot-index">
+                  슬롯 {{ slot.id }}
+                </span>
 
-              <span class="slot-state">
-                <template v-if="slot.state === 'active'">
-                  <template v-if="slot.autoEnabled">
-                    자동 운행 슬롯
+                <span class="slot-state">
+                  <template v-if="slot.state === 'active'">
+                    <template v-if="slot.autoEnabled">
+                      자동 운행 슬롯
+                    </template>
+                    <template v-else>
+                      운행 슬롯
+                    </template>
+                  </template>
+                  <template v-else-if="slot.state === 'empty'">
+                    빈 슬롯
+                  </template>
+                  <template v-else-if="slot.state === 'unlocking'">
+                    활성화 준비 중
                   </template>
                   <template v-else>
-                    운행 슬롯
+                    연구 필요
                   </template>
-                </template>
-                <template v-else-if="slot.state === 'empty'">
-                  빈 슬롯
-                </template>
-                <template v-else-if="slot.state === 'unlocking'">
-                  활성화 준비 중
-                </template>
-                <template v-else>
-                  연구 필요
-                </template>
-              </span>
-            </div>
-
-            <!-- 활성 슬롯: 노선명 + 남은 시간(전체 운행) -->
-            <div
-              v-if="slot.state === 'active'"
-              class="slot-route"
-            >
-              <span class="slot-route-name">
-                {{ slot.routeName }}
-              </span>
-              <span class="slot-timer">
-                {{ slot.remainingText }}
-              </span>
-            </div>
-
-            <!-- 버스일 때: 정류장 N개 + 물방울(왕복) 트랙 + 상태 텍스트 -->
-            <div
-              v-if="slot.state === 'active' && activeMenu === 'bus'"
-              class="slot-mini-move"
-            >
-              <!-- 정류장 점 + 선 + 물방울 -->
-              <div class="slot-stop-track">
-                <div class="slot-stop-line">
-                  <div
-                    v-for="n in busUniqueStops"
-                    :key="n"
-                    class="slot-stop-node"
-                    :class="{
-                      active: n === slot.currentStopIndex && slot.inDwell,
-                    }"
-                    :style="{
-                      left:
-                        busUniqueStops > 1
-                          ? ((n - 1) / (busUniqueStops - 1)) * 100 + '%'
-                          : '50%',
-                    }"
-                  />
-                  <div
-                    class="slot-stop-droplet"
-                    :style="{
-                      left:
-                        busUniqueStops > 1
-                          ? (slot.trackPositionRatio * 100).toFixed(2) + '%'
-                          : '50%',
-                    }"
-                  />
-                </div>
-                <div class="slot-stop-meta">
-                  <span class="slot-stop-route-label">
-                    마을버스 왕복 노선
-                  </span>
-                  <span class="slot-stop-index">
-                    정류장 {{ busUniqueStops }}개
-                  </span>
-                </div>
+                </span>
               </div>
 
-              <!-- 정류장/이동 텍스트 -->
-              <template v-if="slot.currentStopIndex > 0">
-                <!-- 정차 시간 -->
-                <span
-                  v-if="slot.inDwell"
-                  class="slot-mini-text"
-                >
-                  정류장 정차
-                  {{ formatPhaseRemaining(slot.dwellRemainingSec) }} 남음 ·
-                  승차 {{ busLastStopInfo.board }}명 ·
-                  하차 {{ busLastStopInfo.deboard }}명 ·
-                  탑승
-                  {{ busLastStopInfo.passengers }}/{{ busLastStopInfo.capacity }}명
+              <!-- 활성 슬롯: 노선명 + 남은 시간(전체 운행) -->
+              <div
+                v-if="slot.state === 'active'"
+                class="slot-route"
+              >
+                <span class="slot-route-name">
+                  {{ slot.routeName }}
                 </span>
-
-                <!-- 이동 시간 -->
-                <span
-                  v-else
-                  class="slot-mini-text"
-                >
-                  이동중
-                  {{ formatPhaseRemaining(slot.travelRemainingSec) }} 남음 ·
-                  승차 {{ busLastStopInfo.board }}명 ·
-                  하차 {{ busLastStopInfo.deboard }}명 ·
-                  탑승
-                  {{ busLastStopInfo.passengers }}/{{ busLastStopInfo.capacity }}명
+                <span class="slot-timer">
+                  {{ slot.remainingText }}
                 </span>
-              </template>
+              </div>
 
-              <template v-else>
-                <span class="slot-mini-text">
-                  아직 첫 정류장을 출발하지 않았습니다.
-                </span>
-              </template>
-            </div>
+              <!-- 버스일 때: 정류장 N개 + 물방울(왕복) 트랙 + 상태 텍스트 -->
+              <div
+                v-if="slot.state === 'active' && activeMenu === 'bus'"
+                class="slot-mini-move"
+              >
+                <!-- 정류장 점 + 선 + 물방울 -->
+                <div class="slot-stop-track">
+                  <div class="slot-stop-line">
+                    <div
+                      v-for="n in busUniqueStops"
+                      :key="n"
+                      class="slot-stop-node"
+                      :class="{
+                        active: n === slot.currentStopIndex && slot.inDwell,
+                      }"
+                      :style="{
+                        left:
+                          busUniqueStops > 1
+                            ? ((n - 1) / (busUniqueStops - 1)) * 100 + '%'
+                            : '50%',
+                      }"
+                    />
+                    <div
+                      class="slot-stop-droplet"
+                      :style="{
+                        left:
+                          busUniqueStops > 1
+                            ? (slot.trackPositionRatio * 100).toFixed(2) + '%'
+                            : '50%',
+                      }"
+                    />
+                  </div>
+                  <div class="slot-stop-meta">
+                    <span class="slot-stop-route-label">
+                      마을버스 왕복 노선
+                    </span>
+                    <span class="slot-stop-index">
+                      정류장 {{ busUniqueStops }}개
+                    </span>
+                  </div>
+                </div>
 
-            <!-- 활성 슬롯: 수동 운행 / 자동운행 / 삭제 -->
-            <div
-              v-if="slot.state === 'active'"
-              class="slot-actions"
-            >
-              <!-- 자동운행 켜진 이후: 운행중 + 삭제만 표시 -->
-              <template v-if="slot.autoEnabled">
+                <!-- 정류장/이동 텍스트 -->
+                <template v-if="slot.currentStopIndex > 0">
+                  <!-- 정차 시간: 승차/하차/탑승 모두 표시 -->
+                  <span
+                    v-if="slot.inDwell"
+                    class="slot-mini-text"
+                  >
+                    정류장 정차
+                    {{ formatPhaseRemaining(slot.dwellRemainingSec) }} 남음 ·
+                    승차 {{ slot.lastBoard }}명 ·
+                    하차 {{ slot.lastDeboard }}명 ·
+                    탑승
+                    {{ slot.passengers }}/{{ slot.capacity }}명
+                  </span>
+
+                  <!-- 이동 시간: 탑승만 표시 -->
+                  <span
+                    v-else
+                    class="slot-mini-text"
+                  >
+                    이동중
+                    {{ formatPhaseRemaining(slot.travelRemainingSec) }} 남음 ·
+                    탑승
+                    {{ slot.passengers }}/{{ slot.capacity }}명
+                  </span>
+                </template>
+
+                <template v-else>
+                  <span class="slot-mini-text">
+                    아직 첫 정류장을 출발하지 않았습니다.
+                  </span>
+                </template>
+              </div>
+
+              <!-- 활성 슬롯: 수동 운행 / 자동운행 / 삭제 -->
+              <div
+                v-if="slot.state === 'active'"
+                class="slot-actions"
+              >
+                <!-- 자동운행 켜진 이후: 운행중 + 삭제만 표시 -->
+                <template v-if="slot.autoEnabled">
+                  <button
+                    type="button"
+                    class="slot-action-button"
+                    disabled
+                  >
+                    자동 운행 중
+                  </button>
+
+                  <button
+                    v-if="slot.id !== 1"
+                    type="button"
+                    class="slot-action-button danger"
+                    :disabled="!isLeader"
+                    @click="handleDeleteActiveSlot(activeMenu, slot.id)"
+                  >
+                    슬롯 삭제
+                  </button>
+                </template>
+
+                <!-- 자동운행 이전: 수동 운행 + 자동운행 + 삭제 -->
+                <template v-else>
+                  <button
+                    type="button"
+                    class="slot-action-button"
+                    :disabled="slot.isRunning || !isLeader"
+                    @click="handleClickRunSlot(activeMenu, slot.id)"
+                  >
+                    <template v-if="!isLeader">
+                      리더 기기에서만 가능
+                    </template>
+                    <template v-else>
+                      {{ slot.isRunning ? '운행 중...' : '수동 운행 시작' }}
+                    </template>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="slot-action-button secondary"
+                    :disabled="!canAffordAutoRun || !isLeader"
+                    @click="handleToggleAuto(activeMenu, slot.id)"
+                  >
+                    자동운행
+                    <span class="btn-cost">
+                      (₩ {{ getAutoRunCost(activeMenu).toLocaleString('ko-KR') }})
+                    </span>
+                  </button>
+
+                  <!-- 1번 슬롯은 기본 슬롯이라 삭제 불가 -->
+                  <button
+                    v-if="slot.id !== 1"
+                    type="button"
+                    class="slot-action-button danger"
+                    :disabled="!isLeader"
+                    @click="handleDeleteActiveSlot(activeMenu, slot.id)"
+                  >
+                    슬롯 삭제
+                  </button>
+                </template>
+              </div>
+
+              <!-- 빈 슬롯: 활성화 준비 버튼 -->
+              <div
+                v-if="slot.state === 'empty'"
+                class="slot-actions"
+              >
                 <button
                   type="button"
-                  class="slot-action-button"
-                  disabled
-                >
-                  자동 운행 중
-                </button>
-
-                <button
-                  v-if="slot.id !== 1"
-                  type="button"
-                  class="slot-action-button danger"
-                  :disabled="!isLeader"
-                  @click="handleDeleteActiveSlot(activeMenu, slot.id)"
-                >
-                  슬롯 삭제
-                </button>
-              </template>
-
-              <!-- 자동운행 이전: 수동 운행 + 자동운행 + 삭제 -->
-              <template v-else>
-                <button
-                  type="button"
-                  class="slot-action-button"
-                  :disabled="slot.isRunning || !isLeader"
-                  @click="handleClickRunSlot(activeMenu, slot.id)"
+                  class="slot-action-button secondary"
+                  :disabled="!canAffordSlotActivation || !isLeader"
+                  @click="handleClickActivateEmptySlot(activeMenu, slot.id)"
                 >
                   <template v-if="!isLeader">
                     리더 기기에서만 가능
                   </template>
                   <template v-else>
-                    {{ slot.isRunning ? '운행 중...' : '수동 운행 시작' }}
+                    슬롯 활성화 준비 시작
+                    <span class="btn-cost">
+                      (₩ {{ getSlotActivationCost(activeMenu).toLocaleString('ko-KR') }})
+                    </span>
                   </template>
                 </button>
+              </div>
 
-                <button
-                  type="button"
-                  class="slot-action-button secondary"
-                  :disabled="!canAffordAutoRun || !isLeader"
-                  @click="handleToggleAuto(activeMenu, slot.id)"
-                >
-                  자동운행
-                  <span class="btn-cost">
-                    (₩ {{ getAutoRunCost(activeMenu).toLocaleString('ko-KR') }})
+              <!-- 빈 슬롯 활성화 진행 중: 진행 바 + 남은 시간 -->
+              <div
+                v-if="slot.state === 'unlocking'"
+                class="slot-unlock"
+              >
+                <div class="slot-unlock-header">
+                  <span class="slot-unlock-label">슬롯 활성화 준비 중</span>
+                  <span class="slot-unlock-timer">
+                    {{ slot.unlockRemainingText }}
                   </span>
-                </button>
+                </div>
+                <div class="slot-unlock-bar">
+                  <div
+                    class="slot-unlock-fill"
+                    :style="{ width: (slot.unlockProgress * 100).toFixed(0) + '%' }"
+                  />
+                </div>
+              </div>
 
-                <!-- 1번 슬롯은 기본 슬롯이라 삭제 불가 -->
-                <button
-                  v-if="slot.id !== 1"
-                  type="button"
-                  class="slot-action-button danger"
-                  :disabled="!isLeader"
-                  @click="handleDeleteActiveSlot(activeMenu, slot.id)"
-                >
-                  슬롯 삭제
-                </button>
-              </template>
+              <!-- 설명 영역 -->
+              <p class="slot-desc">
+                <template v-if="slot.state === 'active'">
+                  <template v-if="slot.autoEnabled">
+                    자동으로 반복 운행되는 슬롯입니다.
+                    1번 정류장에서 {{ busUniqueStops }}번 정류장까지 갔다가,
+                    다시 1번 정류장으로 돌아오는 왕복 1루프를 반복 운행합니다.
+                    각 정류장에서 30초 동안 승·하차를 처리하고 수익을 정산한 뒤,
+                    5분 동안 다음 정류장으로 이동합니다.
+                  </template>
+                  <template v-else>
+                    수동으로 운행을 시작해야 수익이 발생하는 슬롯입니다.
+                    [수동 운행 시작] 버튼을 누르면 1번 정류장에서 출발해
+                    {{ busUniqueStops }}번 정류장까지 이동한 뒤, 다시 1번 정류장으로 돌아오는
+                    왕복 운행을 1루프로 처리합니다.
+                    정류장마다 승·하차 인원에 따라 수익이 바로 추가됩니다.
+                  </template>
+                </template>
+
+                <template v-else-if="slot.state === 'empty'">
+                  아직 아무 운행도 배치되지 않은 슬롯입니다.
+                  [슬롯 활성화 준비 시작] 버튼을 눌러 일정 시간이 지나면
+                  이 슬롯을 추가 운행 슬롯으로 개방할 수 있습니다.
+                  슬롯 활성화에는 방치형 자금이 소모되며, 슬롯을 삭제해도 사용한 비용은 되돌아오지 않습니다.
+                </template>
+
+                <template v-else-if="slot.state === 'unlocking'">
+                  슬롯을 활성화하는 준비 단계입니다.
+                  준비 시간이 모두 지나면 자동으로 운행 슬롯으로 전환되며,
+                  이후 이 슬롯에서도 수동/자동 운행을 설정할 수 있습니다.
+                </template>
+
+                <template v-else>
+                  이 슬롯은 아직 개방되지 않았습니다.
+                  추가 연구를 통해 슬롯 개수나 효율을 늘릴 때 사용할 수 있습니다.
+                </template>
+              </p>
             </div>
+          </div>
+        </template>
 
-            <!-- 빈 슬롯: 활성화 준비 버튼 -->
-            <div
-              v-if="slot.state === 'empty'"
-              class="slot-actions"
-            >
+        <!-- 아직 해금되지 않은 운송수단일 때 -->
+        <template v-else>
+          <div class="slot-locked-panel">
+            <!-- 1) 아직 로직이 없는 시내/광역/시외/고속/관광 버스: 무조건 잠금 -->
+            <template v-if="isIncompleteBusType">
+              <h3 class="slot-locked-title">
+                {{ currentTransportLabel }} 운송수단은 아직 개발 중입니다.
+              </h3>
+
+              <p class="slot-locked-desc">
+                시내·광역·시외·고속·관광 버스 계열은
+                방치형 운행/연구 로직이 아직 준비되지 않아
+                현재 버전에서는 해금할 수 없습니다.
+              </p>
+
+              <p class="slot-locked-desc">
+                향후 로직이 완성되면 해금 및 운행이 가능하도록
+                업데이트할 예정입니다.
+              </p>
+
               <button
                 type="button"
-                class="slot-action-button secondary"
-                :disabled="!canAffordSlotActivation || !isLeader"
-                @click="handleClickActivateEmptySlot(activeMenu, slot.id)"
+                class="unlock-button"
+                disabled
+              >
+                준비 중인 운송수단입니다
+              </button>
+            </template>
+
+            <!-- 2) 나머지 운송수단: 기존 해금 로직 -->
+            <template v-else>
+              <h3 class="slot-locked-title">
+                {{ currentTransportLabel }} 운송수단이 아직 해금되지 않았습니다.
+              </h3>
+
+              <!-- 스타터 0단계 무상 해금 상태 -->
+              <p
+                v-if="isCurrentStarterFree"
+                class="slot-locked-desc"
+              >
+                버스, 트럭, 철도는 0단계 스타터 운송수단입니다.
+                이 중 한 종류는 한 번에 한해
+                <strong>무상으로 해금</strong>할 수 있습니다.
+                이미 한 종류를 무상 해금한 뒤에는,
+                나머지 스타터 운송수단은 1단계 비용을 지불해 해금해야 합니다.
+              </p>
+
+              <!-- 일반 단계 설명 -->
+              <p
+                v-else
+                class="slot-locked-desc"
+              >
+                {{ currentUnlockStage }}단계 운송수단입니다.
+                단계가 높을수록 해금 비용이 커지지만, 잠재 수익과 성장 여지도 함께 커집니다.
+              </p>
+
+              <p class="slot-locked-desc">
+                해금 비용:
+                <strong>
+                  <template v-if="isCurrentStarterFree">
+                    무상 (₩ 0)
+                  </template>
+                  <template v-else>
+                    ₩ {{ currentTransportUnlockCost.toLocaleString('ko-KR') }}
+                  </template>
+                </strong>
+              </p>
+
+              <p
+                v-if="isCurrentStarterFree"
+                class="slot-locked-desc"
+              >
+                자금이 없어도 무상 해금이 가능합니다.
+                한 번만 사용할 수 있는 0단계 스타터 해금 기회이므로,
+                어떤 운송수단을 먼저 열지 신중히 선택해도 좋습니다.
+              </p>
+              <p
+                v-else
+                class="slot-locked-desc"
+              >
+                해금에 필요한 자금이 충분할 때 아래 버튼을 눌러 운송수단을 개방할 수 있습니다.
+                해금 이후에는 첫 번째 슬롯이 기본 운행 슬롯으로 열리고, 이후 슬롯은 추가 비용을 들여 확장하게 됩니다.
+              </p>
+
+              <button
+                type="button"
+                class="unlock-button"
+                :disabled="!canAffordTransportUnlock || !isLeader"
+                @click="unlockTransport(activeMenu)"
               >
                 <template v-if="!isLeader">
                   리더 기기에서만 가능
                 </template>
-                <template v-else>
-                  슬롯 활성화 준비 시작
-                  <span class="btn-cost">
-                    (₩ {{ getSlotActivationCost(activeMenu).toLocaleString('ko-KR') }})
-                  </span>
+                <template v-else-if="isCurrentStarterFree">
+                  {{ currentTransportLabel }} 무상 해금
                 </template>
-              </button>
-            </div>
+                <template v-else>
+                  {{ currentTransportLabel }} 해금
+                </template>
 
-            <!-- 빈 슬롯 활성화 진행 중: 진행 바 + 남은 시간 -->
-            <div
-              v-if="slot.state === 'unlocking'"
-              class="slot-unlock"
-            >
-              <div class="slot-unlock-header">
-                <span class="slot-unlock-label">슬롯 활성화 준비 중</span>
-                <span class="slot-unlock-timer">
-                  {{ slot.unlockRemainingText }}
+                <span
+                  class="btn-cost"
+                  v-if="!isCurrentStarterFree && isLeader"
+                >
+                  (₩ {{ currentTransportUnlockCost.toLocaleString('ko-KR') }})
                 </span>
-              </div>
-              <div class="slot-unlock-bar">
-                <div
-                  class="slot-unlock-fill"
-                  :style="{ width: (slot.unlockProgress * 100).toFixed(0) + '%' }"
-                />
-              </div>
-            </div>
+              </button>
 
-            <!-- 설명 영역 -->
-            <p class="slot-desc">
-              <template v-if="slot.state === 'active'">
-                <template v-if="slot.autoEnabled">
-                  자동으로 반복 운행되는 슬롯입니다.
-                  1번 정류장에서 {{ busUniqueStops }}번 정류장까지 갔다가,
-                  다시 1번 정류장으로 돌아오는 왕복 1루프를 반복 운행합니다.
-                  각 정류장에서 30초 동안 승·하차를 처리하고 수익을 정산한 뒤,
-                  5분 동안 다음 정류장으로 이동합니다.
-                </template>
-                <template v-else>
-                  수동으로 운행을 시작해야 수익이 발생하는 슬롯입니다.
-                  [수동 운행 시작] 버튼을 누르면 1번 정류장에서 출발해
-                  {{ busUniqueStops }}번 정류장까지 이동한 뒤, 다시 1번 정류장으로 돌아오는
-                  왕복 운행을 1루프로 처리합니다.
-                  정류장마다 승·하차 인원에 따라 수익이 바로 추가됩니다.
-                </template>
-              </template>
-
-              <template v-else-if="slot.state === 'empty'">
-                아직 아무 운행도 배치되지 않은 슬롯입니다.
-                [슬롯 활성화 준비 시작] 버튼을 눌러 일정 시간이 지나면
-                이 슬롯을 추가 운행 슬롯으로 개방할 수 있습니다.
-                슬롯 활성화에는 방치형 자금이 소모되며, 슬롯을 삭제해도 사용한 비용은 되돌아오지 않습니다.
-              </template>
-
-              <template v-else-if="slot.state === 'unlocking'">
-                슬롯을 활성화하는 준비 단계입니다.
-                준비 시간이 모두 지나면 자동으로 운행 슬롯으로 전환되며,
-                이후 이 슬롯에서도 수동/자동 운행을 설정할 수 있습니다.
-              </template>
-
-              <template v-else>
-                이 슬롯은 아직 개방되지 않았습니다.
-                추가 연구를 통해 슬롯 개수나 효율을 늘릴 때 사용할 수 있습니다.
-              </template>
-            </p>
+              <p class="slot-locked-hint">
+                해금된 운송수단은 상단 운송수단 버튼에서 언제든 다시 선택해
+                슬롯 구성과 운행 상태를 확인할 수 있습니다.
+              </p>
+            </template>
           </div>
-        </div>
-      </template>
-
-      <!-- 아직 해금되지 않은 운송수단일 때 -->
-      <template v-else>
-        <div class="slot-locked-panel">
-          <h3 class="slot-locked-title">
-            {{ currentTransportLabel }} 운송수단이 아직 해금되지 않았습니다.
-          </h3>
-
-          <!-- 스타터 0단계 무상 해금 상태 -->
-          <p
-            v-if="isCurrentStarterFree"
-            class="slot-locked-desc"
-          >
-            버스, 트럭, 철도는 0단계 스타터 운송수단입니다.
-            이 중 한 종류는 한 번에 한해
-            <strong>무상으로 해금</strong>할 수 있습니다.
-            이미 한 종류를 무상 해금한 뒤에는,
-            나머지 스타터 운송수단은 1단계 비용을 지불해 해금해야 합니다.
-          </p>
-
-          <!-- 일반 단계 설명 -->
-          <p
-            v-else
-            class="slot-locked-desc"
-          >
-            {{ currentUnlockStage }}단계 운송수단입니다.
-            단계가 높을수록 해금 비용이 커지지만, 잠재 수익과 성장 여지도 함께 커집니다.
-          </p>
-
-          <p class="slot-locked-desc">
-            해금 비용:
-            <strong>
-              <template v-if="isCurrentStarterFree">
-                무상 (₩ 0)
-              </template>
-              <template v-else>
-                ₩ {{ currentTransportUnlockCost.toLocaleString('ko-KR') }}
-              </template>
-            </strong>
-          </p>
-
-          <p
-            v-if="isCurrentStarterFree"
-            class="slot-locked-desc"
-          >
-            자금이 없어도 무상 해금이 가능합니다.
-            한 번만 사용할 수 있는 0단계 스타터 해금 기회이므로,
-            어떤 운송수단을 먼저 열지 신중히 선택해도 좋습니다.
-          </p>
-          <p
-            v-else
-            class="slot-locked-desc"
-          >
-            해금에 필요한 자금이 충분할 때 아래 버튼을 눌러 운송수단을 개방할 수 있습니다.
-            해금 이후에는 첫 번째 슬롯이 기본 운행 슬롯으로 열리고, 이후 슬롯은 추가 비용을 들여 확장하게 됩니다.
-          </p>
-
-          <button
-            type="button"
-            class="unlock-button"
-            :disabled="!canAffordTransportUnlock || !isLeader"
-            @click="unlockTransport(activeMenu)"
-          >
-            <template v-if="!isLeader">
-              리더 기기에서만 가능
-            </template>
-            <template v-else-if="isCurrentStarterFree">
-              {{ currentTransportLabel }} 무상 해금
-            </template>
-            <template v-else>
-              {{ currentTransportLabel }} 해금
-            </template>
-
-            <span
-              class="btn-cost"
-              v-if="!isCurrentStarterFree && isLeader"
-            >
-              (₩ {{ currentTransportUnlockCost.toLocaleString('ko-KR') }})
-            </span>
-          </button>
-
-          <p class="slot-locked-hint">
-            해금된 운송수단은 상단 운송수단 버튼에서 언제든 다시 선택해
-            슬롯 구성과 운행 상태를 확인할 수 있습니다.
-          </p>
-        </div>
+        </template>
       </template>
     </section>
   </div>
 </template>
 
 <script setup>
+import { ref, computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useIdletestView } from '@/features/idle/pages/useIdletestView'
+
+const activeBusTab = ref('slots')
 
 const {
   // 리더 여부 + 수동 저장 + 리셋
@@ -684,9 +773,25 @@ const {
   handleClickActivateEmptySlot,
   handleDeleteActiveSlot,
 } = useIdletestView()
+
+// 아직 로직이 준비되지 않은 버스 계열(시내/광역/시외/고속/관광)은 항상 잠금 처리
+const incompleteBusLabelKeywords = ['시내', '광역', '시외', '고속', '관광']
+
+const isIncompleteBusType = computed(() => {
+  const label = currentTransportLabel.value || ''
+  return incompleteBusLabelKeywords.some((kw) => label.includes(kw))
+})
+
+// 연구 목록 중 "아직 해금되지 않은(준비 중) 연구" 판별
+// 현재 구조에서는 cost === 0 && timeLabel === '준비 중' 인 항목을 잠금 처리
+const isLockedResearchItem = (item) => {
+  if (!item) return false
+  return item.cost === 0 && item.timeLabel === '준비 중'
+}
 </script>
 
 <style scoped>
+/* 이하 스타일은 그대로 (필요한 부분만 소량 추가) */
 .idle-page {
   display: flex;
   flex-direction: column;
@@ -933,6 +1038,35 @@ const {
   margin-bottom: 8px;
 }
 
+/* 탭 영역 */
+.panel-subtabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.panel-subtab-button {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.9);
+  background: rgba(15, 23, 42, 0.9);
+  font-size: 0.78rem;
+  cursor: pointer;
+  color: #e5e7eb;
+  white-space: nowrap;
+}
+
+.panel-subtab-button:hover {
+  background: rgba(51, 65, 85, 0.9);
+}
+
+.panel-subtab-button.active {
+  background: rgba(129, 140, 248, 0.28);
+  border-color: rgba(129, 140, 248, 1);
+  box-shadow: 0 0 8px rgba(129, 140, 248, 0.7);
+}
+
 .panel-desc {
   font-size: 0.8rem;
   opacity: 0.8;
@@ -1026,9 +1160,17 @@ const {
   white-space: nowrap;
 }
 
+/* 연구 버튼/상태 영역 */
+.research-item-actions {
+  margin-top: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .research-item-button {
   align-self: flex-start;
-  margin-top: 2px;
   padding: 5px 11px;
   border-radius: 999px;
   border: 1px solid rgba(130, 180, 255, 0.9);
@@ -1049,27 +1191,16 @@ const {
   background: rgba(130, 180, 255, 0.28);
 }
 
-.research-button {
-  align-self: flex-start;
-  margin-top: 2px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(130, 180, 255, 0.9);
-  background: rgba(130, 180, 255, 0.18);
-  color: inherit;
-  font-size: 0.8rem;
-  cursor: pointer;
+/* 준비 중(잠금) 연구 버튼 스타일 */
+.research-item-button.locked {
+  border-color: rgba(148, 163, 184, 0.9);
+  background: rgba(30, 41, 59, 0.9);
 }
 
-.research-button[disabled] {
-  opacity: 0.5;
-  cursor: default;
-  border-color: rgba(180, 180, 180, 0.7);
-  background: rgba(180, 180, 180, 0.16);
-}
-
-.research-button:not([disabled]):hover {
-  background: rgba(130, 180, 255, 0.28);
+/* 완료된 연구 텍스트 */
+.research-item-status {
+  font-size: 0.75rem;
+  opacity: 0.86;
 }
 
 .research-hint {
@@ -1204,7 +1335,7 @@ const {
 
 /* 버스 정류장 트랙 (선 + 점 + 물방울) */
 .slot-mini-move {
-  margin-top: 2px;
+  margin-top: 6px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1264,10 +1395,10 @@ const {
   transform: translate(-50%, -50%) scale(1.4);
 }
 
-/* 물방울 (현재 위치) – 점과 정확히 같은 레일을 따라 이동 */
+/* 물방울 (현재 위치) – 꼭짓점이 선 위에 오는 형태 */
 .slot-stop-droplet {
   position: absolute;
-  top: calc(50% - 5px); /* 전체 위치 위로 5px */
+  top: calc(50% - 5px);
   width: 18px;
   height: 18px;
   border-radius: 999px;
@@ -1285,7 +1416,6 @@ const {
   z-index: 2;
 }
 
-/* 물방울 끝 삼각형 – 아래 선 쪽을 향하도록 */
 .slot-stop-droplet::before {
   content: '';
   position: absolute;
@@ -1299,7 +1429,6 @@ const {
   border-top: 8px solid rgba(37, 99, 235, 0.95);
 }
 
-/* 안쪽 하이라이트 */
 .slot-stop-droplet::after {
   content: '';
   position: absolute;
