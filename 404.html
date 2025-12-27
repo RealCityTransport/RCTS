@@ -4,11 +4,10 @@
     <meta charset="UTF-8" />
     <script>
       (function () {
-        // ✅ GitHub Pages 상의 리포 루트
         const repoRoot = "/RCTS";
         const p = location.pathname;
 
-        // 채널 판별 (원하면 유지, 아니면 /RCTS/만 써도 됨)
+        // 채널 판별
         let base = repoRoot + "/";
         if (p.startsWith(repoRoot + "/test/")) base = repoRoot + "/test/";
         else if (p.startsWith(repoRoot + "/preview/")) base = repoRoot + "/preview/";

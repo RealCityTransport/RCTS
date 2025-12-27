@@ -1,109 +1,56 @@
 // src/composables/useKstTime.js
-import { ref, computed } from 'vue'
-import { useServerTime } from '@/composables/useServerTime'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
-// ===== 전역 싱글톤 =====
-const kstDate = ref(null)
-const isKstTimeReady = ref(false)
+/**
+ * RCTS 표준시간 (KST 기반 실시간)
+ *
+ * - 내부적으로는 timestamp(ms)를 기준으로 움직인다.
+ * - tickMs 단위(기본 1000ms)로 nowMs가 갱신된다.
+ * - 경과 시간 계산(diffMs)은 ms 단위(초 단위까지 정확)로 동작.
+ *
+ * 화면 표기는 utils/timeFormat 의 formatKstTimeYYYYMMDDHHMM 을 사용해서
+ * YYYY. MM. DD. HH:MM 형식으로만 보여준다.
+ */
+export function useKstTime(tickMs = 1000) {
+  const nowMs = ref(Date.now())
+  let timerId = null
 
-let timerId = null
-let initialized = false
+  const now = computed(() => new Date(nowMs.value))
 
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000
+  onMounted(() => {
+    timerId = setInterval(() => {
+      nowMs.value = Date.now()
+    }, tickMs)
+  })
 
-// PROD에서만 서버 시간 사용
-const REMOTE_TIME_ENABLED =
-  import.meta.env.PROD &&
-  (import.meta.env.VITE_REMOTE_TIME_ENABLED ?? 'true') === 'true'
-
-// ===== 시간 계산 =====
-
-// PROD: UTC → KST
-function computeKstFromUtc(utcMs) {
-  return new Date(utcMs + KST_OFFSET_MS)
-}
-
-// DEV: 로컬 시간을 그대로 사용 (이미 KST라고 가정)
-function computeLocalKst(localMs) {
-  return new Date(localMs)
-}
-
-// HH:MM 포맷
-function formatKstHHMM(d) {
-  if (!(d instanceof Date)) return ''
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-// ===== 초기화 =====
-export function initializeKstTimeTracker() {
-  if (initialized) return
-  initialized = true
-
-  let nowMsProvider
-  let computeDate
-
-  if (REMOTE_TIME_ENABLED) {
-    // PROD: 서버 UTC 기반
-    const { serverNowMs, isServerTimeReady } = useServerTime()
-
-    nowMsProvider = () => {
-      void isServerTimeReady
-      return serverNowMs()
+  onUnmounted(() => {
+    if (timerId !== null) {
+      clearInterval(timerId)
+      timerId = null
     }
-    computeDate = computeKstFromUtc
-  } else {
-    // DEV: 로컬 시간 기반 (이미 KST)
-    nowMsProvider = () => Date.now()
-    computeDate = computeLocalKst
-  }
+  })
 
-  const tick = () => {
-    try {
-      const nowMs = Number(nowMsProvider?.() ?? Date.now())
-      kstDate.value = computeDate(nowMs)
-      isKstTimeReady.value = true
-    } catch (e) {
-      // 절대 UI 죽지 않게 폴백
-      kstDate.value = new Date()
-      isKstTimeReady.value = true
-      console.warn('[useKstTime] fallback to local time:', e)
+  /**
+   * 경과 시간(ms) 계산
+   * - from, to는 Date 또는 timestamp(ms) 모두 허용
+   * - to를 생략하면 현재(nowMs 기준)를 사용
+   */
+  function diffMs(from, to) {
+    const fromMs = from instanceof Date ? from.getTime() : Number(from)
+
+    let toMs
+    if (to === undefined) {
+      toMs = nowMs.value
+    } else {
+      toMs = to instanceof Date ? to.getTime() : Number(to)
     }
+
+    return toMs - fromMs
   }
-
-  tick()
-  timerId = setInterval(tick, 60_000) // ✅ 1분 단위면 충분 (초 단위 불필요)
-}
-
-export function stopKstTimeTracker() {
-  if (timerId) {
-    clearInterval(timerId)
-    timerId = null
-  }
-  initialized = false
-  isKstTimeReady.value = false
-  kstDate.value = null
-}
-
-// ===== Public API =====
-export function useKstTime() {
-  // TopBar에서 호출되면 자동 보장
-  if (!initialized) {
-    initializeKstTimeTracker()
-  }
-
-  const isKstReady = computed(
-    () => isKstTimeReady.value && kstDate.value instanceof Date
-  )
-
-  const kstString = computed(() =>
-    isKstReady.value ? formatKstHHMM(kstDate.value) : ''
-  )
 
   return {
-    kstDate,
-    isKstTimeReady,
-    isKstReady,
-    kstString, // ✅ HH:MM
+    nowMs, // number (timestamp)
+    now,   // computed Date
+    diffMs,
   }
 }
