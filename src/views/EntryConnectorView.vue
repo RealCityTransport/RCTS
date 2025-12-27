@@ -1,3 +1,4 @@
+<!-- src/views/EntryConnectorView.vue -->
 <template>
   <div class="entry-connector">
     <!-- 상단 헤더 -->
@@ -20,7 +21,7 @@
         <div class="meta-block meta-note">
           <span class="meta-label">안내</span>
           <span class="meta-value">
-            이 페이지는 테스트 · 사전 공개 · 운영 환경을 선택하는 공용 진입 허브입니다.
+            이 페이지는 테스트 · 운영 환경을 선택하는 공용 진입 허브입니다.
           </span>
         </div>
       </div>
@@ -28,7 +29,6 @@
 
     <!-- 본문: 세로 카드 레이아웃 -->
     <main class="entry-main">
-
       <!-- 1️⃣ 테스트(개발) 환경 -->
       <section class="entry-card entry-card-dev">
         <div class="card-header">
@@ -53,7 +53,7 @@
 
         <div class="card-footer">
           <RouterLink
-            to="/idle"
+            to="/idletest"
             class="entry-link"
           >
             테스트 환경으로 이동
@@ -61,44 +61,7 @@
 
           <p class="card-warning">
             이 환경은 <strong>실험용</strong>이며,
-            데이터나 흐름이 수시로 변경될 수 있습니다.
-          </p>
-        </div>
-      </section>
-
-      <!-- 2️⃣ 사전 사이트 (프리뷰 환경) -->
-      <section class="entry-card entry-card-pre">
-        <div class="card-header">
-          <div class="card-title-row">
-            <h2 class="card-title">사전 사이트 (프리뷰 환경)</h2>
-            <span class="env-badge env-badge-pre">
-              PREVIEW · 곧 공개 예정
-            </span>
-          </div>
-          <p class="card-desc">
-            운영 환경에 배포되기 전,
-            <strong>사전 공개용 빌드</strong>를 제공할 예정입니다.<br />
-            현재는 준비 중으로 접속 기능이 비활성화되어 있습니다.
-          </p>
-        </div>
-
-        <ul class="card-list">
-          <li>· 운영 직전 버전 검증</li>
-          <li>· 선택 기능/시나리오 사전 체험</li>
-          <li>· UI/UX 최종 조정용 환경</li>
-        </ul>
-
-        <div class="card-footer">
-          <div class="pre-soon-badge">
-            <span class="dot"></span>
-            <span class="pre-soon-text">
-              사전 사이트 준비 중입니다. 곧 공개될 예정입니다.
-            </span>
-          </div>
-
-          <p class="card-warning">
-            URL 및 배포 정책 확정 후
-            <strong>접속 버튼이 활성화</strong>됩니다.
+            테스트 서버에 저장도 되지만 레이아웃과 기능이 수시로 바뀔 수 있습니다.
           </p>
         </div>
       </section>
@@ -109,34 +72,31 @@
           <div class="card-title-row">
             <h2 class="card-title">본 사이트 (운영 환경)</h2>
             <span class="env-badge env-badge-prod">
-              PROD · GitHub Pages
+              PROD · 운영 환경
             </span>
           </div>
           <p class="card-desc">
-            현재 GitHub Pages에서 운영 중인
-            <strong>RCTS 본 서비스 환경</strong>입니다.
+            현재 운영 중인 RCTS 본 서비스 환경입니다.
           </p>
         </div>
 
         <ul class="card-list">
-          <li>· 실제 사용자 노출 운영 버전</li>
-          <li>· 안정된 기능과 데이터 흐름</li>
-          <li>· <code>/RCTS/</code> 경로 기준 서비스</li>
+          <li>· 실제 서비스 운영 버전</li>
+          <li>· 안정된 기능 제공</li>
+          <li>· 공식 운영 환경</li>
         </ul>
 
         <div class="card-footer">
-          <a
-            :href="prodUrl"
-            class="entry-link entry-link-primary"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            본 사이트 새 탭에서 열기
-          </a>
+          <div class="pre-soon-badge">
+            <span class="dot"></span>
+            <span class="pre-soon-text">
+              본 사이트는 이제 곧 연결됩니다.
+            </span>
+          </div>
 
           <p class="card-warning">
-            향후 운영 코드가 이식되면
-            내부 View로 전환될 예정입니다.
+            운영 적용이 완료되면
+            <strong>접속 버튼이 활성화</strong>됩니다.
           </p>
         </div>
       </section>
@@ -155,13 +115,9 @@ const { gameTime } = useGameTime({ initialSpeed: 1 })
 const formattedGameTime = computed(() =>
   formatKstTimeYYYYMMDDHHMM(gameTime.value),
 )
-
-const prodUrl = 'https://realcitytransport.github.io/RCTS/'
 </script>
 
 <style scoped>
-/* (스타일은 이전 버전 그대로 유지 — 카드 순서만 변경됨) */
-
 .entry-connector {
   min-height: 100vh;
   padding: 24px;
@@ -169,6 +125,7 @@ const prodUrl = 'https://realcitytransport.github.io/RCTS/'
   display: flex;
   flex-direction: column;
   gap: 20px;
+
   background: radial-gradient(circle at top, rgba(56, 189, 248, 0.16), transparent),
     #020617;
   color: #f9fafb;
@@ -176,10 +133,15 @@ const prodUrl = 'https://realcitytransport.github.io/RCTS/'
     sans-serif;
 }
 
+/* 헤더 영역 */
 .entry-header {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.entry-header-main {
+  text-align: left;
 }
 
 .entry-title {
@@ -189,6 +151,12 @@ const prodUrl = 'https://realcitytransport.github.io/RCTS/'
   text-transform: uppercase;
 }
 
+.entry-subtitle {
+  margin-top: 4px;
+  font-size: 0.95rem;
+  opacity: 0.9;
+}
+
 .entry-header-meta {
   display: flex;
   flex-wrap: wrap;
@@ -196,14 +164,36 @@ const prodUrl = 'https://realcitytransport.github.io/RCTS/'
 }
 
 .meta-block {
+  min-width: 0;
   padding: 8px 12px;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.5);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 0.78rem;
 }
 
-/* 세로 카드 레이아웃 */
+.meta-label {
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.meta-value {
+  opacity: 0.9;
+  white-space: nowrap;
+}
+
+.meta-note {
+  max-width: 100%;
+}
+
+.meta-note .meta-value {
+  white-space: normal;
+}
+
+/* 본문: 세로 카드 레이아웃 */
 .entry-main {
   display: flex;
   flex-direction: column;
@@ -214,6 +204,7 @@ const prodUrl = 'https://realcitytransport.github.io/RCTS/'
 .entry-card {
   padding: 18px 16px 16px;
   border-radius: 18px;
+  box-sizing: border-box;
   background: rgba(15, 23, 42, 0.96);
   border: 1px solid rgba(148, 163, 184, 0.5);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.85);
@@ -222,55 +213,162 @@ const prodUrl = 'https://realcitytransport.github.io/RCTS/'
   gap: 12px;
 }
 
-.entry-card-dev { border-style: dashed; }
-.entry-card-prod { border-style: solid; }
+.entry-card-dev {
+  border-style: dashed;
+}
+
+.entry-card-prod {
+  border-style: solid;
+}
+
 .entry-card-pre {
   border-style: dotted;
   border-color: rgba(129, 140, 248, 0.9);
+}
+
+/* 카드 헤더 */
+.card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-title {
+  font-size: 1.25rem;
+  font-weight: 700;
 }
 
 .env-badge {
   font-size: 0.72rem;
   padding: 3px 8px;
   border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  text-transform: uppercase;
   letter-spacing: 0.08em;
+  white-space: nowrap;
 }
 
 .env-badge-dev {
-  border:1px solid rgba(56,189,248,.9);
-  background:rgba(56,189,248,.14);
+  border-color: rgba(56, 189, 248, 0.9);
+  background: rgba(56, 189, 248, 0.12);
 }
 
 .env-badge-pre {
-  border:1px solid rgba(129,140,248,.9);
-  background:rgba(129,140,248,.16);
+  border-color: rgba(129, 140, 248, 0.9);
+  background: rgba(129, 140, 248, 0.14);
 }
 
 .env-badge-prod {
-  border:1px solid rgba(249,115,22,.9);
-  background:rgba(249,115,22,.16);
+  border-color: rgba(249, 115, 22, 0.9);
+  background: rgba(249, 115, 22, 0.16);
 }
 
+.card-desc {
+  font-size: 0.86rem;
+  opacity: 0.9;
+}
+
+/* 카드 리스트 */
+.card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.8rem;
+  opacity: 0.9;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 카드 푸터 */
+.card-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* 버튼/링크 스타일 (RouterLink용) */
 .entry-link {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
   padding: 9px 16px;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.85);
+  font-size: 0.86rem;
   text-decoration: none;
   color: #e5e7eb;
+  backdrop-filter: blur(8px);
+  transition: all 0.18s ease-out;
+  cursor: pointer;
 }
 
-.entry-link-primary { border-color:#f97316; }
+.entry-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.7);
+  border-color: #e5e7eb;
+}
 
+.entry-link-primary {
+  border-color: #f97316;
+}
+
+.entry-link-primary:hover {
+  box-shadow: 0 12px 32px rgba(248, 113, 113, 0.55);
+}
+
+/* 사전/본 사이트용 안내 뱃지 */
 .pre-soon-badge {
-  display:flex;
-  align-items:center;
-  gap:8px;
-  padding:7px 12px;
-  border-radius:999px;
-  border:1px dashed rgba(129,140,248,.9);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px dashed rgba(129, 140, 248, 0.9);
+  font-size: 0.8rem;
 }
-.dot {
-  width:8px;height:8px;border-radius:50%;
-  background:rgba(129,140,248,1);
+
+.pre-soon-badge .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(129, 140, 248, 1);
+  box-shadow: 0 0 10px rgba(129, 140, 248, 0.8);
+}
+
+.pre-soon-text {
+  opacity: 0.9;
+}
+
+/* 경고/안내 문구 */
+.card-warning {
+  font-size: 0.76rem;
+  opacity: 0.85;
+}
+
+/* 반응형 */
+@media (min-width: 768px) {
+  .entry-connector {
+    padding: 24px 32px 28px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+}
+
+@media (min-width: 1024px) {
+  .entry-connector {
+    padding: 28px 40px 32px;
+    max-width: 960px;
+  }
 }
 </style>
