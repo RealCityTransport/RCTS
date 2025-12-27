@@ -244,6 +244,57 @@ export function simulateVillageBusStops(state, steps) {
 }
 
 /**
+ * 1회 왕복(1루프)에 대한 고정 스크립트 생성
+ * - 각 정류장별로 미리 승차/하차/수익/탑승 인원을 계산해 두고
+ * - 런타임에서는 이 스크립트를 “읽기만” 하도록 사용
+ */
+export function buildBusRunScript(state) {
+  const stopsPerLoop =
+    state.stopsPerLoop || VILLAGE_BUS_BASE_CONFIG.baseStopsPerLoop
+  const totalStops = stopsPerLoop > 0 ? stopsPerLoop : 1
+  const uniqueStops = Math.max(1, Math.floor((totalStops + 1) / 2))
+
+  let current = {
+    ...state,
+    currentPassengers: state.currentPassengers || 0,
+    totalIncome: state.totalIncome || 0,
+  }
+
+  const steps = []
+  let totalIncome = 0
+
+  for (let loopStopIndex = 1; loopStopIndex <= totalStops; loopStopIndex += 1) {
+    const res = simulateOneStop(
+      current,
+      loopStopIndex,
+      totalStops,
+      uniqueStops,
+    )
+    current = res.nextState
+    totalIncome += res.income
+
+    steps.push({
+      loopStopIndex,
+      physicalStopIndex: current.lastPhysicalStopIndex,
+      board: current.lastBoard,
+      deboard: current.lastDeboard,
+      income: res.income,
+      passengersAfter: current.currentPassengers,
+    })
+  }
+
+  const durationSec = getBusRunDuration(state)
+
+  return {
+    totalDurationSec: durationSec,
+    totalStops,
+    totalIncome,
+    steps,
+    finalState: current,
+  }
+}
+
+/**
  * UI용 현재 운행 단계 계산
  * - runMeta.startedAtMs / durationSec / BUS_CYCLE_SEC 기반
  * - 정차/이동 여부, 남은 시간, 물방울 위치(trackPositionRatio) 반환

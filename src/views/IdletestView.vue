@@ -197,69 +197,37 @@
 
             <div class="research-item-meta">
               <div class="research-meta-line">
-                <template v-if="isLockedResearchItem(item)">
-                  비용: 해금 대기 중
-                </template>
-                <template v-else>
-                  비용: ₩ {{ item.cost.toLocaleString('ko-KR') }}
-                </template>
+                비용: ₩ {{ item.cost.toLocaleString('ko-KR') }}
               </div>
               <div class="research-meta-line">
-                연구 시간:
-                <template v-if="isLockedResearchItem(item)">
-                  준비 중
-                </template>
-                <template v-else>
-                  {{ item.timeLabel }}
-                </template>
+                연구 시간: {{ item.timeLabel }}
                 <span v-if="item.inProgress">
                   · 진행 중: {{ item.remainingLabel }}
                 </span>
               </div>
             </div>
 
-            <!-- 연구 실행 / 잠금 / 완료 상태별 표시 -->
-            <div class="research-item-actions">
-              <!-- 이미 완료된 연구: 버튼 대신 텍스트만 -->
-              <span
-                v-if="item.done"
-                class="research-item-status"
-              >
-                연구가 완료되었습니다.
-              </span>
-
-              <!-- 아직 준비 안 된(해금되지 않은) 연구: 잠금 버튼 -->
-              <button
-                v-else-if="isLockedResearchItem(item)"
-                type="button"
-                class="research-item-button locked"
-                disabled
-              >
-                준비 중인 연구입니다
-              </button>
-
-              <!-- 일반 연구: 실행 버튼 (1회성) -->
-              <button
-                v-else
-                type="button"
-                class="research-item-button"
-                :disabled="item.inProgress || idleFunds < item.cost || !isLeader"
-                @click="handleClickBusResearch(item.key)"
-              >
-                <template v-if="item.inProgress">
-                  연구 중...
-                </template>
-                <template v-else-if="idleFunds < item.cost">
-                  자금 부족
-                </template>
-                <template v-else-if="!isLeader">
-                  리더 기기에서만 가능
-                </template>
-                <template v-else>
-                  연구하기
-                </template>
-              </button>
-            </div>
+            <!-- 완료된 연구는 버튼 숨김, 진행 중/준비 중만 버튼 표시 -->
+            <button
+              v-if="!item.done"
+              type="button"
+              class="research-item-button"
+              :disabled="item.inProgress || idleFunds < item.cost || !isLeader"
+              @click="handleClickBusResearch(item.key)"
+            >
+              <template v-if="item.inProgress">
+                연구 중...
+              </template>
+              <template v-else-if="idleFunds < item.cost">
+                자금 부족
+              </template>
+              <template v-else-if="!isLeader">
+                리더 기기에서만 가능
+              </template>
+              <template v-else>
+                연구하기
+              </template>
+            </button>
           </li>
         </ul>
 
@@ -445,12 +413,12 @@
                 </template>
               </div>
 
-              <!-- 활성 슬롯: 수동 운행 / 자동운행 / 삭제 -->
+              <!-- 활성 슬롯: 수동 운행 / 자동운행 -->
               <div
                 v-if="slot.state === 'active'"
                 class="slot-actions"
               >
-                <!-- 자동운행 켜진 이후: 운행중 + 삭제만 표시 -->
+                <!-- 자동운행 켜진 이후: 운행중 표시만 -->
                 <template v-if="slot.autoEnabled">
                   <button
                     type="button"
@@ -459,19 +427,9 @@
                   >
                     자동 운행 중
                   </button>
-
-                  <button
-                    v-if="slot.id !== 1"
-                    type="button"
-                    class="slot-action-button danger"
-                    :disabled="!isLeader"
-                    @click="handleDeleteActiveSlot(activeMenu, slot.id)"
-                  >
-                    슬롯 삭제
-                  </button>
                 </template>
 
-                <!-- 자동운행 이전: 수동 운행 + 자동운행 + 삭제 -->
+                <!-- 자동운행 이전: 수동 운행 + 자동운행 -->
                 <template v-else>
                   <button
                     type="button"
@@ -497,17 +455,6 @@
                     <span class="btn-cost">
                       (₩ {{ getAutoRunCost(activeMenu).toLocaleString('ko-KR') }})
                     </span>
-                  </button>
-
-                  <!-- 1번 슬롯은 기본 슬롯이라 삭제 불가 -->
-                  <button
-                    v-if="slot.id !== 1"
-                    type="button"
-                    class="slot-action-button danger"
-                    :disabled="!isLeader"
-                    @click="handleDeleteActiveSlot(activeMenu, slot.id)"
-                  >
-                    슬롯 삭제
                   </button>
                 </template>
               </div>
@@ -577,7 +524,7 @@
                   아직 아무 운행도 배치되지 않은 슬롯입니다.
                   [슬롯 활성화 준비 시작] 버튼을 눌러 일정 시간이 지나면
                   이 슬롯을 추가 운행 슬롯으로 개방할 수 있습니다.
-                  슬롯 활성화에는 방치형 자금이 소모되며, 슬롯을 삭제해도 사용한 비용은 되돌아오지 않습니다.
+                  슬롯 활성화에는 방치형 자금이 소모됩니다.
                 </template>
 
                 <template v-else-if="slot.state === 'unlocking'">
@@ -781,17 +728,10 @@ const isIncompleteBusType = computed(() => {
   const label = currentTransportLabel.value || ''
   return incompleteBusLabelKeywords.some((kw) => label.includes(kw))
 })
-
-// 연구 목록 중 "아직 해금되지 않은(준비 중) 연구" 판별
-// 현재 구조에서는 cost === 0 && timeLabel === '준비 중' 인 항목을 잠금 처리
-const isLockedResearchItem = (item) => {
-  if (!item) return false
-  return item.cost === 0 && item.timeLabel === '준비 중'
-}
 </script>
 
 <style scoped>
-/* 이하 스타일은 그대로 (필요한 부분만 소량 추가) */
+/* 이하 스타일은 그대로 (변경 없음) */
 .idle-page {
   display: flex;
   flex-direction: column;
@@ -1160,17 +1100,9 @@ const isLockedResearchItem = (item) => {
   white-space: nowrap;
 }
 
-/* 연구 버튼/상태 영역 */
-.research-item-actions {
-  margin-top: 2px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
 .research-item-button {
   align-self: flex-start;
+  margin-top: 2px;
   padding: 5px 11px;
   border-radius: 999px;
   border: 1px solid rgba(130, 180, 255, 0.9);
@@ -1189,18 +1121,6 @@ const isLockedResearchItem = (item) => {
 
 .research-item-button:not([disabled]):hover {
   background: rgba(130, 180, 255, 0.28);
-}
-
-/* 준비 중(잠금) 연구 버튼 스타일 */
-.research-item-button.locked {
-  border-color: rgba(148, 163, 184, 0.9);
-  background: rgba(30, 41, 59, 0.9);
-}
-
-/* 완료된 연구 텍스트 */
-.research-item-status {
-  font-size: 0.75rem;
-  opacity: 0.86;
 }
 
 .research-hint {
