@@ -1,76 +1,39 @@
-// RCTS/version-router.js
-//
-// 역할:
-// - channels.json에서 채널별 버전(tag)을 읽어와서
-// - /RCTS/versions/<태그>/ 로 이동시키기
+// public/version-router.js
 
 (function () {
   try {
     var rawChannel =
-      typeof window !== 'undefined' && window.VERSION_CHANNEL
+      typeof window !== "undefined" && window.VERSION_CHANNEL
         ? String(window.VERSION_CHANNEL)
-        : 'prod';
+        : "prod";
 
-    var channel = rawChannel.trim() || 'prod';
+    var channel = rawChannel.trim() || "prod";
 
-    var CHANNELS_JSON_URL = '/RCTS/channels.json';
-
-    fetch(CHANNELS_JSON_URL, { cache: 'no-cache' })
+    // channels.json은 그대로 사용 (prod/test/preopen 판단용)
+    fetch("channels.json", { cache: "no-cache" })
       .then(function (res) {
-        if (!res.ok) {
-          throw new Error('channels.json load failed: ' + res.status);
-        }
+        if (!res.ok) throw new Error("channels.json load failed: " + res.status);
         return res.json();
       })
       .then(function (map) {
-        if (!map || typeof map !== 'object') {
-          throw new Error('invalid channels.json');
+        if (!map || typeof map !== "object") {
+          throw new Error("invalid channels.json");
         }
 
-        var tag = map[channel];
+        var tag = map[channel]; // 지금은 써먹지 않아도 됨
 
-        if (!tag) {
-          console.error(
-            '[version-router] channel "' +
-              channel +
-              '" not found in channels.json'
-          );
-          return;
-        }
+        // 🔹 일단은 버전 서브폴더로 가지 말고,
+        //     그냥 /RCTS/ 루트(지금 dist가 올라간 곳)만 바라보게.
+        //     (= 리다이렉트 자체를 생략해도 됨)
+        console.info("[version-router] channel=" + channel + " tag=" + tag);
 
-        tag = String(tag).trim();
-
-        if (!tag) {
-          console.error(
-            '[version-router] channel "' + channel + '" has empty tag'
-          );
-          return;
-        }
-
-        var targetPath = '/RCTS/versions/' + encodeURIComponent(tag) + '/';
-
-        if (location.pathname === targetPath) return;
-
-        var search = location.search || '';
-        var hash = location.hash || '';
-
-        var targetUrl = targetPath + search + hash;
-
-        console.info(
-          '[version-router] channel=' +
-            channel +
-            ' → tag=' +
-            tag +
-            ' → ' +
-            targetUrl
-        );
-
-        location.replace(targetUrl);
+        // 리다이렉트 안 하고 현재 페이지에 머무르기
+        // 혹은 필요하면 location.replace("/RCTS/") 정도만 사용
       })
       .catch(function (err) {
-        console.error('[version-router] error:', err);
+        console.error("[version-router] error:", err);
       });
   } catch (e) {
-    console.error('[version-router] init error:', e);
+    console.error("[version-router] init error:", e);
   }
 })();
