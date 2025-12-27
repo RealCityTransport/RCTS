@@ -22,7 +22,7 @@ import {
 
 import { useFirebaseAuth } from '@/composables/useFirebaseAuth'
 import { db } from '@/libs/firebase'
-import { doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore'
+import { doc, onSnapshot, setDoc } from 'firebase/firestore'
 
 /**
  * 이 브라우저 탭을 식별하는 임시 clientId
@@ -55,7 +55,8 @@ type VillageBusResearchState = {
 }
 
 const AUTO_SAVE_INTERVAL_MS = 10 * 60 * 1000 // 10분 자동 저장 간격
-const LEADER_EXPIRE_MS = 5 * 60 * 1000 // 5분
+const LEADER_EXPIRE_MS = 30 * 1000 // 30초 리더 타임아웃
+const LEADER_HEARTBEAT_MS = 15 * 1000 // 15초마다 리더 하트비트
 
 // 로컬 개발 환경 여부
 const IS_LOCALHOST =
@@ -220,6 +221,11 @@ export function useIdletestView() {
   const isLeader = ref(false)
   let lastAutoSaveMs = 0
   let beforeUnloadHandler: (() => void) | null = null
+
+  // 원격 리더 상태 스냅샷
+  const remoteLeaderClientId = ref<string | null>(null)
+  const remoteLeaderLastSeenAt = ref<number | null>(null)
+  let lastLeaderHeartbeatMs = 0
 
   // ─────────────────────────────────────────────
   // 마을버스 라인 상태
@@ -619,6 +625,10 @@ export function useIdletestView() {
         // - localhost에서는 저장 없이 로직만 동작해야 하므로 리더로 취급
         // - 배포 환경에서는 리더 아님
         isLeader.value = IS_LOCALHOST
+
+        remoteLeaderClientId.value = null
+        remoteLeaderLastSeenAt.value = null
+
         return
       }
 
@@ -635,6 +645,10 @@ export function useIdletestView() {
             const leaderId = data.leaderClientId as string | undefined
             const leaderLastSeenAt = data.leaderLastSeenAt as number | undefined
             const nowWall = Date.now()
+
+            remoteLeaderClientId.value = leaderId ?? null
+            remoteLeaderLastSeenAt.value =
+              typeof leaderLastSeenAt === 'number' ? leaderLastSeenAt : null
 
             if (IS_LOCALHOST) {
               if (!isLeader.value || leaderId !== CLIENT_ID) {
@@ -675,6 +689,9 @@ export function useIdletestView() {
             }
           } else {
             console.log('[idle] snapshot not exists (new doc)', uid)
+            remoteLeaderClientId.value = null
+            remoteLeaderLastSeenAt.value = null
+
             isLeader.value = true
             attachBeforeUnload(uid)
             requestSave(true)
@@ -1177,44 +1194,6 @@ export function useIdletestView() {
   }
 
   // ─────────────────────────────────────────────
-  // 상태 전체 초기화 + Firestore 문서 삭제
-  // ─────────────────────────────────────────────
-  async function handleResetIdleState() {
-    const uid = user.value?.uid
-    if (!uid) {
-      console.log('[idle] reset ignored: no user')
-      return
-    }
-
-    if (!isLeader.value && !IS_LOCALHOST) {
-      console.log('[idle] reset ignored: not leader')
-      return
-    }
-
-    console.log('[idle] reset: local state reset start')
-
-    // 로컬 상태 초기화
-    idleFunds.value = 0
-    unlockedTransports.value = []
-    villageBusState.value = createInitialVillageBusState()
-    slotAutomation.value = {}
-    slotRunMeta.value = {}
-    slotUnlockMeta.value = {}
-    slotActiveFlag.value = {}
-    busReconfigMeta.value = null
-
-    try {
-      const refDoc = getIdleDocRef(uid)
-      console.log('[idle] reset: delete idleStates doc', uid)
-      await deleteDoc(refDoc)
-      console.log('[idle] reset: delete success')
-      // 이후 onSnapshot에서 문서 없음으로 감지 → 새로운 상태로 다시 저장됨
-    } catch (err) {
-      console.error('idle reset failed:', err)
-    }
-  }
-
-  // ─────────────────────────────────────────────
   // 시간 흐름에 따른 슬롯/버스 상태 업데이트 + 자동 저장
   // (실제 시간인 logicNowMs 기준, 0.2초마다 호출됨)
   // ─────────────────────────────────────────────
@@ -1222,6 +1201,54 @@ export function useIdletestView() {
     logicNowMs,
     (now) => {
       const nowMs = now
+
+      // 리더 하트비트: 15초마다 leaderLastSeenAt 갱신
+      if (user.value && isLeader.value && !IS_LOCALHOST) {
+        if (nowMs - lastLeaderHeartbeatMs >= LEADER_HEARTBEAT_MS) {
+          lastLeaderHeartbeatMs = nowMs
+          try {
+            const uid = user.value.uid
+            const refDoc = getIdleDocRef(uid)
+            setDoc(
+              refDoc,
+              {
+                leaderClientId: CLIENT_ID,
+                leaderLastSeenAt: nowMs,
+              },
+              { merge: true },
+            ).catch((err) => {
+              console.warn('idle leader heartbeat failed:', err)
+            })
+          } catch (err) {
+            console.warn('idle leader heartbeat error:', err)
+          }
+        }
+      }
+
+      // 리더 타임아웃 감지: 현재 리더가 오래 응답 없으면 이 클라이언트가 승계
+      if (
+        user.value &&
+        !IS_LOCALHOST &&
+        !isLeader.value &&
+        remoteLeaderLastSeenAt.value
+      ) {
+        const last = remoteLeaderLastSeenAt.value
+        if (last && nowMs - last > LEADER_EXPIRE_MS) {
+          console.log(
+            '[idle] leader expired by local timer, take leadership',
+            {
+              lastLeaderClientId: remoteLeaderClientId.value,
+              lastLeaderLastSeenAt: last,
+              nowMs,
+            },
+          )
+          isLeader.value = true
+          remoteLeaderClientId.value = CLIENT_ID
+          remoteLeaderLastSeenAt.value = nowMs
+          attachBeforeUnload(user.value.uid)
+          requestSave(true)
+        }
+      }
 
       // 10분 자동 저장 (로그인 + 리더일 때만)
       if (user.value && isLeader.value) {
@@ -1360,7 +1387,6 @@ export function useIdletestView() {
     // 리더/저장
     isLeader,
     handleManualSave,
-    handleResetIdleState,
 
     // 시간/자금/로그인
     formattedGameTime,
