@@ -87,16 +87,17 @@
         </ul>
 
         <div class="card-footer">
-          <div class="pre-soon-badge">
-            <span class="dot"></span>
-            <span class="pre-soon-text">
-              본 사이트는 이제 곧 연결됩니다.
-            </span>
-          </div>
+          <!-- ✅ 본 사이트 메인뷰로 연결 -->
+          <RouterLink
+            to="/main"
+            class="entry-link entry-link-primary"
+          >
+            본 사이트로 이동
+          </RouterLink>
 
           <p class="card-warning">
-            운영 적용이 완료되면
-            <strong>접속 버튼이 활성화</strong>됩니다.
+            이 환경은 <strong>운영용 본 서비스</strong>입니다.<br />
+            실제 서비스 데이터가 사용될 수 있으니 주의해서 접속해 주세요.
           </p>
         </div>
       </section>
@@ -326,7 +327,7 @@ const formattedGameTime = computed(() =>
   box-shadow: 0 12px 32px rgba(248, 113, 113, 0.55);
 }
 
-/* 사전/본 사이트용 안내 뱃지 */
+/* 사전/본 사이트용 안내 뱃지 (현재는 사용 안 해도 됨) */
 .pre-soon-badge {
   display: inline-flex;
   align-items: center;
