@@ -1,11 +1,11 @@
 <!-- src/views/HomeView.vue -->
 <template>
   <!-- 초기 화면: 개발 / 본사이트 선택용 연결 페이지 -->
-  <EntryConnectorView />
+  <MainView />
 </template>
 
 <script setup>
-import EntryConnectorView from './EntryConnectorView.vue'
+import MainView from './MainView.vue'
 </script>
 
 <style scoped>
