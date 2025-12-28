@@ -75,32 +75,17 @@ export function applyVillageBusResearchToState(state) {
 
 /**
  * 하나의 정류장에서 승차/하차와 수익을 시뮬레이션
- *
- * - 마지막 정류장(루프 끝)에서는 전원 하차, 수익 없음
- * - 그 외 정류장:
- *    1) 현재 탑승인원에서 0~현재 탑승인원 랜덤 하차
- *    2) 남은 정원(= capacity - 하차 후 인원)에서 0~남은 정원 랜덤 승차
- *    3) 러시아워 연구 완료 시, 승차를 “남은 정원 중 높은 쪽”에서 뽑도록 가끔 강화
- *
- * 추가 규칙:
- * - 첫 정류장(loopStopIndex === 1)에서는 하차는 항상 0명
  */
 function simulateOneStop(state, loopStopIndex, stopsPerLoop, uniqueStops) {
   const nextState = { ...state }
+
   const capacity =
     nextState.capacity || VILLAGE_BUS_BASE_CONFIG.baseCapacity
   const currentPassengers = nextState.currentPassengers || 0
 
-  const research = {
-    capacityUpgradeDone: false,
-    lineExtensionDone: false,
-    peakRushDone: false,
-    ...(nextState.research || {}),
-  }
-
-  const demandParams = VILLAGE_BUS_DEMAND_PARAMS
-
+  const isFirstStop = loopStopIndex === 1
   const isLastStop = loopStopIndex === stopsPerLoop
+
   const physicalStopIndex = mapSegmentToLineStop(
     loopStopIndex,
     uniqueStops,
@@ -110,23 +95,35 @@ function simulateOneStop(state, loopStopIndex, stopsPerLoop, uniqueStops) {
   let deboard = 0
   let income = 0
 
+  const fare = VILLAGE_BUS_BASE_CONFIG.fare || 0
+
   if (isLastStop) {
-    // 마지막 정류장: 전원 하차, 추가 수익 없음
-    // → 승차 0, 하차 All, 수익 0
     deboard = currentPassengers
     board = 0
     nextState.currentPassengers = 0
+  } else if (isFirstStop) {
+    deboard = 0
+
+    const maxBoard = Math.max(0, capacity)
+    if (maxBoard > 0) {
+      board = Math.floor(Math.random() * (maxBoard + 1))
+    }
+
+    let passengersAfter = board
+    if (passengersAfter > capacity) passengersAfter = capacity
+    if (passengersAfter < 0) passengersAfter = 0
+
+    nextState.currentPassengers = passengersAfter
+
+    if (board > 0) {
+      income = fare * board
+      nextState.totalIncome = (nextState.totalIncome || 0) + income
+    }
   } else {
-    // 1단계: 현재 탑승 인원에서 하차
     let afterDeboardPassengers = currentPassengers
 
-    if (loopStopIndex === 1) {
-      // 첫 정류장: 하차는 무조건 0으로 고정
-      deboard = 0
-      afterDeboardPassengers = currentPassengers
-    } else if (currentPassengers > 0) {
+    if (currentPassengers > 0) {
       const maxDeboard = currentPassengers
-      // 0 ~ currentPassengers 랜덤 하차
       deboard = Math.floor(Math.random() * (maxDeboard + 1))
       afterDeboardPassengers = currentPassengers - deboard
       if (afterDeboardPassengers < 0) {
@@ -134,53 +131,33 @@ function simulateOneStop(state, loopStopIndex, stopsPerLoop, uniqueStops) {
       }
     }
 
-    // 2단계: 남은 정원에서 승차
+    const maxBoardFromDiff = deboard
+    let boardMax = maxBoardFromDiff
+
     const remainingCapacity = Math.max(
       0,
       capacity - afterDeboardPassengers,
     )
-
-    if (remainingCapacity > 0) {
-      let minBoard = 0
-      let maxBoard = remainingCapacity
-
-      // 러시아워 연구: 가끔은 “남은 정원의 상위 구간”에서 승차
-      if (
-        research.peakRushDone &&
-        typeof demandParams.rushEventChance === 'number' &&
-        demandParams.rushEventChance > 0 &&
-        Math.random() < demandParams.rushEventChance
-      ) {
-        const rushMinRatio =
-          typeof demandParams.rushFillMinRatio === 'number'
-            ? demandParams.rushFillMinRatio
-            : 0.7
-        minBoard = Math.floor(remainingCapacity * rushMinRatio)
-        if (minBoard < 0) minBoard = 0
-        if (minBoard > remainingCapacity) minBoard = remainingCapacity
-      }
-
-      const span = maxBoard - minBoard + 1
-      if (span > 0) {
-        board = minBoard + Math.floor(Math.random() * span)
-      } else {
-        board = maxBoard
-      }
+    if (boardMax > remainingCapacity) {
+      boardMax = remainingCapacity
     }
 
-    nextState.currentPassengers =
-      afterDeboardPassengers + board
-
-    if (nextState.currentPassengers > capacity) {
-      nextState.currentPassengers = capacity
-    }
-    if (nextState.currentPassengers < 0) {
-      nextState.currentPassengers = 0
+    if (boardMax > 0) {
+      board = Math.floor(Math.random() * (boardMax + 1))
     }
 
-    // 탑승 인원에 대해 수익 정산
+    let passengersAfter = afterDeboardPassengers + board
+
+    if (passengersAfter > capacity) {
+      passengersAfter = capacity
+    }
+    if (passengersAfter < 0) {
+      passengersAfter = 0
+    }
+
+    nextState.currentPassengers = passengersAfter
+
     if (board > 0) {
-      const fare = VILLAGE_BUS_BASE_CONFIG.fare || 0
       income = fare * board
       nextState.totalIncome = (nextState.totalIncome || 0) + income
     }
@@ -202,8 +179,6 @@ function simulateOneStop(state, loopStopIndex, stopsPerLoop, uniqueStops) {
 
 /**
  * 여러 개의 정류장(steps개)을 한 번에 시뮬레이션
- * - 각 정류장마다 위의 simulateOneStop 호출
- * - 모든 정류장에서 수익이 누적되도록 보장
  */
 export function simulateVillageBusStops(state, steps) {
   const stopsPerLoop =
@@ -245,8 +220,6 @@ export function simulateVillageBusStops(state, steps) {
 
 /**
  * 1회 왕복(1루프)에 대한 고정 스크립트 생성
- * - 각 정류장별로 미리 승차/하차/수익/탑승 인원을 계산해 두고
- * - 런타임에서는 이 스크립트를 “읽기만” 하도록 사용
  */
 export function buildBusRunScript(state) {
   const stopsPerLoop =
@@ -296,8 +269,6 @@ export function buildBusRunScript(state) {
 
 /**
  * UI용 현재 운행 단계 계산
- * - runMeta.startedAtMs / durationSec / BUS_CYCLE_SEC 기반
- * - 정차/이동 여부, 남은 시간, 물방울 위치(trackPositionRatio) 반환
  */
 export function getBusPhaseInfo(state, runMeta, nowMs) {
   const durationSec =
@@ -312,7 +283,6 @@ export function getBusPhaseInfo(state, runMeta, nowMs) {
   const totalStops = stopsPerLoop > 0 ? stopsPerLoop : 1
   const uniqueStops = Math.max(1, Math.floor((totalStops + 1) / 2))
 
-  // 현재 정류장 인덱스 (1~totalStops)
   let loopStopIndex
   if (elapsedSec <= 0) {
     loopStopIndex = 1
@@ -356,7 +326,6 @@ export function getBusPhaseInfo(state, runMeta, nowMs) {
   const direction =
     loopStopIndex <= uniqueStops ? 'forward' : 'backward'
 
-  // 물방울 위치 [0,1] – 정류장 간 위치까지 포함
   let trackPositionRatio = 0
   if (uniqueStops > 1) {
     const basePos =
