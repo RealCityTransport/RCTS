@@ -24,9 +24,13 @@ export const VILLAGE_BUS_BASE_CONFIG = {
 
 // 수요 관련 파라미터
 export const VILLAGE_BUS_DEMAND_PARAMS = {
+  // 목표 탑승률 (정원 대비)
   targetLoadRatio: 0.6,
+  // 목표 인원에서 여유로 추가로 허용할 랜덤 승차 인원
   extraBoardLeeway: 3,
+  // 러시아워/이벤트 확률
   rushEventChance: 0.05,
+  // 러시아워일 때 최소 탑승률
   rushFillMinRatio: 0.7,
 }
 

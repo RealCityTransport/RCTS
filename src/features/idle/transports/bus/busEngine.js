@@ -74,6 +74,76 @@ export function applyVillageBusResearchToState(state) {
 }
 
 /**
+ * 수요 기반 승차 인원 계산
+ * - 목표 탑승률(targetLoadRatio) 기준
+ * - 여유(extraBoardLeeway)만큼 추가 랜덤 허용
+ * - 러시아워 연구(peakRushDone) 완료 시 rushEventChance로 만차에 가까운 이벤트
+ */
+function computeBoardCount({ state, capacity, currentPassengers }) {
+  const remainingCapacity = Math.max(0, capacity - currentPassengers)
+  if (remainingCapacity <= 0) return 0
+
+  const params = VILLAGE_BUS_DEMAND_PARAMS || {}
+  const targetLoadRatio =
+    typeof params.targetLoadRatio === 'number'
+      ? params.targetLoadRatio
+      : 0.6
+  const extraBoardLeeway =
+    typeof params.extraBoardLeeway === 'number'
+      ? params.extraBoardLeeway
+      : 0
+
+  const rushEventChance =
+    typeof params.rushEventChance === 'number'
+      ? params.rushEventChance
+      : 0
+  const rushFillMinRatio =
+    typeof params.rushFillMinRatio === 'number'
+      ? params.rushFillMinRatio
+      : 0.7
+
+  const research = {
+    capacityUpgradeDone: false,
+    lineExtensionDone: false,
+    peakRushDone: false,
+    ...(state.research || {}),
+  }
+
+  // 기본 목표: 정원 × 목표 탑승률
+  const baseTarget = Math.floor(capacity * targetLoadRatio)
+  let desiredAfter = baseTarget
+
+  // 러시아워/이벤트: 연구 완료 + 확률로 거의 만차에 가깝게
+  if (research.peakRushDone && rushEventChance > 0) {
+    if (Math.random() < rushEventChance) {
+      const minRush = Math.floor(capacity * rushFillMinRatio)
+      const maxRush = capacity
+      const rushTarget =
+        minRush +
+        Math.floor(Math.random() * (maxRush - minRush + 1))
+      if (rushTarget > desiredAfter) {
+        desiredAfter = rushTarget
+      }
+    }
+  }
+
+  // 현재 탑승자 기준으로 추가로 채워야 할 인원
+  let maxBoardByTarget = desiredAfter - currentPassengers
+  if (maxBoardByTarget < 0) maxBoardByTarget = 0
+
+  // 여유치 + 남은 정원 제한
+  let maxBoard = maxBoardByTarget + extraBoardLeeway
+  if (maxBoard > remainingCapacity) {
+    maxBoard = remainingCapacity
+  }
+
+  if (maxBoard <= 0) return 0
+
+  // 0 ~ maxBoard 사이에서 랜덤 승차
+  return Math.floor(Math.random() * (maxBoard + 1))
+}
+
+/**
  * 하나의 정류장에서 승차/하차와 수익을 시뮬레이션
  */
 function simulateOneStop(state, loopStopIndex, stopsPerLoop, uniqueStops) {
@@ -98,16 +168,21 @@ function simulateOneStop(state, loopStopIndex, stopsPerLoop, uniqueStops) {
   const fare = VILLAGE_BUS_BASE_CONFIG.fare || 0
 
   if (isLastStop) {
+    // 마지막 정류장: 전원 하차
     deboard = currentPassengers
     board = 0
     nextState.currentPassengers = 0
   } else if (isFirstStop) {
+    // 첫 정류장: 0 ~ (정원 × 목표탑승률 + 여유) 범위에서 초기 승차
     deboard = 0
 
-    const maxBoard = Math.max(0, capacity)
-    if (maxBoard > 0) {
-      board = Math.floor(Math.random() * (maxBoard + 1))
-    }
+    const plannedBoard = computeBoardCount({
+      state: nextState,
+      capacity,
+      currentPassengers,
+    })
+
+    board = plannedBoard
 
     let passengersAfter = board
     if (passengersAfter > capacity) passengersAfter = capacity
@@ -120,6 +195,8 @@ function simulateOneStop(state, loopStopIndex, stopsPerLoop, uniqueStops) {
       nextState.totalIncome = (nextState.totalIncome || 0) + income
     }
   } else {
+    // 중간 정류장:
+    // 1) 현재 인원에서 랜덤 하차
     let afterDeboardPassengers = currentPassengers
 
     if (currentPassengers > 0) {
@@ -131,20 +208,14 @@ function simulateOneStop(state, loopStopIndex, stopsPerLoop, uniqueStops) {
       }
     }
 
-    const maxBoardFromDiff = deboard
-    let boardMax = maxBoardFromDiff
+    // 2) 목표 탑승률 기준으로 승차 (하차 인원과 무관하게 수요 기반)
+    const plannedBoard = computeBoardCount({
+      state: nextState,
+      capacity,
+      currentPassengers: afterDeboardPassengers,
+    })
 
-    const remainingCapacity = Math.max(
-      0,
-      capacity - afterDeboardPassengers,
-    )
-    if (boardMax > remainingCapacity) {
-      boardMax = remainingCapacity
-    }
-
-    if (boardMax > 0) {
-      board = Math.floor(Math.random() * (boardMax + 1))
-    }
+    board = plannedBoard
 
     let passengersAfter = afterDeboardPassengers + board
 

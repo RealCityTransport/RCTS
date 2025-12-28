@@ -272,8 +272,6 @@ export function useIdletestView() {
     const line = villageBusState.value
     const base = createInitialVillageBusState()
 
-    // 슬롯별 상태는 “구성 값”만 라인에서 가져오고
-    // 동적인 수치(currentPassengers, lastBoard, lastDeboard 등)는 항상 0부터 시작
     base.capacity = line.capacity
     base.stopsPerLoop = line.stopsPerLoop
     base.currentPassengers = 0
@@ -384,7 +382,6 @@ export function useIdletestView() {
       return `${mm}:${ss}`
     }
 
-    // 1분 미만 → SS
     const ss = String(s).padStart(2, '0')
     return ss
   }
@@ -409,7 +406,6 @@ export function useIdletestView() {
     return `${minutes}분`
   }
 
-  // 이동/정차 남은 시간용 – 접두/접미 없이 순수 시간 문자열만
   function formatPhaseRemaining(sec: number) {
     return formatCompactDuration(sec)
   }
@@ -456,13 +452,14 @@ export function useIdletestView() {
 
   const canAffordTransportUnlock = computed(() => {
     const type = activeMenu.value
-    const cfg = transportConfigMap[type]
+    const cfg =
+      transportConfigMap[type]
     if (cfg?.isStarter && !hasAnyStarterUnlocked.value) return true
     const cost = getTransportUnlockCost(type)
     return idleFunds.value >= cost
   })
 
-  // 전체 라인 기준 요약 정보 (슬롯별이 아니라 “라인” 요약)
+  // 전체 라인 기준 요약 정보
   const busLastStopInfo = computed(() => {
     const state = villageBusState.value
     const stopsPerLoop =
@@ -499,7 +496,6 @@ export function useIdletestView() {
     }
   })
 
-  // 물리 정류장 수
   const busUniqueStops = computed(() => {
     const totalStops = busLastStopInfo.value.stopsPerLoop
     if (totalStops <= 0) return 1
@@ -683,6 +679,40 @@ export function useIdletestView() {
     return doc(db, 'idleStates', uid)
   }
 
+  /**
+   * slotRunMeta 정규화:
+   * - 과거 버전에서 busRuntimeStates에는 bus-2가 있고
+   *   slotRunMeta에는 bus-3만 있는 꼬인 상태를 로드 시점에 교정
+   */
+  function normalizeSlotRunMeta(
+    rawSlotRunMeta: any,
+    rawBusRuntimeStates?: any,
+  ): { meta: Record<string, SlotRunMeta>; needPatch: boolean } {
+    const meta: Record<string, SlotRunMeta> = {}
+    let needPatch = false
+
+    if (rawSlotRunMeta && typeof rawSlotRunMeta === 'object') {
+      for (const [key, value] of Object.entries(rawSlotRunMeta)) {
+        meta[key] = value as SlotRunMeta
+      }
+    }
+
+    if (
+      rawBusRuntimeStates &&
+      typeof rawBusRuntimeStates === 'object' &&
+      !meta['bus-2'] &&
+      meta['bus-3'] &&
+      (rawBusRuntimeStates as any)['bus-2'] &&
+      !(rawBusRuntimeStates as any)['bus-3']
+    ) {
+      meta['bus-2'] = meta['bus-3']
+      delete meta['bus-3']
+      needPatch = true
+    }
+
+    return { meta, needPatch }
+  }
+
   function applyRemoteState(data: any) {
     if (!data || typeof data !== 'object') return
 
@@ -702,33 +732,51 @@ export function useIdletestView() {
     }
 
     if (data.slotAutomation && typeof data.slotAutomation === 'object') {
-      slotAutomation.value = { ...data.slotAutomation }
+      slotAutomation.value = {
+        ...slotAutomation.value,
+        ...data.slotAutomation,
+      }
     }
 
     if (data.slotRunMeta && typeof data.slotRunMeta === 'object') {
-      slotRunMeta.value = { ...data.slotRunMeta }
+      const { meta: normalizedMeta } = normalizeSlotRunMeta(
+        data.slotRunMeta,
+        data.busRuntimeStates,
+      )
+      slotRunMeta.value = {
+        ...slotRunMeta.value,
+        ...normalizedMeta,
+      }
     }
 
     if (data.slotUnlockMeta && typeof data.slotUnlockMeta === 'object') {
-      slotUnlockMeta.value = { ...data.slotUnlockMeta }
+      slotUnlockMeta.value = {
+        ...slotUnlockMeta.value,
+        ...data.slotUnlockMeta,
+      }
     }
 
     if (data.slotActiveFlag && typeof data.slotActiveFlag === 'object') {
-      slotActiveFlag.value = { ...data.slotActiveFlag }
+      slotActiveFlag.value = {
+        ...slotActiveFlag.value,
+        ...data.slotActiveFlag,
+      }
     }
 
     if (
       data.busResearchProgress &&
       typeof data.busResearchProgress === 'object'
     ) {
-      busResearchProgress.value = { ...data.busResearchProgress }
+      busResearchProgress.value = {
+        ...busResearchProgress.value,
+        ...data.busResearchProgress,
+      }
     }
   }
 
   /**
    * 리모트에서 slotRunMeta를 로드했을 때,
-   * 각 버스 슬롯별로 "지금까지 처리된 정류장 수(stopsProcessed)"를 기준으로
-   * 런타임 상태(busRuntimeStates)를 복원해 주는 함수
+   * 각 버스 슬롯별로 stopsProcessed 기준으로 런타임 상태 복원
    */
   function rebuildBusRuntimeFromMeta() {
     const currentMeta = slotRunMeta.value
@@ -747,7 +795,6 @@ export function useIdletestView() {
       if (processed < 0) processed = 0
       if (processed > steps.length) processed = steps.length
 
-      // 기본 라인 설정을 기준으로 슬롯 상태 초기화
       const line = villageBusState.value
       let rt: BusRuntimeState = {
         ...createInitialVillageBusState(),
@@ -786,7 +833,6 @@ export function useIdletestView() {
 
     busRuntimeStates.value = newStates
 
-    // 요약용 라인 상태도, 버스 슬롯 중 하나를 기준으로 다시 맞춰준다
     const anyBusKey = Object.keys(newStates).find((k) =>
       k.startsWith('bus-'),
     )
@@ -811,7 +857,6 @@ export function useIdletestView() {
   function buildSavePayload() {
     const now = Date.now()
 
-    // 이 탭이 알고 있는 "가장 최신 저장 시간" 갱신
     localLastAppliedAt = now
 
     return {
@@ -933,9 +978,12 @@ export function useIdletestView() {
             const remoteSavedAt =
               typeof data.lastSavedAt === 'number' ? data.lastSavedAt : 0
 
-            if (remoteSavedAt < localLastAppliedAt) {
+            const shouldApply =
+              localLastAppliedAt === 0 || remoteSavedAt > localLastAppliedAt
+
+            if (!shouldApply) {
               console.log(
-                '[idle] ignore stale snapshot state',
+                '[idle] ignore stale or same snapshot state',
                 { remoteSavedAt, localLastAppliedAt },
               )
             } else {
@@ -943,7 +991,6 @@ export function useIdletestView() {
               if (remoteSavedAt > 0) {
                 localLastAppliedAt = remoteSavedAt
               }
-              // fresh 상태에서만 런타임 복원
               rebuildBusRuntimeFromMeta()
             }
 
@@ -1047,6 +1094,7 @@ export function useIdletestView() {
       const unlockInfo = slotUnlockMeta.value[key]
       const autoEnabled = !!slotAutomation.value[key]
       const extraActive = !!slotActiveFlag.value[key]
+      const hasRuntimeState = !!busRuntimeStates.value[key] // ★ 추가: 런타임 상태가 있으면 활성 슬롯 취급
 
       let isRunning = false
       let progress = 0
@@ -1108,7 +1156,8 @@ export function useIdletestView() {
       const isUnlocked = unlockedTransports.value.includes(type)
       if (isUnlocked) {
         const isBaseActiveSlot = id === 1
-        const isLogicalActive = isBaseActiveSlot || extraActive
+        const isLogicalActive =
+          isBaseActiveSlot || extraActive || hasRuntimeState
 
         if (isLogicalActive || autoEnabled || runMeta) {
           state = 'active'
@@ -1119,7 +1168,6 @@ export function useIdletestView() {
         }
       }
 
-      // 버스용 정류장/방향/잔여 시간 + 물방울 위치 + 상태 텍스트
       let currentStopIndex = 0
       let nextStopIndex = 0
       let direction: 'forward' | 'backward' = 'forward'
@@ -1129,7 +1177,6 @@ export function useIdletestView() {
       let trackPositionRatio = 0
       let statusText = ''
 
-      // 슬롯별 승/하차/탑승자 수치
       let lastLoopIndexForSlot = 0
       let lastBoardForSlot = 0
       let lastDeboardForSlot = 0
@@ -1232,8 +1279,6 @@ export function useIdletestView() {
         remainingSec,
         remainingText: formatRemainingText(remainingSec, isRunning),
         routeName,
-
-        // 버스 정류장 표시용
         currentStopIndex,
         nextStopIndex,
         direction,
@@ -1242,16 +1287,12 @@ export function useIdletestView() {
         travelRemainingSec,
         trackPositionRatio,
         statusText,
-
-        // 슬롯별 승/하차/탑승자/정원
         lastLoopIndex: lastLoopIndexForSlot,
         lastBoard: lastBoardForSlot,
         lastDeboard: lastDeboardForSlot,
         passengers: lastPassengersForSlot,
         capacity: lastCapacityForSlot,
-
         lastStopInfo: lastStopInfoForSlot,
-
         isUnlocking,
         unlockProgress,
         unlockRemainingSec,
@@ -1708,7 +1749,6 @@ export function useIdletestView() {
         }
       }
 
-      // 1) 연구 타이머
       if (Object.keys(busResearchProgress.value).length > 0) {
         const progressMap = { ...busResearchProgress.value }
         let progressChanged = false
@@ -1939,6 +1979,7 @@ export function useIdletestView() {
 
       const currentUnlockMeta = { ...slotUnlockMeta.value }
       const nextActiveFlag = { ...slotActiveFlag.value }
+      let unlockChanged = false
 
       for (const [key, info] of Object.entries(currentUnlockMeta)) {
         const elapsedSec = Math.max(
@@ -1951,11 +1992,16 @@ export function useIdletestView() {
         if (elapsedSec >= durationSec) {
           nextActiveFlag[key] = true
           delete currentUnlockMeta[key]
+          unlockChanged = true
         }
       }
 
       slotUnlockMeta.value = currentUnlockMeta
       slotActiveFlag.value = nextActiveFlag
+
+      if (unlockChanged && isLeader.value) {
+        requestSave(true)
+      }
     },
     { flush: 'sync' },
   )
