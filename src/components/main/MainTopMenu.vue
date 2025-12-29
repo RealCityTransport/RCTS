@@ -1,3 +1,4 @@
+<!-- src/components/main/MainTopMenu.vue -->
 <template>
   <nav class="top-menu">
     <button
@@ -25,12 +26,13 @@ const menus = [
   { key: 'dashboard', label: '대시보드' },
   { key: 'routes', label: '노선' },
   { key: 'vehicles', label: '차량' },
-
-  // 🔹 새로 추가: 건설
   { key: 'construction', label: '건설' },
-
   { key: 'research', label: '연구' },
   { key: 'finance', label: '재정' },
+
+  // 🔹 새로 추가: 위키
+  { key: 'wiki', label: '위키' },
+
   { key: 'community', label: '커뮤니티' },
   { key: 'settings', label: '설정' },
 ]

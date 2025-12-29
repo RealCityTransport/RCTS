@@ -62,7 +62,10 @@
       <!-- ---------------- 본문 ---------------- -->
       <main class="game-body">
         <!-- 1️⃣ 대시보드 -->
-        <section v-if="activeMenu === 'dashboard'" class="dashboard-page">
+        <section
+          v-if="activeMenu === 'dashboard'"
+          class="dashboard-page"
+        >
           <section class="dashboard-grid">
             <MainStatusSummary class="dashboard-card" />
             <MainRouteSummary class="dashboard-card" />
@@ -74,16 +77,19 @@
           </section>
         </section>
 
-        <!-- 2️⃣ 노선 -->
-        <section v-else-if="activeMenu === 'routes'" class="simple-page">
-          <h2 class="page-title">노선 관리</h2>
-          <p class="page-desc">
-            노선 목록, 혼잡도, 수익 등을 관리하는 화면입니다.
-          </p>
+        <!-- 2️⃣ 노선: 메인 노선 관리 페이지 연결 -->
+        <section
+          v-else-if="activeMenu === 'routes'"
+          class="routes-page-wrapper"
+        >
+          <MainRoutesPage />
         </section>
 
         <!-- 3️⃣ 차량 -->
-        <section v-else-if="activeMenu === 'vehicles'" class="simple-page">
+        <section
+          v-else-if="activeMenu === 'vehicles'"
+          class="simple-page"
+        >
           <h2 class="page-title">차량 관리</h2>
           <p class="page-desc">
             운행/대기/정비 상태를 관리하는 화면입니다.
@@ -103,7 +109,10 @@
         </section>
 
         <!-- 5️⃣ 연구 -->
-        <section v-else-if="activeMenu === 'research'" class="simple-page">
+        <section
+          v-else-if="activeMenu === 'research'"
+          class="simple-page"
+        >
           <h2 class="page-title">연구 · 개발</h2>
           <p class="page-desc">
             연구 트리와 효과 해금 화면입니다.
@@ -111,20 +120,31 @@
         </section>
 
         <!-- 6️⃣ 재정 -->
-        <section v-else-if="activeMenu === 'finance'" class="simple-page">
+        <section
+          v-else-if="activeMenu === 'finance'"
+          class="simple-page"
+        >
           <h2 class="page-title">재정 · 수익 관리</h2>
           <p class="page-desc">
             수익/비용 흐름을 관리하는 화면입니다.
           </p>
         </section>
 
-        <!-- 7️⃣ 커뮤니티: 전용 컴포넌트 -->
+        <!-- 7️⃣ 위키 -->
+        <section v-else-if="activeMenu === 'wiki'">
+          <MainWikiPage />
+        </section>
+
+        <!-- 8️⃣ 커뮤니티: 전용 컴포넌트 -->
         <section v-else-if="activeMenu === 'community'">
           <MainCommunityPage />
         </section>
 
-        <!-- 8️⃣ 설정 -->
-        <section v-else-if="activeMenu === 'settings'" class="simple-page">
+        <!-- 9️⃣ 설정 -->
+        <section
+          v-else-if="activeMenu === 'settings'"
+          class="simple-page"
+        >
           <h2 class="page-title">설정</h2>
           <p class="page-desc">
             게임 환경/옵션을 설정할 수 있습니다.
@@ -154,8 +174,10 @@ import MainRouteSummary from '@/components/main/MainRouteSummary.vue'
 import MainVehicleSummary from '@/components/main/MainVehicleSummary.vue'
 import MainLogPanel from '@/components/main/MainLogPanel.vue'
 
-// 커뮤니티 페이지 컴포넌트
+// 노선 / 커뮤니티 / 위키 페이지 컴포넌트
+import MainRoutesPage from '@/components/main/MainRoutesPage.vue'
 import MainCommunityPage from '@/components/main/MainCommunityPage.vue'
+import MainWikiPage from '@/components/main/MainWikiPage.vue'
 
 // KSTS 표준시간
 const { now: kstNow } = useKstTime(1000)
@@ -311,6 +333,12 @@ const displayName = computed(() => {
 
 .log-section {
   margin-top: 4px;
+}
+
+/* 노선 페이지 래퍼 – 다른 simple-page와 톤 맞춤 */
+
+.routes-page-wrapper {
+  padding: 0; /* 내부 MainRoutesPage에서 카드/여백 관리 */
 }
 
 /* 공통 콘텐츠 카드 */
