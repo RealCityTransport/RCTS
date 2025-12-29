@@ -74,6 +74,9 @@
             시공 진행 중
           </div>
           <div class="progress-text">
+            {{ constructionModeText }}
+          </div>
+          <div class="progress-text">
             {{ constructionProgressText }}
           </div>
         </div>
@@ -119,10 +122,27 @@
             </div>
           </div>
 
+          <!-- 유형: 설계중에는 드롭다운, 이후에는 텍스트 -->
           <div class="field-block">
             <div class="field-label">유형</div>
             <div class="field-value">
-              {{ typeLabel(route.type) }}
+              <template v-if="effectiveStatus === '설계중'">
+                <select
+                  v-model="typeEdit"
+                  class="type-select"
+                >
+                  <option
+                    v-for="opt in typeOptions"
+                    :key="opt.value"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
+              </template>
+              <template v-else>
+                {{ typeLabel(route.type) }}
+              </template>
             </div>
           </div>
 
@@ -140,21 +160,28 @@
             </div>
           </div>
 
-          <!-- 운송 수단 선택 -->
+          <!-- 운송 수단: 설계중에는 드롭다운, 이후에는 텍스트 -->
           <div class="field-block">
             <div class="field-label">운송 수단</div>
-            <select
-              v-model="transportEdit"
-              class="transport-select"
-            >
-              <option
-                v-for="opt in transportOptions"
-                :key="opt.value"
-                :value="opt.value"
-              >
-                {{ opt.label }}
-              </option>
-            </select>
+            <div class="field-value">
+              <template v-if="effectiveStatus === '설계중'">
+                <select
+                  v-model="transportEdit"
+                  class="transport-select"
+                >
+                  <option
+                    v-for="opt in transportOptions"
+                    :key="opt.value"
+                    :value="opt.value"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
+              </template>
+              <template v-else>
+                {{ transportLabel(route.transport) }}
+              </template>
+            </div>
           </div>
         </div>
       </section>
@@ -220,10 +247,15 @@
         <button
           type="button"
           class="danger-button"
-          :disabled="isDeleteDisabled"
+          :disabled="effectiveStatus === '건설중'"
           @click="requestDeleteRoute"
         >
-          이 노선 완전히 삭제하기
+          <template v-if="effectiveStatus === '건설중'">
+            시공 중에는 노선을 삭제할 수 없습니다
+          </template>
+          <template v-else>
+            이 노선 완전히 삭제하기
+          </template>
         </button>
       </section>
     </div>
@@ -244,6 +276,7 @@ const emit = defineEmits(['update-route', 'request-delete-route'])
 
 const nameEdit = ref('')
 const transportEdit = ref('bus')
+const typeEdit = ref('가상')
 
 const transportOptions = [
   { value: 'bus', label: '버스' },
@@ -252,6 +285,12 @@ const transportOptions = [
   { value: 'air', label: '비행기' },
   { value: 'ship', label: '배' },
   { value: 'space', label: '우주선' },
+]
+
+/** 유형: 가상 노선 / 현실 노선 (DB에는 '가상' / '현실'로 저장) */
+const typeOptions = [
+  { value: '가상', label: '가상 노선' },
+  { value: '현실', label: '현실 노선' },
 ]
 
 const now = ref(Date.now())
@@ -264,6 +303,13 @@ watch(
   (newRoute) => {
     nameEdit.value = newRoute?.name ?? ''
     transportEdit.value = newRoute?.transport ?? 'bus'
+
+    if (newRoute?.type === '현실') {
+      typeEdit.value = '현실'
+    } else {
+      typeEdit.value = '가상'
+    }
+
     autoCompletedOnce.value = false
   },
   { immediate: true },
@@ -310,17 +356,25 @@ const effectiveStatus = computed(() => {
  */
 const canEditStops = computed(() => effectiveStatus.value !== '건설중')
 
-/** 건설중인 동안 노선 삭제 버튼 비활성화 */
-const isDeleteDisabled = computed(() => effectiveStatus.value === '건설중')
+/** 운송 수단/유형 변경 가능 여부: 설계중에서만 */
+const canEditTransport = computed(() => effectiveStatus.value === '설계중')
+const canEditType = computed(() => effectiveStatus.value === '설계중')
 
 const canSave = computed(() => {
   if (!props.route) return false
   const trimmed = nameEdit.value.trim()
   const nameChanged =
     trimmed.length > 0 && trimmed !== props.route.name
+
   const transportChanged =
+    canEditTransport.value &&
     transportEdit.value !== (props.route.transport ?? 'bus')
-  return nameChanged || transportChanged
+
+  const typeChanged =
+    canEditType.value &&
+    typeEdit.value !== (props.route.type ?? '가상')
+
+  return nameChanged || transportChanged || typeChanged
 })
 
 const congestionText = computed(() => {
@@ -329,6 +383,24 @@ const congestionText = computed(() => {
   if (typeof lf !== 'number') return '-'
   const pct = Math.round(lf * 100)
   return `${pct}%`
+})
+
+/** 현재 시공이 초기 시공인지, 변경 시공인지 구분 */
+const constructionModeText = computed(() => {
+  if (!props.route || effectiveStatus.value !== '건설중') return ''
+  const start = props.route.constructionStartedAt
+  const end = props.route.constructionEndsAt
+  if (typeof start !== 'number' || typeof end !== 'number') {
+    return '시공 진행 중입니다.'
+  }
+  const totalMs = end - start
+  const totalMin = Math.round(totalMs / 60000)
+
+  // 대략 120분이면 변경 시공(2시간), 그 외는 초기 시공(1시간)으로 간주
+  if (totalMin >= 110) {
+    return '변경 시공(약 2시간) 진행 중입니다.'
+  }
+  return '초기 시공(약 1시간) 진행 중입니다.'
 })
 
 /** 단계 설명 텍스트 */
@@ -372,9 +444,28 @@ function typeLabel(type) {
       return '시설 연계 노선'
     case 'real':
     case '현실':
-      return '실제 기반 노선'
+      return '현실 노선'
     default:
       return type || '기타'
+  }
+}
+
+function transportLabel(mode) {
+  switch (mode) {
+    case 'bus':
+      return '버스'
+    case 'truck':
+      return '트럭'
+    case 'rail':
+      return '철도'
+    case 'air':
+      return '비행기'
+    case 'ship':
+      return '배'
+    case 'space':
+      return '우주선'
+    default:
+      return mode || '기타'
   }
 }
 
@@ -400,20 +491,32 @@ function formatCurrency(value) {
   return value.toLocaleString('ko-KR') + ' 크레딧'
 }
 
-/** 이름/운송수단만 수정 저장 */
+/** 이름/운송수단/유형 저장 */
 function handleSave() {
   if (!props.route || !canSave.value) return
 
   const trimmed = nameEdit.value.trim() || props.route.name
-
-  emit('update-route', {
+  const payload = {
     id: props.route.id,
     name: trimmed,
-    transport: transportEdit.value,
-  })
+  }
+
+  if (canEditTransport.value) {
+    if (transportEdit.value !== (props.route.transport ?? 'bus')) {
+      payload.transport = transportEdit.value
+    }
+  }
+
+  if (canEditType.value) {
+    if (typeEdit.value !== (props.route.type ?? '가상')) {
+      payload.type = typeEdit.value
+    }
+  }
+
+  emit('update-route', payload)
 }
 
-/** 설계중 → 건설중 + 1시간 타이머 설정 */
+/** 설계중 → 건설중 + 1시간 타이머 설정 (초기 시공) */
 function startConstruction() {
   if (!props.route) return
   if (effectiveStatus.value !== '설계중') return
@@ -426,6 +529,7 @@ function startConstruction() {
   emit('update-route', {
     id: props.route.id,
     name: trimmed,
+    type: typeEdit.value,
     transport: transportEdit.value,
     status: '건설중',
     constructionStartedAt: nowMs,
@@ -455,18 +559,13 @@ function tryAutoComplete() {
   })
 }
 
-/** 노선 삭제 요청 (상태 무관, 단 건설중일 땐 버튼이 disabled라 클릭 안 됨) */
+/** 노선 삭제 요청 */
 function requestDeleteRoute() {
   if (!props.route) return
-
-  emit(
-    'request-delete-route',
-    props.route.id,
-    {
-      routeId: props.route.id,
-      name: props.route.name,
-    },
-  )
+  emit('request-delete-route', {
+    routeId: props.route.id,
+    name: props.route.name,
+  })
 }
 </script>
 
@@ -662,7 +761,8 @@ function requestDeleteRoute() {
   border-color: rgba(56, 189, 248, 0.9);
 }
 
-/* 운송 수단 선택 */
+/* 드롭다운 (유형/운송 수단 공용) */
+.type-select,
 .transport-select {
   margin-top: 2px;
   padding: 5px 8px;

@@ -51,7 +51,7 @@
         “정류장 추가” 버튼을 눌러 새 지점을 등록해 보세요.
       </span>
       <span v-else>
-        이 노선은 시공 이후 단계라 정류장을 새로 추가할 수 없습니다.
+        이 노선은 시공 단계라 정류장을 새로 추가할 수 없습니다.
       </span>
     </div>
 
@@ -65,7 +65,8 @@
         class="stop-item"
         :class="{
           'is-dragging': draggingIndex === index,
-          'is-drop-target': dragOverIndex === index && draggingIndex !== null && draggingIndex !== index,
+          'is-drop-target':
+            dragOverIndex === index && draggingIndex !== null && draggingIndex !== index,
           'is-selected': selectedStopId === stop.id,
           'is-locked': !canEditStops,
         }"
@@ -117,6 +118,16 @@
               </span>
             </div>
 
+            <!-- 정류장 시공 상태 태그 -->
+            <div class="stop-status">
+              <span
+                class="status-chip"
+                :data-build="buildState(stop)"
+              >
+                {{ buildStatusLabel(stop) }}
+              </span>
+            </div>
+
             <!-- 거리 정보 -->
             <div class="stop-distance">
               <template v-if="index === 0">
@@ -157,13 +168,13 @@ const emit = defineEmits(['request-add-stop', 'reorder-stops', 'select-stop'])
 
 /**
  * 정류장 편집 가능 여부
- * - 설계 단계(설계중/draft)에서만 추가 · 순서 변경 · 정보 수정 가능
- * - 건설중/운영중 등 그 외 상태에서는 읽기 전용
+ * - 건설중(시공중)일 때만 정류장 추가/순서 변경 잠금
+ * - 설계중/운영중에는 편집 가능 (운영중에서 바꾸면 재시공 로직은 상위 스토어에서 처리)
  */
 const canEditStops = computed(() => {
   const status = props.route?.status
   if (!status) return true
-  return status === '설계중' || status === 'draft'
+  return status !== '건설중'
 })
 
 /**
@@ -206,6 +217,36 @@ function roleLabel(role) {
     default:
       return '일반'
   }
+}
+
+/**
+ * 정류장 시공 상태 (스타일용)
+ * - building : 노선이 건설중(시공중)
+ * - built    : 노선 운영중 + 완공 정류장
+ * - planning : 설계중 정류장
+ */
+function buildState(stop) {
+  const status = props.route?.status
+  if (status === '건설중') return 'building'
+  if (status === '운영중' && stop?.built) return 'built'
+  return 'planning'
+}
+
+/**
+ * 정류장 시공 상태 라벨
+ */
+function buildStatusLabel(stop) {
+  const status = props.route?.status
+  if (status === '건설중') {
+    return '시공 중 정류장'
+  }
+  if (status === '운영중' && stop?.built) {
+    return '완공 정류장'
+  }
+  if (status === '운영중') {
+    return '설계중(추가) 정류장'
+  }
+  return '설계 중 정류장'
 }
 
 /* 거리 표시용 */
@@ -483,6 +524,31 @@ function onDragEnd() {
 .stop-chip-soft {
   border-color: rgba(148, 163, 184, 0.7);
   opacity: 0.85;
+}
+
+/* 정류장 시공 상태 */
+.stop-status {
+  margin-top: 2px;
+}
+
+.status-chip {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.9);
+  opacity: 0.95;
+}
+
+.status-chip[data-build='planning'] {
+  border-color: rgba(129, 140, 248, 0.9);
+}
+
+.status-chip[data-build='building'] {
+  border-color: rgba(250, 204, 21, 0.95);
+}
+
+.status-chip[data-build='built'] {
+  border-color: rgba(52, 211, 153, 0.95);
 }
 
 /* 거리 표시 */

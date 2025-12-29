@@ -40,6 +40,8 @@ function mapDbRouteToUi(dbRoute) {
         : index === 0
           ? 0
           : 0,
+    // 완공 여부
+    built: !!st.isBuilt,
   }))
 
   return {
@@ -89,12 +91,28 @@ function uiStopsToDbStations(stops) {
         : idx === 0
           ? 0
           : 0,
+    isBuilt: !!s.built,
   }))
 }
 
 /** 이 노선이 "시공중" 잠금 상태인지 여부 */
 function isConstructionLocked(route) {
   return route?.status === '건설중'
+}
+
+/** 운영중 + 완공된 정류장이 있는지 여부 */
+function hasBuiltStops(route) {
+  if (!route || !Array.isArray(route.stops)) return false
+  return route.stops.some((s) => s.built)
+}
+
+/** 두 배열의 id 순서가 같은지 비교 */
+function isSameIdOrder(listA, listB) {
+  if (listA.length !== listB.length) return false
+  for (let i = 0; i < listA.length; i += 1) {
+    if (listA[i] !== listB[i]) return false
+  }
+  return true
 }
 
 export function useRoutesStore() {
@@ -141,6 +159,58 @@ export function useRoutesStore() {
     },
     { immediate: true },
   )
+
+  /** 변경 시공(2시간) 시작 헬퍼
+   * - 운영중 상태에서 완공된 정류장의 순서/거리/구조를 바꾸면 호출
+   */
+  async function startReconstructionWithStops(route, nextStops, reason) {
+    if (!route) return
+
+    const nowMs = Date.now()
+    const twoHoursMs = 2 * 60 * 60 * 1000
+
+    const resequenced = (Array.isArray(nextStops) ? nextStops : []).map(
+      (s, idx) => ({
+        ...s,
+        seq: idx + 1,
+        distanceFromPrevKm:
+          idx === 0
+            ? 0
+            : typeof s.distanceFromPrevKm === 'number'
+              ? s.distanceFromPrevKm
+              : 0,
+        // 변경 시공에 들어가면 모두 "다시 시공 필요" 상태이므로 built=false
+        built: false,
+      }),
+    )
+
+    const stationsPayload = uiStopsToDbStations(resequenced)
+
+    await patchRoute(route.id, {
+      status: '건설중',
+      constructionStartedAt: nowMs,
+      constructionEndsAt: nowMs + twoHoursMs,
+      stations: stationsPayload,
+    })
+
+    // 선택 정류장 유지 시도
+    if (resequenced.length > 0 && selectedStopId.value) {
+      const exists = resequenced.some((s) => s.id === selectedStopId.value)
+      if (!exists) {
+        selectedStopId.value = resequenced[0].id
+      }
+    }
+
+    addLog(
+      'route:update',
+      `노선 "${route.name}"의 구조가 변경되어 변경 시공(약 2시간)을 시작합니다.`,
+      {
+        routeId: route.id,
+        routeName: route.name,
+        reason,
+      },
+    )
+  }
 
   /** 새 노선 생성 (초기 상태: 설계중) */
   async function createRoute() {
@@ -205,13 +275,13 @@ export function useRoutesStore() {
   }
 
   /** 정류장 추가
-   * - 시공중(건설중)인 노선에서는 추가 자체 불가
+   * - 건설중(시공중)인 노선에서는 추가 불가
+   * - 운영중일 때 추가된 정류장은 built=false (설계중)으로 취급
    */
   async function addStop() {
     const route = selectedRoute.value
     if (!route) return
     if (isConstructionLocked(route)) {
-      // 잠긴 상태에서는 삭제만 허용 (요청한 규칙)
       addLog(
         'stop:create:blocked',
         `노선 "${route.name}"은 시공 중이라 정류장을 추가할 수 없습니다.`,
@@ -237,6 +307,7 @@ export function useRoutesStore() {
       kind: 'stop',
       role: 'normal',
       distanceFromPrevKm: defaultDistance,
+      built: false, // 새 정류장은 항상 미완공(설계중)으로 시작
     }
 
     const nextStops = [...currentStops, newStop]
@@ -258,7 +329,8 @@ export function useRoutesStore() {
   }
 
   /** 정류장 순서 재정렬
-   * - 시공중(건설중)인 노선에서는 구조 변경 불가
+   * - 건설중(시공중)인 노선에서는 구조 변경 불가
+   * - 운영중 + 완공된 정류장의 순서가 바뀌면 → 변경 시공(2시간) 시작
    */
   async function reorderStops(newStops) {
     const route = selectedRoute.value
@@ -272,14 +344,36 @@ export function useRoutesStore() {
       return
     }
 
+    const oldStops = Array.isArray(route.stops) ? route.stops : []
+
     const safeStops = Array.isArray(newStops)
       ? newStops.map((s, idx) => ({
           ...s,
           seq: idx + 1,
           distanceFromPrevKm:
             idx === 0 ? 0 : s.distanceFromPrevKm ?? s.distanceFromPrevKm,
+          built: !!s.built,
         }))
       : []
+
+    // 운영중 + 완공된 정류장이 있고, 그 순서가 바뀌었다면 → 변경 시공
+    if (route.status === '운영중' && hasBuiltStops(route)) {
+      const oldBuiltOrder = oldStops
+        .filter((s) => s.built)
+        .map((s) => s.id)
+      const newBuiltOrder = safeStops
+        .filter((s) => s.built)
+        .map((s) => s.id)
+
+      if (!isSameIdOrder(oldBuiltOrder, newBuiltOrder)) {
+        await startReconstructionWithStops(
+          route,
+          safeStops,
+          'reorder-stops',
+        )
+        return
+      }
+    }
 
     const stationsPayload = uiStopsToDbStations(safeStops)
     await patchRoute(route.id, { stations: stationsPayload })
@@ -341,6 +435,17 @@ export function useRoutesStore() {
 
     if (Object.keys(patch).length === 0) return
 
+    // "운영중"으로 전환될 때: 현재 정류장들을 모두 built=true(완공)로 세팅
+    if (patch.status === '운영중') {
+      const currentStops = Array.isArray(route.stops) ? route.stops : []
+      const builtStops = currentStops.map((s, idx) => ({
+        ...s,
+        seq: s.seq ?? idx + 1,
+        built: true,
+      }))
+      patch.stations = uiStopsToDbStations(builtStops)
+    }
+
     await patchRoute(route.id, patch)
 
     selectedRouteId.value = route.id
@@ -379,7 +484,11 @@ export function useRoutesStore() {
     }
   }
 
-  /** 정류장 정보 업데이트 */
+  /** 정류장 정보 업데이트
+   * - 건설중(건설중)인 노선에서는 StopDetailPanel 쪽에서 거리 변경 UI를 이미 막고 있음
+   * - 운영중 + 완공된 정류장의 "거리"를 바꾸면 → 변경 시공(2시간) 시작
+   * - 이름만 바꾸는 건 재시공 없이 허용
+   */
   async function updateStop(updatedStop) {
     const route = selectedRoute.value
     if (!route || !updatedStop) return
@@ -398,6 +507,7 @@ export function useRoutesStore() {
     const nextStop = {
       ...prev,
       ...updatedStop,
+      built: prev.built, // built 플래그는 여기서 덮어쓰지 않음
     }
 
     const nextStops = [...oldStops]
@@ -408,12 +518,33 @@ export function useRoutesStore() {
         ? nextStop.distanceFromPrevKm
         : oldDistance
 
+    const nameChanged =
+      updatedStop.name && updatedStop.name !== oldName
+    const distanceChanged =
+      newDistance != null &&
+      oldDistance != null &&
+      newDistance !== oldDistance
+
+    // 운영중 + 완공된 정류장의 거리 변경 → 변경 시공 시작
+    if (
+      route.status === '운영중' &&
+      prev.built &&
+      distanceChanged
+    ) {
+      await startReconstructionWithStops(
+        route,
+        nextStops,
+        'update-distance',
+      )
+      return
+    }
+
     const stationsPayload = uiStopsToDbStations(nextStops)
     await patchRoute(route.id, { stations: stationsPayload })
 
     selectedStopId.value = updatedStop.id
 
-    if (updatedStop.name && updatedStop.name !== oldName) {
+    if (nameChanged) {
       addLog(
         'stop:update',
         `정류장 이름이 변경되었습니다: "${oldName}" → "${updatedStop.name}"`,
@@ -425,11 +556,7 @@ export function useRoutesStore() {
       )
     }
 
-    if (
-      newDistance != null &&
-      oldDistance != null &&
-      newDistance !== oldDistance
-    ) {
+    if (distanceChanged) {
       addLog(
         'stop:update',
         `정류장 "${nextStop.name}"의 이전 정류장까지 거리가 ${oldDistance}km → ${newDistance}km 로 변경되었습니다.`,
@@ -442,23 +569,13 @@ export function useRoutesStore() {
     }
   }
 
-  /** 노선 삭제 (상태 무관, 정류장 포함 전부 삭제)
-   * - string: routeId
-   * - object: { routeId, ... } 또는 { id, ... }
-   */
-  async function deleteRoute(routeArg) {
-    const routeId =
-      typeof routeArg === 'string'
-        ? routeArg
-        : routeArg?.routeId ?? routeArg?.id ?? null
-
-    if (!routeId) return
-
+  /** 노선 삭제 (상태 무관, 정류장 포함 전부 삭제) */
+  async function deleteRoute(routeId) {
     const route =
       routes.value.find((r) => r.id === routeId) ?? selectedRoute.value
     if (!route) return
 
-    await removeRouteFromDb(routeId)
+    await removeRouteFromDb(route.id)
 
     if (selectedRouteId.value === route.id) {
       selectedRouteId.value = null
@@ -475,28 +592,26 @@ export function useRoutesStore() {
     )
   }
 
-  /** 정류장 삭제 (상태 무관, 항상 허용)
-   * - string: stopId
-   * - object: { routeId, stopId }
+  /** 정류장 삭제
+   * - 건설중(시공중)인 노선에서는 삭제 불가
+   * - 운영중 + 완공된 정류장을 삭제하면 → 변경 시공(2시간) 시작
+   * - 미완공(설계중) 정류장 삭제는 재시공 없이 허용
    */
-  async function deleteStop(stopArg) {
-    const stopId =
-      typeof stopArg === 'string'
-        ? stopArg
-        : stopArg?.stopId ?? stopArg?.id ?? null
-
-    if (!stopId) return
-
-    // payload에 routeId가 오면 그걸 우선 사용
-    const routeFromPayloadId =
-      typeof stopArg === 'object' ? stopArg?.routeId : null
-
-    const route =
-      (routeFromPayloadId
-        ? routes.value.find((r) => r.id === routeFromPayloadId)
-        : selectedRoute.value) || null
-
+  async function deleteStop(stopId) {
+    const route = selectedRoute.value
     if (!route) return
+
+    if (isConstructionLocked(route)) {
+      addLog(
+        'stop:delete:blocked',
+        `노선 "${route.name}"은 시공 중이라 정류장을 삭제할 수 없습니다.`,
+        {
+          routeId: route.id,
+          routeName: route.name,
+        },
+      )
+      return
+    }
 
     const oldStops = Array.isArray(route.stops) ? [...route.stops] : []
     const target = oldStops.find((s) => s.id === stopId)
@@ -514,7 +629,18 @@ export function useRoutesStore() {
           : typeof s.distanceFromPrevKm === 'number'
             ? s.distanceFromPrevKm
             : 0,
+      built: !!s.built,
     }))
+
+    // 운영중 + 완공된 정류장 삭제 → 변경 시공
+    if (route.status === '운영중' && target.built) {
+      await startReconstructionWithStops(
+        route,
+        resequenced,
+        'delete-stop',
+      )
+      return
+    }
 
     const stationsPayload = uiStopsToDbStations(resequenced)
     await patchRoute(route.id, { stations: stationsPayload })
@@ -529,7 +655,6 @@ export function useRoutesStore() {
       {
         routeId: route.id,
         routeName: route.name,
-        stopName: target.name,
       },
     )
   }

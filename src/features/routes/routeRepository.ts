@@ -40,6 +40,13 @@ export interface RouteStation {
   isMajor: boolean
   /** 이전 정류장까지 거리 (km) */
   distanceFromPrevKm: number
+  /**
+   * 마지막 시공 완료 시점 기준으로 실제 시공된 정류장인지 여부
+   * - 초기 설계 단계: 보통 false
+   * - 시공 완료 시점에 존재하던 정류장: true
+   * - 이후 추가된 정류장: 다시 false
+   */
+  isBuilt?: boolean
 }
 
 /**
@@ -144,6 +151,7 @@ export async function createRoute(
         : idx === 0
           ? 0
           : 0,
+    isBuilt: !!s.isBuilt,
   }))
 
   const data: Omit<Route, 'id'> = {
@@ -204,6 +212,7 @@ export async function updateRoute(
           : idx === 0
             ? 0
             : 0,
+      isBuilt: !!s.isBuilt,
     }))
   }
 

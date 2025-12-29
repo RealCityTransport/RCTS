@@ -66,6 +66,13 @@
               {{ roleLabel(stop.role) }}
             </div>
           </div>
+
+          <div class="field-block">
+            <div class="field-label">시공 상태</div>
+            <div class="field-value">
+              {{ buildStatusLabel }}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -171,6 +178,18 @@ watch(
   },
   { immediate: true },
 )
+
+/** 정류장 시공 상태 텍스트
+ * - 노선 건설중: 시공 중
+ * - 노선 운영중 + stop.built === true: 완공
+ * - 그 외: 설계 중
+ */
+const buildStatusLabel = computed(() => {
+  if (!props.route || !props.stop) return '-'
+  if (props.route.status === '건설중') return '시공 중'
+  if (props.route.status === '운영중' && props.stop.built) return '완공'
+  return '설계 중'
+})
 
 const canSave = computed(() => {
   if (!props.stop) return false
