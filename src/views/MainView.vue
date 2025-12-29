@@ -17,19 +17,16 @@
 
     <!-- 실제 게임 콘텐츠 영역 -->
     <div class="main-content">
-      <!-- ---------------- 헤더 ---------------- -->
+      <!-- 헤더 -->
       <header class="game-header">
-        <!-- 왼쪽: 로고 -->
         <div class="header-left">
           <h1 class="game-title">RCTS</h1>
         </div>
 
-        <!-- 가운데: 시계 -->
         <div class="header-center">
           <MainGameClock :now="kstNow" />
         </div>
 
-        <!-- 오른쪽: 로그인 (Firebase Auth 연동) -->
         <div class="header-right">
           <template v-if="!isLoggedIn">
             <button
@@ -56,12 +53,12 @@
         </div>
       </header>
 
-      <!-- ---------------- 메뉴바 ---------------- -->
+      <!-- 상단 메뉴 -->
       <MainTopMenu v-model="activeMenu" />
 
-      <!-- ---------------- 본문 ---------------- -->
+      <!-- 본문 -->
       <main class="game-body">
-        <!-- 1️⃣ 대시보드 -->
+        <!-- 대시보드 -->
         <section
           v-if="activeMenu === 'dashboard'"
           class="dashboard-page"
@@ -69,7 +66,6 @@
           <section class="dashboard-grid">
             <MainStatusSummary class="dashboard-card" />
 
-            <!-- 주요 노선 요약: 여기서 routes 스토어 사용 + 노선 화면으로 이동 -->
             <MainRouteSummary
               class="dashboard-card"
               @open-route="handleOpenRouteFromSummary"
@@ -83,7 +79,7 @@
           </section>
         </section>
 
-        <!-- 2️⃣ 노선 -->
+        <!-- 노선 -->
         <section
           v-else-if="activeMenu === 'routes'"
           class="routes-page-wrapper"
@@ -91,18 +87,15 @@
           <MainRoutesPage />
         </section>
 
-        <!-- 3️⃣ 차량 -->
+        <!-- 지도 -->
         <section
-          v-else-if="activeMenu === 'vehicles'"
-          class="simple-page"
+          v-else-if="activeMenu === 'map'"
+          class="map-page-wrapper"
         >
-          <h2 class="page-title">차량 관리</h2>
-          <p class="page-desc">
-            운행/대기/정비 상태를 관리하는 화면입니다.
-          </p>
+          <MainMapPage />
         </section>
 
-        <!-- 4️⃣ 건설 -->
+        <!-- 건설 -->
         <section
           v-else-if="activeMenu === 'construction'"
           class="simple-page"
@@ -114,7 +107,7 @@
           </p>
         </section>
 
-        <!-- 5️⃣ 연구 -->
+        <!-- 연구 -->
         <section
           v-else-if="activeMenu === 'research'"
           class="simple-page"
@@ -125,7 +118,7 @@
           </p>
         </section>
 
-        <!-- 6️⃣ 재정 -->
+        <!-- 재정 -->
         <section
           v-else-if="activeMenu === 'finance'"
           class="simple-page"
@@ -136,17 +129,17 @@
           </p>
         </section>
 
-        <!-- 7️⃣ 위키 -->
+        <!-- 위키 -->
         <section v-else-if="activeMenu === 'wiki'">
           <MainWikiPage />
         </section>
 
-        <!-- 8️⃣ 커뮤니티 -->
+        <!-- 커뮤니티 -->
         <section v-else-if="activeMenu === 'community'">
           <MainCommunityPage />
         </section>
 
-        <!-- 9️⃣ 설정 -->
+        <!-- 설정 -->
         <section
           v-else-if="activeMenu === 'settings'"
           class="simple-page"
@@ -167,44 +160,37 @@ import { useKstTime } from '@/composables/useKstTime'
 import { useFirebaseAuth } from '@/composables/useFirebaseAuth'
 import { useRoutesStore } from '@/composables/useRoutesStore'
 
-// 배경 이미지
 import dayImage from '@/assets/bg-city-day.png'
 import nightImage from '@/assets/bg-city-night.png'
 
-// 헤더/메뉴/시계
 import MainTopMenu from '@/components/main/MainTopMenu.vue'
 import MainGameClock from '@/components/main/MainGameClock.vue'
 
-// 대시보드 구성요소
 import MainStatusSummary from '@/components/main/MainStatusSummary.vue'
 import MainRouteSummary from '@/components/main/MainRouteSummary.vue'
 import MainVehicleSummary from '@/components/main/MainVehicleSummary.vue'
 import MainLogPanel from '@/components/main/MainLogPanel.vue'
 import MainRoutesPage from '@/components/main/MainRoutesPage.vue'
 
-// 커뮤니티 / 위키 페이지 컴포넌트
 import MainCommunityPage from '@/components/main/MainCommunityPage.vue'
 import MainWikiPage from '@/components/main/MainWikiPage.vue'
 
-// KSTS 표준시간
+import MainMapPage from '@/components/main/MainMapPage.vue'
+
 const { now: kstNow } = useKstTime(1000)
 
-// 낮/밤
 const isNight = computed(() => {
   const hour = kstNow.value.getHours()
   return hour >= 18 || hour < 6
 })
 
-// 메뉴 상태
 const activeMenu = ref('dashboard')
 
-// Firebase Auth 연동
 const { user, isLoggedIn, signInWithGoogle, logout } = useFirebaseAuth()
 const displayName = computed(() => {
   return user.value?.displayName || '게스트'
 })
 
-// 노선 스토어: 대시보드 → 노선 화면 연동
 const { selectRoute } = useRoutesStore()
 
 function handleOpenRouteFromSummary(routeId) {
@@ -223,7 +209,7 @@ function handleOpenRouteFromSummary(routeId) {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'SUIT', sans-serif;
 }
 
-/* ---------------- 배경 ---------------- */
+/* 배경 레이어 */
 
 .bg-layer {
   position: fixed;
@@ -244,7 +230,7 @@ function handleOpenRouteFromSummary(routeId) {
   filter: brightness(0.9);
 }
 
-/* ---------------- 메인 컨텐츠 ---------------- */
+/* 메인 컨텐츠 컨테이너 */
 
 .main-content {
   position: relative;
@@ -253,9 +239,12 @@ function handleOpenRouteFromSummary(routeId) {
   padding: 16px 16px 24px;
   box-sizing: border-box;
   backdrop-filter: blur(4px);
+
+  display: flex;
+  flex-direction: column;
 }
 
-/* ---------------- 헤더 ---------------- */
+/* 헤더 */
 
 .game-header {
   display: grid;
@@ -286,8 +275,6 @@ function handleOpenRouteFromSummary(routeId) {
   gap: 8px;
 }
 
-/* 로고 */
-
 .game-title {
   font-size: 1.5rem;
   font-weight: 800;
@@ -295,7 +282,7 @@ function handleOpenRouteFromSummary(routeId) {
   text-transform: uppercase;
 }
 
-/* 로그인 */
+/* 로그인 버튼 */
 
 .login-button,
 .logout-button {
@@ -317,13 +304,16 @@ function handleOpenRouteFromSummary(routeId) {
   font-size: 0.78rem;
 }
 
-/* ---------------- 본문 공통 ---------------- */
+/* 본문 영역 */
 
 .game-body {
   margin-top: 12px;
+  flex: 1;
+  min-height: 0;
+  display: flex; /* flex-direction 없음 */
 }
 
-/* 대시보드 레이아웃 */
+/* 대시보드 */
 
 .dashboard-page {
   display: flex;
@@ -344,13 +334,11 @@ function handleOpenRouteFromSummary(routeId) {
   border: 1px solid rgba(148, 163, 184, 0.55);
 }
 
-/* 로그 */
-
 .log-section {
   margin-top: 4px;
 }
 
-/* 공통 콘텐츠 카드 */
+/* 공통 카드 페이지 */
 
 .simple-page {
   padding: 14px 12px;
@@ -372,8 +360,15 @@ function handleOpenRouteFromSummary(routeId) {
 }
 
 /* 노선 페이지 래퍼 */
+
 .routes-page-wrapper {
-  /* 필요하면 패딩/배경 조정 가능 */
+}
+
+/* 지도 페이지 래퍼: 남은 세로를 모두 사용 */
+
+.map-page-wrapper {
+  flex: 1;
+  min-height: 0;
 }
 
 /* 반응형 */
