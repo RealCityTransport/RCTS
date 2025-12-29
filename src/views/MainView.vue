@@ -68,7 +68,13 @@
         >
           <section class="dashboard-grid">
             <MainStatusSummary class="dashboard-card" />
-            <MainRouteSummary class="dashboard-card" />
+
+            <!-- 주요 노선 요약: 여기서 routes 스토어 사용 + 노선 화면으로 이동 -->
+            <MainRouteSummary
+              class="dashboard-card"
+              @open-route="handleOpenRouteFromSummary"
+            />
+
             <MainVehicleSummary class="dashboard-card" />
           </section>
 
@@ -77,7 +83,7 @@
           </section>
         </section>
 
-        <!-- 2️⃣ 노선: 메인 노선 관리 페이지 연결 -->
+        <!-- 2️⃣ 노선 -->
         <section
           v-else-if="activeMenu === 'routes'"
           class="routes-page-wrapper"
@@ -135,7 +141,7 @@
           <MainWikiPage />
         </section>
 
-        <!-- 8️⃣ 커뮤니티: 전용 컴포넌트 -->
+        <!-- 8️⃣ 커뮤니티 -->
         <section v-else-if="activeMenu === 'community'">
           <MainCommunityPage />
         </section>
@@ -159,6 +165,7 @@
 import { ref, computed } from 'vue'
 import { useKstTime } from '@/composables/useKstTime'
 import { useFirebaseAuth } from '@/composables/useFirebaseAuth'
+import { useRoutesStore } from '@/composables/useRoutesStore'
 
 // 배경 이미지
 import dayImage from '@/assets/bg-city-day.png'
@@ -173,9 +180,9 @@ import MainStatusSummary from '@/components/main/MainStatusSummary.vue'
 import MainRouteSummary from '@/components/main/MainRouteSummary.vue'
 import MainVehicleSummary from '@/components/main/MainVehicleSummary.vue'
 import MainLogPanel from '@/components/main/MainLogPanel.vue'
-
-// 노선 / 커뮤니티 / 위키 페이지 컴포넌트
 import MainRoutesPage from '@/components/main/MainRoutesPage.vue'
+
+// 커뮤니티 / 위키 페이지 컴포넌트
 import MainCommunityPage from '@/components/main/MainCommunityPage.vue'
 import MainWikiPage from '@/components/main/MainWikiPage.vue'
 
@@ -193,10 +200,18 @@ const activeMenu = ref('dashboard')
 
 // Firebase Auth 연동
 const { user, isLoggedIn, signInWithGoogle, logout } = useFirebaseAuth()
-
 const displayName = computed(() => {
   return user.value?.displayName || '게스트'
 })
+
+// 노선 스토어: 대시보드 → 노선 화면 연동
+const { selectRoute } = useRoutesStore()
+
+function handleOpenRouteFromSummary(routeId) {
+  if (!routeId) return
+  selectRoute(routeId)
+  activeMenu.value = 'routes'
+}
 </script>
 
 <style scoped>
@@ -335,12 +350,6 @@ const displayName = computed(() => {
   margin-top: 4px;
 }
 
-/* 노선 페이지 래퍼 – 다른 simple-page와 톤 맞춤 */
-
-.routes-page-wrapper {
-  padding: 0; /* 내부 MainRoutesPage에서 카드/여백 관리 */
-}
-
 /* 공통 콘텐츠 카드 */
 
 .simple-page {
@@ -360,6 +369,11 @@ const displayName = computed(() => {
   font-size: 0.82rem;
   opacity: 0.9;
   line-height: 1.5;
+}
+
+/* 노선 페이지 래퍼 */
+.routes-page-wrapper {
+  /* 필요하면 패딩/배경 조정 가능 */
 }
 
 /* 반응형 */

@@ -1,6 +1,8 @@
+<!-- src/components/routes/RoutesToolbar.vue -->
 <template>
   <section class="toolbar">
     <div class="toolbar-left">
+      <!-- 검색 -->
       <div class="field search-field">
         <label class="field-label">검색</label>
         <input
@@ -12,6 +14,7 @@
         />
       </div>
 
+      <!-- 상태 필터: 전체 / 설계중 / 건설중 / 운영중 -->
       <div class="field">
         <label class="field-label">상태</label>
         <select
@@ -20,12 +23,13 @@
           @change="emitStatus"
         >
           <option value="all">전체</option>
-          <option value="active">운영 중</option>
-          <option value="paused">일시 중지</option>
-          <option value="draft">설계 중</option>
+          <option value="설계중">설계 중</option>
+          <option value="건설중">건설 중</option>
+          <option value="운영중">운영 중</option>
         </select>
       </div>
 
+      <!-- 정렬 -->
       <div class="field">
         <label class="field-label">정렬</label>
         <select
@@ -70,7 +74,7 @@ const props = defineProps({
   },
   statusFilter: {
     type: String,
-    default: 'all',
+    default: 'all', // 'all' | '설계중' | '건설중' | '운영중'
   },
   sortKey: {
     type: String,
@@ -196,7 +200,11 @@ function emitSortKey() {
   padding: 6px 10px;
   border-radius: 999px;
   border: 1px solid rgba(94, 234, 212, 0.9);
-  background: radial-gradient(circle at 0% 0%, rgba(45, 212, 191, 0.28), rgba(15, 23, 42, 0.9));
+  background: radial-gradient(
+    circle at 0% 0%,
+    rgba(45, 212, 191, 0.28),
+    rgba(15, 23, 42, 0.9)
+  );
   color: #e5e7eb;
   font-size: 0.8rem;
   font-weight: 600;

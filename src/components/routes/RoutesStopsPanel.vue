@@ -22,7 +22,7 @@
         </div>
 
         <button
-          v-if="route"
+          v-if="route && canEditStops"
           type="button"
           class="primary-button"
           @click="$emit('request-add-stop')"
@@ -47,7 +47,12 @@
     >
       현재 노선에 등록된 정류장/역 정보가 없습니다.
       <br />
-      “정류장 추가” 버튼을 눌러 새 지점을 등록해 보세요.
+      <span v-if="canEditStops">
+        “정류장 추가” 버튼을 눌러 새 지점을 등록해 보세요.
+      </span>
+      <span v-else>
+        이 노선은 시공 이후 단계라 정류장을 새로 추가할 수 없습니다.
+      </span>
     </div>
 
     <ul
@@ -62,8 +67,9 @@
           'is-dragging': draggingIndex === index,
           'is-drop-target': dragOverIndex === index && draggingIndex !== null && draggingIndex !== index,
           'is-selected': selectedStopId === stop.id,
+          'is-locked': !canEditStops,
         }"
-        draggable="true"
+        :draggable="canEditStops"
         @click="onClickStop(stop)"
         @dragstart="onDragStart(index, $event)"
         @dragover.prevent="onDragOver(index, $event)"
@@ -110,6 +116,22 @@
                 {{ roleLabel(stop.role) }}
               </span>
             </div>
+
+            <!-- 거리 정보 -->
+            <div class="stop-distance">
+              <template v-if="index === 0">
+                <span class="distance-label">출발 지점</span>
+                <span class="distance-value distance-dim">
+                  (이전 정류장 없음)
+                </span>
+              </template>
+              <template v-else>
+                <span class="distance-label">이전 정류장까지</span>
+                <span class="distance-value">
+                  {{ formatDistance(stop.distanceFromPrevKm) }}
+                </span>
+              </template>
+            </div>
           </div>
         </div>
       </li>
@@ -132,6 +154,17 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['request-add-stop', 'reorder-stops', 'select-stop'])
+
+/**
+ * 정류장 편집 가능 여부
+ * - 설계 단계(설계중/draft)에서만 추가 · 순서 변경 · 정보 수정 가능
+ * - 건설중/운영중 등 그 외 상태에서는 읽기 전용
+ */
+const canEditStops = computed(() => {
+  const status = props.route?.status
+  if (!status) return true
+  return status === '설계중' || status === 'draft'
+})
 
 /**
  * stops는 "저장된 순서 그대로" 보여줌.
@@ -175,7 +208,15 @@ function roleLabel(role) {
   }
 }
 
-/* 정류장 클릭 → 선택 */
+/* 거리 표시용 */
+function formatDistance(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return '— km'
+  }
+  return `${value.toFixed(1)} km`
+}
+
+/* 정류장 클릭 → 선택 (편집은 상세 패널에서) */
 function onClickStop(stop) {
   emit('select-stop', stop.id)
 }
@@ -185,6 +226,7 @@ const draggingIndex = ref(null)
 const dragOverIndex = ref(null)
 
 function onDragStart(index, event) {
+  if (!canEditStops.value) return
   draggingIndex.value = index
   dragOverIndex.value = null
   event.dataTransfer?.setData('text/plain', String(index))
@@ -192,6 +234,7 @@ function onDragStart(index, event) {
 }
 
 function onDragOver(index, event) {
+  if (!canEditStops.value) return
   if (draggingIndex.value === null) return
   if (index === draggingIndex.value) {
     dragOverIndex.value = null
@@ -201,12 +244,14 @@ function onDragOver(index, event) {
 }
 
 function onDragLeave(index, event) {
+  if (!canEditStops.value) return
   if (dragOverIndex.value === index) {
     dragOverIndex.value = null
   }
 }
 
 function onDrop(targetIndex, event) {
+  if (!canEditStops.value) return
   if (draggingIndex.value === null) return
   const from = draggingIndex.value
   const to = targetIndex
@@ -222,7 +267,7 @@ function onDrop(targetIndex, event) {
   const [moved] = list.splice(from, 1)
   list.splice(to, 0, moved)
 
-  // seq 재계산
+  // seq 재계산 (거리 값은 그대로 유지)
   const reSequenced = list.map((stop, idx) => ({
     ...stop,
     seq: idx + 1,
@@ -359,6 +404,12 @@ function onDragEnd() {
   box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.4);
 }
 
+/* 시공 이후 잠금 상태 시 시각적 표시 */
+.stop-item.is-locked {
+  cursor: default;
+  opacity: 0.9;
+}
+
 /* 드래그 중에도 내용 틀어지지 않게 */
 .stop-main {
   display: flex;
@@ -432,5 +483,24 @@ function onDragEnd() {
 .stop-chip-soft {
   border-color: rgba(148, 163, 184, 0.7);
   opacity: 0.85;
+}
+
+/* 거리 표시 */
+.stop-distance {
+  margin-top: 2px;
+  font-size: 0.74rem;
+  opacity: 0.86;
+}
+
+.distance-label {
+  margin-right: 4px;
+}
+
+.distance-value {
+  font-weight: 500;
+}
+
+.distance-dim {
+  opacity: 0.7;
 }
 </style>
