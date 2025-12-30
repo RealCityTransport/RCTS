@@ -99,18 +99,20 @@
                 class="primary-button"
                 @click="toggleEditor"
               >
-                {{ showEditor ? '작성 취소' : '새 글 작성' }}
+                {{ showEditor ? (isEditing ? '수정 취소' : '작성 취소') : '새 글 작성' }}
               </button>
             </div>
           </div>
         </div>
 
-        <!-- 새 글 작성 폼 (관리자 전용) -->
+        <!-- 새 글 / 수정 폼 (관리자 전용) -->
         <section
           v-if="isAdmin && showEditor"
           class="devlog-editor"
         >
-          <h3 class="editor-title">새 DEVLOG 작성</h3>
+          <h3 class="editor-title">
+            {{ isEditing ? 'DEVLOG 수정' : '새 DEVLOG 작성' }}
+          </h3>
 
           <div class="editor-row">
             <label class="editor-label">
@@ -184,7 +186,13 @@
               :disabled="saving"
               @click="saveDevlog"
             >
-              {{ saving ? '저장 중...' : 'DEVLOG 저장' }}
+              {{
+                saving
+                  ? '저장 중...'
+                  : isEditing
+                    ? 'DEVLOG 수정 저장'
+                    : 'DEVLOG 저장'
+              }}
             </button>
           </div>
         </section>
@@ -259,17 +267,24 @@
               {{ post.summary || '(요약 없음)' }}
             </p>
 
-            <!-- 관리자 전용 삭제 버튼 -->
+            <!-- 관리자 전용 수정/삭제 버튼 -->
             <div
               v-if="isAdmin"
               class="card-footer"
             >
               <button
                 type="button"
+                class="card-edit"
+                @click="beginEdit(post)"
+              >
+                수정
+              </button>
+              <button
+                type="button"
                 class="card-delete"
                 @click="deleteDevlog(post.id)"
               >
-                이 DEVLOG 삭제
+                삭제
               </button>
             </div>
           </article>
@@ -313,6 +328,7 @@ import {
   serverTimestamp,
   deleteDoc,
   doc,
+  updateDoc,
 } from 'firebase/firestore'
 import { db } from '@/libs/firebase'
 import { useFirebaseAuth } from '@/composables/useFirebaseAuth'
@@ -412,10 +428,14 @@ const filteredDevlogs = computed(() => {
   return list
 })
 
-// --- 새 글 작성 ---
+// --- 새 글 / 수정 공통 상태 ---
 const showEditor = ref(false)
 const saving = ref(false)
 const errorMessage = ref('')
+
+// 수정 중인 DEVLOG id (없으면 새 글 모드)
+const editingId = ref(null)
+const isEditing = computed(() => !!editingId.value)
 
 const draft = ref({
   title: '',
@@ -436,15 +456,41 @@ function resetDraft() {
   errorMessage.value = ''
 }
 
+function exitEditor() {
+  resetDraft()
+  editingId.value = null
+  showEditor.value = false
+}
+
 function toggleEditor() {
   if (!showEditor.value) {
+    // 새 글 작성 모드로 열기
+    editingId.value = null
     resetDraft()
     showEditor.value = true
   } else {
-    showEditor.value = false
+    // 열려 있으면 (새 글이든 수정이든) 닫기
+    exitEditor()
   }
 }
 
+// 카드에서 "수정" 눌렀을 때
+function beginEdit(post) {
+  if (!isAdmin.value || !post) return
+
+  editingId.value = post.id
+  draft.value = {
+    title: post.title || '',
+    type: post.type || 'note',
+    summary: post.summary || '',
+    status: post.status || '',
+    version: post.version || '',
+  }
+  errorMessage.value = ''
+  showEditor.value = true
+}
+
+// --- 저장 (새 글 / 수정 공통) ---
 async function saveDevlog() {
   if (!isAdmin.value) return
 
@@ -465,24 +511,37 @@ async function saveDevlog() {
   saving.value = true
 
   try {
-    const colRef = collection(db, 'devlogs')
     const u = user.value
 
-    await addDoc(colRef, {
-      title,
-      summary,
-      type: draft.value.type || 'note',
-      status: draft.value.status.trim() || '',
-      version: draft.value.version.trim() || '',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      authorEmail: u?.email ?? null,
-      authorName: u?.displayName ?? null,
-      visibility: 'internal', // 필요시 향후 'public' 등으로 확장
-    })
+    if (editingId.value) {
+      // 수정 모드: updateDoc
+      const docRef = doc(db, 'devlogs', editingId.value)
+      await updateDoc(docRef, {
+        title,
+        summary,
+        type: draft.value.type || 'note',
+        status: draft.value.status.trim() || '',
+        version: draft.value.version.trim() || '',
+        updatedAt: serverTimestamp(),
+      })
+    } else {
+      // 새 글 작성: addDoc
+      const colRef = collection(db, 'devlogs')
+      await addDoc(colRef, {
+        title,
+        summary,
+        type: draft.value.type || 'note',
+        status: draft.value.status.trim() || '',
+        version: draft.value.version.trim() || '',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        authorEmail: u?.email ?? null,
+        authorName: u?.displayName ?? null,
+        visibility: 'internal', // 필요시 향후 'public' 등으로 확장
+      })
+    }
 
-    resetDraft()
-    showEditor.value = false
+    exitEditor()
   } catch (err) {
     console.error('DEVLOG 저장 실패:', err)
     errorMessage.value = 'DEVLOG 저장 중 오류가 발생했습니다. 콘솔을 확인해 주세요.'
@@ -501,6 +560,11 @@ async function deleteDevlog(id) {
   try {
     const docRef = doc(db, 'devlogs', id)
     await deleteDoc(docRef)
+
+    // 만약 삭제한 글을 수정 중이었다면 에디터 초기화
+    if (editingId.value === id) {
+      exitEditor()
+    }
   } catch (err) {
     console.error('DEVLOG 삭제 실패:', err)
     // 필요하면 여기서도 별도 에러 메시지 상태 만들어서 화면에 표시 가능
@@ -719,7 +783,7 @@ function formatDate(date) {
   opacity: 0.7;
 }
 
-/* 새 글 작성 폼 */
+/* 새 글 / 수정 폼 */
 
 .devlog-editor {
   margin-top: 4px;
@@ -863,18 +927,31 @@ function formatDate(date) {
   opacity: 0.4;
 }
 
+/* ★ 여기 줄바꿈 반영 추가 */
 .card-summary {
   font-size: 0.8rem;
   line-height: 1.6;
   opacity: 0.92;
+  white-space: pre-line; /* 줄바꿈(\n) 유지해서 표시 */
 }
 
-/* 카드 푸터 (삭제 버튼) */
+/* 카드 푸터 (수정 / 삭제 버튼) */
 
 .card-footer {
   margin-top: 6px;
   display: flex;
   justify-content: flex-end;
+  gap: 6px;
+}
+
+.card-edit {
+  font-size: 0.72rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.85);
+  background: rgba(15, 23, 42, 0.9);
+  color: #dbeafe;
+  cursor: pointer;
 }
 
 .card-delete {
