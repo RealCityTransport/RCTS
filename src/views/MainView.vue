@@ -67,7 +67,7 @@
         </button>
       </nav>
 
-      <!-- PLAY 영역 전용 상단 메뉴 (대시보드 / 노선 / 차량 / 운행 / 로그 / 설정) -->
+      <!-- PLAY 영역 전용 상단 메뉴 -->
       <MainTopMenu
         v-if="globalMenu === 'play'"
         v-model="activeMenu"
@@ -77,45 +77,20 @@
       <main class="game-body">
         <!-- 1) PLAY 영역 -->
         <template v-if="globalMenu === 'play'">
-          <!-- 대시보드 -->
+          <!-- 노선 (Routes) -->
           <section
-            v-if="activeMenu === 'dashboard'"
-            class="dashboard-page"
-          >
-            <section class="dashboard-grid">
-              <MainStatusSummary class="dashboard-card" />
-
-              <MainRouteSummary
-                class="dashboard-card"
-                @open-route="handleOpenRouteFromSummary"
-              />
-
-              <MainVehicleSummary class="dashboard-card" />
-            </section>
-
-            <section class="log-section">
-              <MainLogPanel />
-            </section>
-          </section>
-
-          <!-- 노선 (Lines) -->
-          <section
-            v-else-if="activeMenu === 'routes'"
+            v-if="activeMenu === 'routes'"
             class="routes-page-wrapper"
           >
             <MainRoutesPage />
           </section>
 
-          <!-- 차량 · 편성 (Trains) -->
+          <!-- 차량 · 편성 (Vehicles) -->
           <section
-            v-else-if="activeMenu === 'trains'"
-            class="trains-page-wrapper simple-page"
+            v-else-if="activeMenu === 'vehicles'"
+            class="vehicles-page-wrapper"
           >
-            <h2 class="page-title">차량 · 편성 관리</h2>
-            <p class="page-desc">
-              DTS 기반 차량과 편성을 관리하는 화면입니다.<br />
-              차량 목록, 편성 에디터, 저장된 편성 리스트 등을 이 영역에서 확장할 수 있습니다.
-            </p>
+            <MainVehiclesPage />
           </section>
 
           <!-- 운행 · 배차 (Operations) -->
@@ -128,22 +103,6 @@
               노선별 운행 스케줄과 배차 간격을 설정하는 화면입니다.<br />
               특정 노선/편성 조합의 운행 계획, 반복 패턴, 피크 타임 운행 등을 이 영역에서 구성할 수 있습니다.
             </p>
-          </section>
-
-          <!-- 로그 전용 화면 (Logs) -->
-          <section
-            v-else-if="activeMenu === 'logs'"
-            class="logs-page-wrapper"
-          >
-            <section class="logs-card">
-              <h2 class="page-title">운행 로그</h2>
-              <p class="page-desc">
-                열차 운행 기록, 도착/지연 정보, 이벤트 로그 등을 한눈에 확인하는 화면입니다.
-              </p>
-              <div class="logs-panel-wrapper">
-                <MainLogPanel />
-              </div>
-            </section>
           </section>
 
           <!-- 설정 -->
@@ -159,21 +118,21 @@
           </section>
         </template>
 
-        <!-- 3) WIKI 영역 -->
+        <!-- 2) WIKI 영역 -->
         <template v-else-if="globalMenu === 'wiki'">
           <section class="wiki-page-wrapper">
             <MainWikiPage />
           </section>
         </template>
 
-        <!-- 4) DEVLOG 영역 -->
+        <!-- 3) DEVLOG 영역 -->
         <template v-else-if="globalMenu === 'devlog'">
           <section class="simple-page devlog-page">
             <MainDevlogPage />
           </section>
         </template>
 
-        <!-- 5) ABOUT 영역 -->
+        <!-- 4) ABOUT 영역 -->
         <template v-else-if="globalMenu === 'about'">
           <section class="simple-page about-page">
             <MainAboutPage />
@@ -196,14 +155,11 @@ import nightImage from '@/assets/bg-city-night.png'
 import MainTopMenu from '@/components/main/MainTopMenu.vue'
 import MainGameClock from '@/components/main/MainGameClock.vue'
 
-import MainStatusSummary from '@/components/main/MainStatusSummary.vue'
-import MainRouteSummary from '@/components/main/MainRouteSummary.vue'
-import MainVehicleSummary from '@/components/main/MainVehicleSummary.vue'
-import MainLogPanel from '@/components/main/MainLogPanel.vue'
 import MainRoutesPage from '@/components/main/MainRoutesPage.vue'
 import MainWikiPage from '@/components/main/MainWikiPage.vue'
 import MainAboutPage from '@/components/main/MainAboutPage.vue'
 import MainDevlogPage from '@/components/main/MainDevlogPage.vue'
+import MainVehiclesPage from '@/components/main/MainVehiclesPage.vue'
 
 // 시계
 const { now: kstNow } = useKstTime(1000)
@@ -224,9 +180,8 @@ const globalMenus = [
 const globalMenu = ref('play')
 
 // PLAY 내부 메뉴 상태
-// MainTopMenu 에서 'dashboard' | 'routes' | 'trains' | 'operations' | 'logs' | 'settings'
-// 값을 넘겨주도록 맞춰두었음.
-const activeMenu = ref('dashboard')
+// 기본값을 'routes'로 설정
+const activeMenu = ref('routes')
 
 // 로그인 상태
 const { user, isLoggedIn, signInWithGoogle, logout } = useFirebaseAuth()
@@ -234,7 +189,7 @@ const displayName = computed(() => {
   return user.value?.displayName || '게스트'
 })
 
-// 노선 요약에서 특정 노선 열기
+// (필요시 쓸 수 있도록 남겨둠)
 const { selectRoute } = useRoutesStore()
 
 function handleOpenRouteFromSummary(routeId) {
@@ -443,7 +398,7 @@ function handleOpenRouteFromSummary(routeId) {
 
 /* 차량/편성 페이지 */
 
-.trains-page-wrapper {
+.vehicles-page-wrapper {
   flex: 1;
   min-height: 0;
 }

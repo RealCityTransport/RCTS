@@ -1,4 +1,3 @@
-<!-- src/components/main/MainTopMenu.vue -->
 <template>
   <nav class="top-menu">
     <button
@@ -25,14 +24,10 @@ defineProps({
 // PLAY 내부 메인 메뉴
 // MainView.vue 의 activeMenu 와 1:1로 맞춘다.
 const menus = [
-  { key: 'dashboard', label: '대시보드' },     // 전체 상태 요약
-  { key: 'routes', label: '노선' },            // Google 로그인 연동 노선 관리
-  { key: 'trains', label: '차량·편성' },       // DTS 차량 / 편성 관리
+  { key: 'routes', label: '노선' },            // 노선 관리
+  { key: 'vehicles', label: '차량·장비' },     // 차량 & 편성 관리
   { key: 'operations', label: '운행' },        // 배차 / 시간표 / 운행 관리
-  { key: 'logs', label: '로그' },              // 운행 로그 / 이벤트
   { key: 'settings', label: '설정' },          // 환경 설정
-  // 개발용 임시 메뉴가 필요하면 아래처럼 추가해서 쓰기:
-  // { key: 'test', label: '테스트' },
 ]
 </script>
 
