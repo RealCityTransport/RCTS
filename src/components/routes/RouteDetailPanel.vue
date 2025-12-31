@@ -24,9 +24,12 @@
       v-else
       class="detail-body"
     >
-      <!-- 진행 단계 요약 -->
-      <section class="detail-section">
-        <h4 class="section-title">노선 진행 단계</h4>
+      <!-- 1. 신규 노선 확정 (설계중일 때만 노출) -->
+      <section
+        v-if="showNewRouteSection"
+        class="detail-section"
+      >
+        <h4 class="section-title">신규 노선 확정</h4>
 
         <div class="status-row">
           <span class="status-pill" :data-phase="effectiveStatus">
@@ -38,58 +41,78 @@
           </span>
         </div>
 
-        <!-- 정류장 편집 가능 여부 안내 -->
-        <p
-          v-if="canEditStops"
-          class="stops-edit-info stops-edit-on"
-        >
-          현재 단계에서는 정류장 추가 · 순서 변경 · 정보 수정이 가능합니다.
-        </p>
-        <p
-          v-else
-          class="stops-edit-info stops-edit-off"
-        >
-          이 노선은 시공이 시작된 이후 단계입니다. 정류장 추가나 수정은 할 수 없고,
-          정류장 삭제만 가능합니다.
+        <!-- 정류장 편집 가능 안내 (설계 단계) -->
+        <p class="stops-edit-info stops-edit-on">
+          현재 단계에서는 정류장 추가 · 순서 변경 · 정보 수정이 자유롭게 가능합니다.
+          노선을 확정하면 운영 중 노선으로 전환됩니다.
         </p>
 
-        <div
-          v-if="effectiveStatus === '설계중'"
-          class="phase-actions"
-        >
+        <div class="phase-actions">
           <button
             type="button"
             class="primary-action"
             @click="startConstruction"
           >
-            노선 확정 · 시공 시작 (1시간)
+            노선 확정 · 운영 시작
           </button>
-        </div>
-
-        <div
-          v-else-if="effectiveStatus === '건설중'"
-          class="phase-progress"
-        >
-          <div class="progress-label">
-            시공 진행 중
-          </div>
-          <div class="progress-text">
-            {{ constructionModeText }}
-          </div>
-          <div class="progress-text">
-            {{ constructionProgressText }}
-          </div>
-        </div>
-
-        <div
-          v-else-if="effectiveStatus === '운영중'"
-          class="phase-done"
-        >
-          노선 시공이 완료되어 운영 중입니다.
         </div>
       </section>
 
-      <!-- 기본 정보 -->
+      <!-- 2. 시설 변경 내역 (운영중 + pendingChanges 있을 때만 노출) -->
+      <section
+        v-if="showPendingSection"
+        class="detail-section"
+      >
+        <h4 class="section-title">
+          시설 변경 내역
+          <span>({{ pendingChangeCount }}건)</span>
+        </h4>
+
+        <p class="pending-summary">
+          운영 중인 노선에서 정류장 추가 · 삭제 · 거리 변경 등으로 발생한 시설 변경 내역입니다.
+          아래 변경 사항을 확인한 뒤, 필요하면 한 번에 적용할 수 있습니다.
+        </p>
+
+        <div class="pending-body">
+          <ul class="pending-list">
+            <li
+              v-for="change in pendingChanges"
+              :key="change.id"
+              class="pending-item"
+            >
+              <div class="pending-main">
+                <span class="pending-kind">
+                  {{ changeKindLabel(change.kind) }}
+                </span>
+                <span class="pending-text">
+                  {{ buildChangeText(change) }}
+                </span>
+              </div>
+              <div class="pending-meta">
+                {{ formatChangeTime(change.createdAt) }}
+              </div>
+            </li>
+          </ul>
+
+          <div class="pending-actions">
+            <button
+              type="button"
+              class="pending-confirm-button"
+              @click="confirmReconstructionClick"
+            >
+              시설 변경 내역 적용
+            </button>
+            <p class="pending-note">
+              정류장 추가/삭제/거리 변경 등 지금까지의 변경을 하나로 묶어
+              노선 구조에 반영합니다.
+              적용 이후에는 이 변경 내역 목록이 비워지고,
+              정류장들은 모두 완공된 상태로 간주됩니다.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. 기본 정보 -->
       <section class="detail-section">
         <h4 class="section-title">기본 정보</h4>
 
@@ -186,7 +209,7 @@
         </div>
       </section>
 
-      <!-- 운영 요약 -->
+      <!-- 4. 운영 요약 -->
       <section class="detail-section">
         <h4 class="section-title">운영 요약</h4>
 
@@ -237,7 +260,7 @@
         </div>
       </section>
 
-      <!-- 노선 삭제 (위험 구역) -->
+      <!-- 5. 노선 삭제 (위험 구역) -->
       <section class="detail-section danger-section">
         <h4 class="section-title">노선 삭제</h4>
         <p class="danger-text">
@@ -247,15 +270,9 @@
         <button
           type="button"
           class="danger-button"
-          :disabled="effectiveStatus === '건설중'"
           @click="requestDeleteRoute"
         >
-          <template v-if="effectiveStatus === '건설중'">
-            시공 중에는 노선을 삭제할 수 없습니다
-          </template>
-          <template v-else>
-            이 노선 완전히 삭제하기
-          </template>
+          이 노선 완전히 삭제하기
         </button>
       </section>
     </div>
@@ -263,7 +280,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   route: {
@@ -272,7 +289,11 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update-route', 'request-delete-route'])
+const emit = defineEmits([
+  'update-route',
+  'request-delete-route',
+  'confirm-reconstruction',
+])
 
 const nameEdit = ref('')
 const transportEdit = ref('bus')
@@ -293,10 +314,6 @@ const typeOptions = [
   { value: '현실', label: '현실 노선' },
 ]
 
-const now = ref(Date.now())
-let timerId = null
-const autoCompletedOnce = ref(false)
-
 // route가 바뀔 때마다 편집용 값 세팅
 watch(
   () => props.route,
@@ -309,25 +326,9 @@ watch(
     } else {
       typeEdit.value = '가상'
     }
-
-    autoCompletedOnce.value = false
   },
   { immediate: true },
 )
-
-onMounted(() => {
-  timerId = window.setInterval(() => {
-    now.value = Date.now()
-    tryAutoComplete()
-  }, 30_000) // 30초마다 체크
-})
-
-onUnmounted(() => {
-  if (timerId) {
-    clearInterval(timerId)
-    timerId = null
-  }
-})
 
 const totalStops = computed(() => {
   if (!props.route) return 0
@@ -335,26 +336,34 @@ const totalStops = computed(() => {
   return props.route.stopsCount ?? 0
 })
 
-/** 실제 DB status + 시공 종료 시각을 고려한 "실제 단계" */
+/** 실제 단계: 시간 개념 없이, status 그대로 사용 */
 const effectiveStatus = computed(() => {
   if (!props.route) return '설계중'
-
-  const raw = props.route.status || '설계중'
-  if (raw !== '건설중') return raw
-
-  const end = props.route.constructionEndsAt
-  if (typeof end === 'number' && now.value >= end) {
-    // 이미 시공 완료 시간 지남 → 사실상 운영중
-    return '운영중'
-  }
-  return '건설중'
+  return props.route.status || '설계중'
 })
 
-/** 정류장 편집 가능 여부
- * - 건설중: 정류장 구조 편집 불가
- * - 설계중/운영중: 정류장 편집 가능
+/** 신규 노선 확정 영역 노출 여부: 설계중일 때만 */
+const showNewRouteSection = computed(
+  () => effectiveStatus.value === '설계중',
+)
+
+/** 시설 변경 내역 */
+const pendingChanges = computed(() => {
+  if (!props.route || !Array.isArray(props.route.pendingChanges)) return []
+  return props.route.pendingChanges
+})
+
+const pendingChangeCount = computed(
+  () => pendingChanges.value.length || 0,
+)
+
+/** 시설 변경 내역 영역 노출 여부:
+ * - 운영중 + 변경 내역 1건 이상일 때만
  */
-const canEditStops = computed(() => effectiveStatus.value !== '건설중')
+const showPendingSection = computed(
+  () =>
+    effectiveStatus.value === '운영중' && pendingChangeCount.value > 0,
+)
 
 /** 운송 수단/유형 변경 가능 여부: 설계중에서만 */
 const canEditTransport = computed(() => effectiveStatus.value === '설계중')
@@ -383,55 +392,6 @@ const congestionText = computed(() => {
   if (typeof lf !== 'number') return '-'
   const pct = Math.round(lf * 100)
   return `${pct}%`
-})
-
-/** 현재 시공이 초기 시공인지, 변경 시공인지 구분 */
-const constructionModeText = computed(() => {
-  if (!props.route || effectiveStatus.value !== '건설중') return ''
-  const start = props.route.constructionStartedAt
-  const end = props.route.constructionEndsAt
-  if (typeof start !== 'number' || typeof end !== 'number') {
-    return '시공 진행 중입니다.'
-  }
-  const totalMs = end - start
-  const totalMin = Math.round(totalMs / 60000)
-
-  // 대략 120분이면 변경 시공(2시간), 그 외는 초기 시공(1시간)으로 간주
-  if (totalMin >= 110) {
-    return '변경 시공(약 2시간) 진행 중입니다.'
-  }
-  return '초기 시공(약 1시간) 진행 중입니다.'
-})
-
-/** 단계 설명 텍스트 */
-const phaseDescription = computed(() => {
-  if (!props.route) return ''
-  switch (effectiveStatus.value) {
-    case '설계중':
-      return '노선 구조와 정류장을 설계하는 단계입니다. 노선 확정 후 시공이 시작됩니다.'
-    case '건설중':
-      return '노선이 시공 중입니다. 시공이 완료되면 자동으로 운행 상태로 전환됩니다.'
-    case '운영중':
-      return '노선 시공이 완료되어 실제 운행 중입니다.'
-    default:
-      return ''
-  }
-})
-
-/** 남은 시공 시간 텍스트 */
-const constructionProgressText = computed(() => {
-  if (!props.route) return ''
-  const end = props.route.constructionEndsAt
-  if (typeof end !== 'number') return '완공 예정 시간이 설정되지 않았습니다.'
-
-  const remainMs = end - now.value
-  if (remainMs <= 0) {
-    return '시공 시간이 모두 경과했습니다. 곧 운영 상태로 전환됩니다.'
-  }
-
-  const remainMin = Math.ceil(remainMs / 60000)
-  if (remainMin <= 1) return '약 1분 이내 완공 예정'
-  return `약 ${remainMin}분 후 완공 예정`
 })
 
 function typeLabel(type) {
@@ -491,6 +451,21 @@ function formatCurrency(value) {
   return value.toLocaleString('ko-KR') + ' 크레딧'
 }
 
+/** 단계 설명 텍스트 (신규 노선 확정 영역에서 사용) */
+const phaseDescription = computed(() => {
+  if (!props.route) return ''
+  switch (effectiveStatus.value) {
+    case '설계중':
+      return '노선 구조와 정류장을 설계하는 단계입니다. 노선을 확정하면 운영을 시작할 수 있습니다.'
+    case '건설중':
+      return '노선이 시공 중인 상태입니다.'
+    case '운영중':
+      return '노선 시공이 완료되어 실제 운행 중입니다.'
+    default:
+      return ''
+  }
+})
+
 /** 이름/운송수단/유형 저장 */
 function handleSave() {
   if (!props.route || !canSave.value) return
@@ -516,13 +491,10 @@ function handleSave() {
   emit('update-route', payload)
 }
 
-/** 설계중 → 건설중 + 1시간 타이머 설정 (초기 시공) */
+/** 설계중 → 운영중으로 바로 전환 (시간 개념 제거) */
 function startConstruction() {
   if (!props.route) return
   if (effectiveStatus.value !== '설계중') return
-
-  const nowMs = Date.now()
-  const oneHourLater = nowMs + 60 * 60 * 1000
 
   const trimmed = nameEdit.value.trim() || props.route.name
 
@@ -531,32 +503,65 @@ function startConstruction() {
     name: trimmed,
     type: typeEdit.value,
     transport: transportEdit.value,
-    status: '건설중',
-    constructionStartedAt: nowMs,
-    constructionEndsAt: oneHourLater,
+    status: '운영중',
   })
 }
 
-/** 건설중 + 시공완료 시간 지났을 때 자동 운영중 전환 */
-function tryAutoComplete() {
+/** 시설 변경 종류 라벨 */
+function changeKindLabel(kind) {
+  switch (kind) {
+    case 'add-stop':
+      return '정류장 추가'
+    case 'delete-stop':
+      return '정류장 삭제'
+    case 'reorder-stops':
+      return '순서 변경'
+    case 'update-distance':
+      return '거리 변경'
+    default:
+      return '변경'
+  }
+}
+
+/** 시설 변경 한 줄 설명 */
+function buildChangeText(change) {
+  if (!change) return ''
+  switch (change.kind) {
+    case 'add-stop':
+      return `"${change.stopName ?? '정류장'}" 신설`
+    case 'delete-stop':
+      return `"${change.stopName ?? '정류장'}" 폐지`
+    case 'reorder-stops':
+      return '정류장 순서 조정'
+    case 'update-distance':
+      if (
+        typeof change.fromKm === 'number' &&
+        typeof change.toKm === 'number'
+      ) {
+        return `"${change.stopName ?? '정류장'}" 이전 거리 ${change.fromKm}km → ${change.toKm}km`
+      }
+      return `"${change.stopName ?? '정류장'}" 구간 거리 변경`
+    default:
+      return change.detail || '시설 변경'
+  }
+}
+
+/** 변경 시간 표시 */
+function formatChangeTime(ts) {
+  if (!ts || Number.isNaN(ts)) return ''
+  const d = new Date(ts)
+  const MM = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${MM}/${dd} ${hh}:${mm}`
+}
+
+/** 시설 변경 내역 적용 클릭 → 상위로 이벤트 전달 */
+function confirmReconstructionClick() {
   if (!props.route) return
-  if (autoCompletedOnce.value) return
-
-  const rawStatus = props.route.status
-  const end = props.route.constructionEndsAt
-
-  if (rawStatus !== '건설중') return
-  if (typeof end !== 'number') return
-  if (Date.now() < end) return
-
-  autoCompletedOnce.value = true
-
-  emit('update-route', {
-    id: props.route.id,
-    status: '운영중',
-    constructionStartedAt: props.route.constructionStartedAt ?? null,
-    constructionEndsAt: end,
-  })
+  if (!pendingChangeCount.value) return
+  emit('confirm-reconstruction', props.route.id)
 }
 
 /** 노선 삭제 요청 */
@@ -632,7 +637,7 @@ function requestDeleteRoute() {
   font-weight: 600;
 }
 
-/* 진행 단계 */
+/* 진행 단계 / 신규 노선 확정 */
 .status-row {
   display: flex;
   flex-wrap: wrap;
@@ -676,31 +681,93 @@ function requestDeleteRoute() {
   color: #a5f3fc;
 }
 
-.stops-edit-off {
-  color: #fecaca;
+/* 시설 변경 요약 텍스트 */
+.pending-summary {
+  font-size: 0.74rem;
+  opacity: 0.9;
 }
 
-.phase-actions {
-  margin-top: 4px;
+/* 변경 내역 영역 */
+.pending-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.phase-progress,
-.phase-done {
-  margin-top: 4px;
+.pending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pending-item {
+  padding: 6px 8px;
+  border-radius: 9px;
+  border: 1px solid rgba(75, 85, 99, 0.9);
+  background: rgba(15, 23, 42, 0.98);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pending-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pending-kind {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.9);
+}
+
+.pending-text {
   font-size: 0.76rem;
-  opacity: 0.9;
 }
 
-.progress-label {
+.pending-meta {
+  font-size: 0.7rem;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.pending-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.pending-confirm-button {
+  align-self: flex-start;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.95);
+  background: radial-gradient(
+    circle at 0% 0%,
+    rgba(59, 130, 246, 0.28),
+    rgba(15, 23, 42, 0.98)
+  );
+  color: #e5e7eb;
+  font-size: 0.78rem;
   font-weight: 600;
-  margin-bottom: 2px;
+  cursor: pointer;
 }
 
-.progress-text {
-  opacity: 0.9;
+.pending-note {
+  font-size: 0.74rem;
+  opacity: 0.85;
+  line-height: 1.4;
 }
 
-/* 설계→시공 전환 버튼 */
+/* 설계→운영 전환 버튼 */
 .primary-action {
   padding: 5px 12px;
   border-radius: 999px;
@@ -835,11 +902,6 @@ function requestDeleteRoute() {
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
-}
-
-.danger-button:disabled {
-  opacity: 0.45;
-  cursor: default;
 }
 
 /* 반응형 */

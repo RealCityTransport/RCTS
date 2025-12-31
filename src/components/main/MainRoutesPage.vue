@@ -48,6 +48,7 @@
             :route="selectedRoute"
             @update-route="updateRoute"
             @request-delete-route="handleRequestDeleteRoute"
+            @confirm-reconstruction="handleConfirmReconstruction"
           />
 
           <StopDetailPanel
@@ -87,6 +88,7 @@ const {
   updateStop,
   deleteRoute,
   deleteStop,
+  confirmReconstruction,
 } = useRoutesStore()
 
 /* 검색/필터/정렬 상태 (이건 이 화면 전용) */
@@ -167,7 +169,6 @@ const filteredRoutes = computed(() => {
 
 /**
  * 노선 삭제 요청 핸들러
- * - 자식에서 id 또는 { routeId, ... } 형태로 넘겨와도 여기서 routeId만 추출해서 스토어로 전달
  */
 function handleRequestDeleteRoute(payload) {
   const routeId =
@@ -181,7 +182,6 @@ function handleRequestDeleteRoute(payload) {
 
 /**
  * 정류장 삭제 핸들러
- * - 자식에서 stopId 또는 { routeId, stopId } 형태로 넘겨와도 여기서 stopId만 추출
  */
 function handleDeleteStop(payload) {
   const stopId =
@@ -191,6 +191,14 @@ function handleDeleteStop(payload) {
 
   if (!stopId) return
   deleteStop(stopId)
+}
+
+/**
+ * 시설 변경 확정 → 2시간 변경 시공 시작
+ */
+function handleConfirmReconstruction(routeId) {
+  if (!routeId) return
+  confirmReconstruction(routeId)
 }
 </script>
 

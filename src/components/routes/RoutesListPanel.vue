@@ -64,9 +64,9 @@
               {{ typeLabel(route.type) }}
             </span>
 
-            <!-- 태그들 -->
+            <!-- 태그들 (시스템용 기본 태그는 숨김) -->
             <span
-              v-for="tag in route.tags || []"
+              v-for="tag in visibleTags(route.tags)"
               :key="tag"
               class="meta-chip"
             >
@@ -76,12 +76,6 @@
         </div>
 
         <div class="route-side">
-          <div class="route-stat">
-            <div class="stat-label">평균 혼잡도</div>
-            <div class="stat-value">
-              {{ Math.round((route.avgLoadFactor ?? 0) * 100) }}%
-            </div>
-          </div>
           <div class="route-updated">
             <div class="updated-label">최근 수정</div>
             <div class="updated-value">
@@ -112,16 +106,21 @@ function handleSelect(id) {
   emit('select-route', id)
 }
 
+/**
+ * 상태 라벨
+ * - 설계중: "설계 노선"
+ * - 운영중/active: "확정 노선"
+ */
 function statusLabel(status) {
   switch (status) {
     case 'active':
     case '운영중':
-      return '운영 중'
+      return '확정 노선'
     case 'paused':
       return '일시 중지'
     case 'draft':
     case '설계중':
-      return '설계 중'
+      return '설계 노선'
     case '건설중':
       return '건설 중'
     default:
@@ -162,6 +161,15 @@ function transportLabel(mode) {
     default:
       return '운송 수단 미지정'
   }
+}
+
+/**
+ * 노출용 태그 필터
+ * - 시스템 기본 태그(초기, 미완성)는 목록에서 숨김
+ */
+function visibleTags(tags) {
+  const hidden = ['초기', '미완성']
+  return (tags || []).filter((t) => !hidden.includes(t))
 }
 </script>
 
@@ -324,24 +332,10 @@ function transportLabel(mode) {
 .route-side {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
   align-items: flex-end;
   gap: 4px;
   min-width: 120px;
-}
-
-.route-stat {
-  text-align: right;
-}
-
-.stat-label {
-  font-size: 0.7rem;
-  opacity: 0.8;
-}
-
-.stat-value {
-  font-size: 0.88rem;
-  font-weight: 700;
 }
 
 .route-updated {
@@ -367,7 +361,7 @@ function transportLabel(mode) {
 
   .route-side {
     flex-direction: row;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
     min-width: 0;
   }

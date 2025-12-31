@@ -22,7 +22,7 @@
         </div>
 
         <button
-          v-if="route && canEditStops"
+          v-if="route && canAddStops"
           type="button"
           class="primary-button"
           @click="$emit('request-add-stop')"
@@ -47,7 +47,7 @@
     >
       현재 노선에 등록된 정류장/역 정보가 없습니다.
       <br />
-      <span v-if="canEditStops">
+      <span v-if="canAddStops">
         “정류장 추가” 버튼을 눌러 새 지점을 등록해 보세요.
       </span>
       <span v-else>
@@ -68,9 +68,9 @@
           'is-drop-target':
             dragOverIndex === index && draggingIndex !== null && draggingIndex !== index,
           'is-selected': selectedStopId === stop.id,
-          'is-locked': !canEditStops,
+          'is-locked': !canReorderStops,
         }"
-        :draggable="canEditStops"
+        :draggable="canReorderStops"
         @click="onClickStop(stop)"
         @dragstart="onDragStart(index, $event)"
         @dragover.prevent="onDragOver(index, $event)"
@@ -167,11 +167,23 @@ const props = defineProps({
 const emit = defineEmits(['request-add-stop', 'reorder-stops', 'select-stop'])
 
 /**
- * 정류장 편집 가능 여부
- * - 건설중(시공중)일 때만 정류장 추가/순서 변경 잠금
- * - 설계중/운영중에는 편집 가능 (운영중에서 바꾸면 재시공 로직은 상위 스토어에서 처리)
+ * 정류장 추가 가능 여부
+ * - 설계중/운영중: 추가 가능
+ * - 건설중: 추가 불가
  */
-const canEditStops = computed(() => {
+const canAddStops = computed(() => {
+  const status = props.route?.status
+  if (!status) return true
+  return status === '설계중' || status === '운영중'
+})
+
+/**
+ * 정류장 순서 변경 가능 여부
+ * - 설계중/운영중: 드래그 가능
+ * - 건설중: 드래그 불가
+ *   (완공 후 제약은 상위 스토어에서 built 순서 검사로 처리)
+ */
+const canReorderStops = computed(() => {
   const status = props.route?.status
   if (!status) return true
   return status !== '건설중'
@@ -267,7 +279,7 @@ const draggingIndex = ref(null)
 const dragOverIndex = ref(null)
 
 function onDragStart(index, event) {
-  if (!canEditStops.value) return
+  if (!canReorderStops.value) return
   draggingIndex.value = index
   dragOverIndex.value = null
   event.dataTransfer?.setData('text/plain', String(index))
@@ -275,7 +287,7 @@ function onDragStart(index, event) {
 }
 
 function onDragOver(index, event) {
-  if (!canEditStops.value) return
+  if (!canReorderStops.value) return
   if (draggingIndex.value === null) return
   if (index === draggingIndex.value) {
     dragOverIndex.value = null
@@ -285,14 +297,14 @@ function onDragOver(index, event) {
 }
 
 function onDragLeave(index, event) {
-  if (!canEditStops.value) return
+  if (!canReorderStops.value) return
   if (dragOverIndex.value === index) {
     dragOverIndex.value = null
   }
 }
 
 function onDrop(targetIndex, event) {
-  if (!canEditStops.value) return
+  if (!canReorderStops.value) return
   if (draggingIndex.value === null) return
   const from = draggingIndex.value
   const to = targetIndex
