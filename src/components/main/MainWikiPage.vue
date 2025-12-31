@@ -164,9 +164,11 @@
               </p>
             </header>
 
-            <pre class="content-body">
-{{ selectedPage.body || '(내용 없음)' }}
-            </pre>
+            <!-- ★ 여기만 변경: Markdown 렌더링 -->
+            <div
+              class="content-body"
+              v-html="renderMarkdown(selectedPage.body || '(내용 없음)')"
+            ></div>
 
             <div
               v-if="isAdmin"
@@ -213,6 +215,7 @@ import {
   deleteDoc,
   updateDoc,
 } from 'firebase/firestore'
+import { marked } from 'marked'
 
 import { db } from '@/libs/firebase'
 import { useFirebaseAuth } from '@/composables/useFirebaseAuth'
@@ -220,7 +223,6 @@ import { useFirebaseAuth } from '@/composables/useFirebaseAuth'
 /* -----------------------
    관리자 판정
 ------------------------ */
-
 const { user } = useFirebaseAuth()
 
 const ADMIN_EMAILS_ENV = import.meta.env.VITE_ADMIN_EMAILS || ''
@@ -238,7 +240,6 @@ const isAdmin = computed(() => {
 /* -----------------------
    Firestore 구독
 ------------------------ */
-
 const loading = ref(true)
 const pages = ref([])
 
@@ -276,15 +277,13 @@ onUnmounted(() => {
 })
 
 /* -----------------------
-   카테고리별 그룹
+   카테고리 그룹
 ------------------------ */
-
 const groupedPages = computed(() => {
   const groups = {}
 
   for (const p of pages.value) {
     const key = p.category?.trim() || '기타'
-
     if (!groups[key]) groups[key] = []
     groups[key].push(p)
   }
@@ -295,7 +294,6 @@ const groupedPages = computed(() => {
 /* -----------------------
    선택된 문서
 ------------------------ */
-
 const selectedId = ref(null)
 
 const selectedPage = computed(() =>
@@ -310,7 +308,6 @@ function select(id) {
 /* -----------------------
    에디터 상태
 ------------------------ */
-
 const editMode = ref(false)
 const editingId = ref(null)
 
@@ -357,7 +354,6 @@ function cancelEdit() {
 /* -----------------------
    저장
 ------------------------ */
-
 async function save() {
   if (!isAdmin.value) return
 
@@ -409,7 +405,6 @@ async function save() {
 /* -----------------------
    삭제
 ------------------------ */
-
 async function remove() {
   if (!isAdmin.value || !selectedPage.value) return
 
@@ -423,9 +418,15 @@ async function remove() {
 }
 
 /* -----------------------
-   날짜 표시
+   Markdown 렌더링
 ------------------------ */
+function renderMarkdown(text) {
+  return marked.parse(text || '')
+}
 
+/* -----------------------
+   날짜 포맷
+------------------------ */
 function formatDate(date) {
   if (!date) return ''
   const y = date.getFullYear()
@@ -541,6 +542,8 @@ function formatDate(date) {
 }
 
 .content-body {
-  white-space: pre-wrap;
+  margin-top: 10px;
+  line-height: 1.6;
+  font-size: 0.9rem;
 }
 </style>

@@ -263,9 +263,11 @@
               </span>
             </div>
 
-            <p class="card-summary">
-              {{ post.summary || '(요약 없음)' }}
-            </p>
+            <!-- ★ 마크다운 렌더링 적용 -->
+            <div
+              class="card-summary"
+              v-html="renderMarkdown(post.summary || '(요약 없음)')"
+            ></div>
 
             <!-- 관리자 전용 수정/삭제 버튼 -->
             <div
@@ -291,7 +293,7 @@
         </div>
       </div>
 
-      <!-- 오른쪽: 가이드 / 메모 -->
+      <!-- 오른쪽 사이드 -->
       <aside class="devlog-side">
         <section class="side-card">
           <h3 class="side-card-title">작성 가이드 (내부 메모)</h3>
@@ -332,11 +334,10 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/libs/firebase'
 import { useFirebaseAuth } from '@/composables/useFirebaseAuth'
+import { marked } from 'marked'
 
-// --- Auth / Admin 판별 ---
 const { user } = useFirebaseAuth()
 
-// 쉼표로 구분된 관리자 이메일 리스트 (예: "a@b.com,c@d.com")
 const ADMIN_EMAILS_ENV = import.meta.env.VITE_ADMIN_EMAILS || ''
 const ADMIN_EMAILS = ADMIN_EMAILS_ENV
   .split(',')
@@ -346,23 +347,17 @@ const ADMIN_EMAILS = ADMIN_EMAILS_ENV
 const isAdmin = computed(() => {
   const u = user.value
   if (!u || !u.email) return false
-
-  // 환경변수에 관리자가 지정되어 있으면 그 리스트만 허용
-  if (ADMIN_EMAILS.length > 0) {
-    return ADMIN_EMAILS.includes(u.email)
-  }
-
-  // 환경변수가 없으면, 로그인된 사용자 전체를 관리자 취급 (개인 개발용 기본)
+  if (ADMIN_EMAILS.length > 0) return ADMIN_EMAILS.includes(u.email)
   return true
 })
 
-// --- Firestore DEVLOG 상태 ---
+function renderMarkdown(text) {
+  return marked.parse(text || '')
+}
+
 const loading = ref(true)
 const devlogs = ref([])
 
-/**
- * Firestore 문서 → 로컬 객체 변환
- */
 function mapDoc(snapshot) {
   const data = snapshot.data() || {}
   const createdAt = data.createdAt?.toDate?.() ?? null
@@ -370,7 +365,7 @@ function mapDoc(snapshot) {
   return {
     id: snapshot.id,
     title: data.title ?? '',
-    type: data.type ?? 'note', // note | patch | sample | todo
+    type: data.type ?? 'note',
     summary: data.summary ?? '',
     status: data.status ?? '',
     version: data.version ?? '',
@@ -378,7 +373,6 @@ function mapDoc(snapshot) {
   }
 }
 
-// 실시간 구독
 let unsubscribe = null
 
 onMounted(() => {
@@ -405,8 +399,7 @@ onUnmounted(() => {
   }
 })
 
-// --- 필터 / 검색 ---
-const activeType = ref('all') // all | note | patch | sample | todo
+const activeType = ref('all')
 const keyword = ref('')
 
 const filteredDevlogs = computed(() => {
@@ -428,12 +421,10 @@ const filteredDevlogs = computed(() => {
   return list
 })
 
-// --- 새 글 / 수정 공통 상태 ---
 const showEditor = ref(false)
 const saving = ref(false)
 const errorMessage = ref('')
 
-// 수정 중인 DEVLOG id (없으면 새 글 모드)
 const editingId = ref(null)
 const isEditing = computed(() => !!editingId.value)
 
@@ -464,17 +455,14 @@ function exitEditor() {
 
 function toggleEditor() {
   if (!showEditor.value) {
-    // 새 글 작성 모드로 열기
     editingId.value = null
     resetDraft()
     showEditor.value = true
   } else {
-    // 열려 있으면 (새 글이든 수정이든) 닫기
     exitEditor()
   }
 }
 
-// 카드에서 "수정" 눌렀을 때
 function beginEdit(post) {
   if (!isAdmin.value || !post) return
 
@@ -490,7 +478,6 @@ function beginEdit(post) {
   showEditor.value = true
 }
 
-// --- 저장 (새 글 / 수정 공통) ---
 async function saveDevlog() {
   if (!isAdmin.value) return
 
@@ -514,7 +501,6 @@ async function saveDevlog() {
     const u = user.value
 
     if (editingId.value) {
-      // 수정 모드: updateDoc
       const docRef = doc(db, 'devlogs', editingId.value)
       await updateDoc(docRef, {
         title,
@@ -525,7 +511,6 @@ async function saveDevlog() {
         updatedAt: serverTimestamp(),
       })
     } else {
-      // 새 글 작성: addDoc
       const colRef = collection(db, 'devlogs')
       await addDoc(colRef, {
         title,
@@ -537,7 +522,7 @@ async function saveDevlog() {
         updatedAt: serverTimestamp(),
         authorEmail: u?.email ?? null,
         authorName: u?.displayName ?? null,
-        visibility: 'internal', // 필요시 향후 'public' 등으로 확장
+        visibility: 'internal',
       })
     }
 
@@ -550,7 +535,6 @@ async function saveDevlog() {
   }
 }
 
-// --- 삭제 ---
 async function deleteDevlog(id) {
   if (!isAdmin.value || !id) return
 
@@ -561,17 +545,14 @@ async function deleteDevlog(id) {
     const docRef = doc(db, 'devlogs', id)
     await deleteDoc(docRef)
 
-    // 만약 삭제한 글을 수정 중이었다면 에디터 초기화
     if (editingId.value === id) {
       exitEditor()
     }
   } catch (err) {
     console.error('DEVLOG 삭제 실패:', err)
-    // 필요하면 여기서도 별도 에러 메시지 상태 만들어서 화면에 표시 가능
   }
 }
 
-// --- 표시용 유틸 함수 ---
 function typeLabel(type) {
   switch (type) {
     case 'note':
@@ -927,15 +908,15 @@ function formatDate(date) {
   opacity: 0.4;
 }
 
-/* ★ 여기 줄바꿈 반영 추가 */
+/* 마크다운 적용 영역 */
 .card-summary {
   font-size: 0.8rem;
   line-height: 1.6;
   opacity: 0.92;
-  white-space: pre-line; /* 줄바꿈(\n) 유지해서 표시 */
+  overflow-wrap: anywhere;
 }
 
-/* 카드 푸터 (수정 / 삭제 버튼) */
+/* 카드 푸터 */
 
 .card-footer {
   margin-top: 6px;
@@ -964,7 +945,7 @@ function formatDate(date) {
   cursor: pointer;
 }
 
-/* 오른쪽 사이드 영역 */
+/* 사이드 */
 
 .devlog-side {
   display: flex;
