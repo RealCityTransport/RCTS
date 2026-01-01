@@ -1,6 +1,6 @@
 <!-- src/views/HomeView.vue -->
 <template>
-  <!-- 초기 화면: 개발 / 본사이트 선택용 연결 페이지 -->
+  <!-- 초기 화면: RCTS HUB 메인 -->
   <MainView />
 </template>
 
@@ -9,5 +9,5 @@ import MainView from './MainView.vue'
 </script>
 
 <style scoped>
-/* 필요 없으면 비워둬도 됨 */
+/* 홈 뷰 전용 스타일 필요 시 여기에 추가 */
 </style>
