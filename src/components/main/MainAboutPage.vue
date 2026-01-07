@@ -9,9 +9,10 @@
         <p class="hero-subtitle">
           실제 도시 데이터를 기반으로 노선, 차량, 운행, 재정을 모두 다루는
           웹 기반 교통 경영 시뮬레이터입니다.
-          이 사이트는 거대한 상업 서비스라기보다,
+          지금 보고 있는 이 사이트는 거대한 상업 서비스라기보다,
           개인이 운영하는 게임 사이트로서
-          함께 즐기고 실험해 보는 것을 중요한 목표로 삼고 있습니다.
+          천천히 즐기고 실험해 보는 것을
+          중요한 목표로 삼고 있습니다.
         </p>
       </div>
 
@@ -32,7 +33,7 @@
           </div>
           <div class="meta-row">
             <dt>핵심 특징</dt>
-            <dd>실제 도시 데이터 · 노선/차량/운행 통합 관리 · 방치형 운영</dd>
+            <dd>실제 도시 데이터 · 노선/차량/운행 통합 관리 · 재정/로그 시스템</dd>
           </div>
         </dl>
       </aside>
@@ -85,7 +86,7 @@
         <h3 class="card-title">개발 방향 및 목표</h3>
         <ul class="card-list">
           <li>실제 도시 데이터를 활용한 노선·운행 시뮬레이션</li>
-          <li>대시보드 / 노선 / 차량 / 운행 / 로그 / 방치형 운영의 통합 UX</li>
+          <li>대시보드 / 노선 / 차량 / 운행 / 로그의 통합 UX</li>
           <li>장기 플레이에 적합한 안정적인 시간·로그 시스템</li>
           <li>개발 로그(DEVLOG)와 위키(WIKI)로 투명한 개발 과정 기록</li>
           <li>“같이 즐기는 개인 게임 사이트”로서의 가벼운 접근성과 실험성 유지</li>
@@ -100,11 +101,13 @@
         <ul class="tech-badges">
           <li class="badge">Vue 3 · Composition API</li>
           <li class="badge">Vite 기반 번들링</li>
-          <li class="badge">Firebase Auth</li>
+          <li class="badge">Firebase (Auth / Firestore)</li>
           <li class="badge">DTS 내부 엔진</li>
         </ul>
         <p class="tech-note">
-          위 기술 스택은 프로젝트 진행 상황에 따라 확장·변경될 수 있습니다.
+          위 기술 스택은 프로젝트 진행 상황에 따라
+          GitHub Actions 파이프라인, 배포 구조 등과 함께
+          조금씩 확장·변경될 수 있습니다.
         </p>
       </div>
 
@@ -117,7 +120,8 @@
         <p class="license-text">
           사용되는 데이터, 이미지, 코드의 라이선스 정책은
           추후 별도 문서로 정리해 이 영역에서 함께 안내할 예정입니다.
-          피드백, 제안, 버그 리포트는 DEVLOG / WIKI를 통해 천천히 정리해 나가며,
+          Firestore 기반 DEVLOG와 WIKI를 통해 피드백, 제안, 버그 리포트를
+          천천히 정리해 나가며,
           장기적으로는 외부 기여를 받을 수 있는 구조를 목표로 합니다.
         </p>
       </div>
@@ -181,7 +185,11 @@
 .hero-meta {
   border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.6);
-  background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.16), rgba(15, 23, 42, 0.98));
+  background: radial-gradient(
+    circle at top left,
+    rgba(59, 130, 246, 0.16),
+    rgba(15, 23, 42, 0.98)
+  );
   padding: 10px 12px;
 }
 

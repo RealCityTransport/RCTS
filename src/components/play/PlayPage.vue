@@ -48,13 +48,13 @@
                 필요할 때마다 세부 화면으로 이동할 수 있도록 설계됩니다.
               </template>
               <template v-else-if="activeMenu === 'routes'">
-                노선 화면에서는 노선 구조와 구간, 기본 운행 계획 템플릿을 다룹니다.
-                여기에서 설계한 노선 데이터는 이후 운영 센터 화면에서
-                실제 운행 정보와 결합되어 사용됩니다.
+                노선 화면에서는 노선 목록과 상태, 배차 정보를 관리합니다.
+                이후에는 노선별 상세 보기, 수요 흐름, 혼잡 구간 확인 등
+                노선 운영에 필요한 정보들이 이 영역으로 모이게 됩니다.
               </template>
               <template v-else-if="activeMenu === 'vehicles'">
-                차량 화면에서는 보유 차량 목록, 타입별 필터, 정비·상태 정보를
-                설계 관점에서 정리합니다.
+                차량 화면에서는 보유 차량 목록, 타입별 필터, 가동/정비 상태 등을
+                집중적으로 관리하게 됩니다.
                 나중에는 모딩으로 추가한 차량도 이곳에서 함께 관리할 수 있습니다.
               </template>
               <template v-else-if="activeMenu === 'settings'">
@@ -79,15 +79,47 @@
               v-else-if="activeMenu === 'operations'"
             />
 
-            <!-- 메뉴: 노선 (전용 컴포넌트) -->
+            <!-- 메뉴: 노선 -->
             <RoutesPage
               v-else-if="activeMenu === 'routes'"
             />
 
-            <!-- 메뉴: 차량 (전용 컴포넌트) -->
-            <VehiclesPage
+            <!-- 메뉴: 차량 -->
+            <div
               v-else-if="activeMenu === 'vehicles'"
-            />
+              class="section-panel"
+            >
+              <h3 class="section-title">차량 관리</h3>
+              <p class="section-desc">
+                이 화면에서는 보유 차량과 편성 상태를 관리합니다.
+                차량 타입별 분류, 가동률, 정비 대기 상태 등을 확인하고,
+                추후에는 모딩으로 추가한 차량도 동일한 방식으로 다룰 수 있습니다.
+              </p>
+
+              <div class="section-grid">
+                <div class="section-card">
+                  <h4 class="section-card-title">차량 목록</h4>
+                  <p class="section-card-text">
+                    버스, 철도, 항공, 해상 등 다양한 차량들을 한 목록에서 관리합니다.
+                    검색과 필터 기능을 통해 특정 차량만 빠르게 찾아볼 수 있도록 확장됩니다.
+                  </p>
+                </div>
+                <div class="section-card">
+                  <h4 class="section-card-title">상태 및 가동률</h4>
+                  <p class="section-card-text">
+                    운행 중, 대기, 정비 중 등 차량 상태를 구분해서 보여주고,
+                    전체 가동률을 간단히 확인하는 영역입니다.
+                  </p>
+                </div>
+                <div class="section-card">
+                  <h4 class="section-card-title">편성 관리</h4>
+                  <p class="section-card-text">
+                    특정 노선에 어떤 차량이 투입되어 있는지,
+                    편성 단위로 묶어서 관리하는 기능이 이 영역을 중심으로 추가될 예정입니다.
+                  </p>
+                </div>
+              </div>
+            </div>
 
             <!-- 메뉴: 설정 -->
             <div
@@ -117,7 +149,7 @@
                   </p>
                 </div>
                 <div class="section-card">
-                  <h4 class="section-card-title">계정 &amp; 연동</h4>
+                  <h4 class="section-card-title">계정 & 연동</h4>
                   <p class="section-card-text">
                     로그인 계정, 회사 프로필 연동, 향후 외부 서비스와의 연동 옵션 등을
                     한곳에서 관리할 수 있도록 확장할 계획입니다.
@@ -172,7 +204,6 @@ import { computed, ref } from 'vue'
 import CompanyPage from '@/components/company/CompanyPage.vue'
 import OperationsPage from '@/components/operations/OperationsPage.vue'
 import RoutesPage from '@/components/routes/RoutesPage.vue'
-import VehiclesPage from '@/components/vehicles/VehiclesPage.vue'
 
 type MenuKey = 'company' | 'operations' | 'routes' | 'vehicles' | 'settings'
 
@@ -392,7 +423,7 @@ const currentMenuLabel = computed(() => {
   overflow: auto;
 }
 
-/* 공통 섹션 패널 (설정 등) */
+/* 공통 섹션 패널 (차량/설정) */
 
 .section-panel {
   display: flex;
