@@ -7,6 +7,7 @@ import {
   type User,
 } from 'firebase/auth'
 import { auth, googleProvider } from '@/libs/firebase'
+import { startRctsTimeTicker } from '@/services/rctsTimeTicker'
 
 const currentUser = ref<User | null>(null)
 const isAuthLoading = ref(false)
@@ -15,6 +16,9 @@ const isAuthReady = ref(false)
 
 let unsubscribeAuth: (() => void) | null = null
 
+// ✅ ticker stop 핸들 (중복 실행 방지 + 로그아웃 시 정지)
+let stopRctsTicker: null | (() => void) = null
+
 function ensureAuthListener() {
   if (unsubscribeAuth) return
 
@@ -22,6 +26,22 @@ function ensureAuthListener() {
     currentUser.value = user
     isAuthReady.value = true // ✅ 첫 응답이 온 시점에 ready 처리
     console.log('[useFirebaseAuth] onAuthStateChanged:', user?.uid || 'null')
+
+    // ✅ 로그인 상태면 ticker 시작 (한 번만)
+    if (user?.uid) {
+      if (!stopRctsTicker) {
+        stopRctsTicker = startRctsTimeTicker()
+        console.log('[useFirebaseAuth] RCTS ticker started')
+      }
+      return
+    }
+
+    // ✅ 로그아웃이면 ticker 정지
+    if (stopRctsTicker) {
+      stopRctsTicker()
+      stopRctsTicker = null
+      console.log('[useFirebaseAuth] RCTS ticker stopped')
+    }
   })
 }
 
