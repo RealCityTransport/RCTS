@@ -32,9 +32,9 @@ export function useFirebaseAuth() {
   const isLoggedIn = computed(() => !!currentUser.value)
 
   /**
-   * Google 자동 로그인
+   * Google 로그인
    * - 이미 로그인된 상태면 현재 user 바로 반환
-   * - 새 로그인 시도 후 성공하면 User 반환
+   * - 새 로그인 시도 후 성공하면 User 반환 + 즉시 상태 갱신
    * - 실패/취소 시 null 반환
    * - 진행 중 상태는 isAuthLoading 으로 노출
    */
@@ -57,9 +57,17 @@ export function useFirebaseAuth() {
 
     try {
       const result = await signInWithPopup(auth, googleProvider)
-      // currentUser.value 는 onAuthStateChanged 에서 채워짐
-      console.log('[useFirebaseAuth] signInWithPopup 성공:', result.user.uid)
-      return result.user ?? null
+
+      if (result.user) {
+        // ✅ 팝업 결과를 바로 전역 상태에 반영해서
+        // onAuthStateChanged 응답을 기다리지 않아도 UI가 즉시 전환되도록 함
+        currentUser.value = result.user
+        isAuthReady.value = true
+        console.log('[useFirebaseAuth] signInWithPopup 성공:', result.user.uid)
+        return result.user
+      }
+
+      return null
     } catch (err) {
       console.error('Google 로그인 실패:', err)
       return null
@@ -72,6 +80,7 @@ export function useFirebaseAuth() {
     try {
       await signOut(auth)
       console.log('[useFirebaseAuth] 로그아웃 완료')
+      // onAuthStateChanged 에서 currentUser / isAuthReady 다시 정리됨
     } catch (err) {
       console.error('로그아웃 실패:', err)
     }
@@ -91,7 +100,7 @@ export function useFirebaseAuth() {
     user: currentUser,
     isLoggedIn,
     isAuthLoading,
-    isAuthReady,      // ✅ 추가
+    isAuthReady,
     signInWithGoogle,
     logout,
   }
