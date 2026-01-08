@@ -14,15 +14,22 @@
             원하는 시점에 각 상세 화면으로 진입할 수 있습니다.
           </p>
 
-          <!-- 허브 내 메뉴 탭 -->
-          <nav class="play-nav">
+          <!-- 허브 내 메뉴 탭 (로그인 후에만 의미 있음) -->
+          <nav
+            class="play-nav"
+            :class="{ 'is-disabled': !isAuthReady || !isLoggedIn }"
+          >
             <button
               v-for="item in menuItems"
               :key="item.key"
               type="button"
               class="play-nav-item"
-              :class="{ 'is-active': activeMenu === item.key }"
-              @click="activeMenu = item.key"
+              :class="{
+                'is-active': activeMenu === item.key,
+                'is-readonly': !isAuthReady || !isLoggedIn,
+              }"
+              :disabled="!isAuthReady || !isLoggedIn"
+              @click="isAuthReady && isLoggedIn && (activeMenu = item.key)"
             >
               <span class="nav-label">{{ item.label }}</span>
               <span v-if="item.badge" class="nav-badge">{{ item.badge }}</span>
@@ -34,10 +41,29 @@
           <div class="play-header-card">
             <p class="side-label">현재 선택한 영역</p>
             <p class="side-value">
-              {{ currentMenuLabel }}
+              <template v-if="!isAuthReady">
+                계정 상태 확인 중…
+              </template>
+              <template v-else-if="isLoggedIn">
+                {{ currentMenuLabel }}
+              </template>
+              <template v-else>
+                로그인 필요
+              </template>
             </p>
             <p class="side-hint">
-              <template v-if="activeMenu === 'company'">
+              <template v-if="!isAuthReady">
+                RCTS 계정 정보를 불러오는 중입니다.
+                잠시 후 로그인 상태에 따라 플레이 허브 또는 로그인 안내 화면이 표시됩니다.
+              </template>
+
+              <template v-else-if="!isLoggedIn">
+                RCTS 플레이 허브에 들어가려면 먼저 Google 계정으로 로그인해야 합니다.
+                로그인 후에는 회사·운영·노선·차량·설정 메뉴가 활성화되며,
+                각 영역별로 세부 관리 화면에 진입할 수 있습니다.
+              </template>
+
+              <template v-else-if="activeMenu === 'company'">
                 회사 정보는 선택 사항입니다. 회사를 등록하지 않아도 플레이는 가능하지만,
                 회사 이름과 본사 위치를 지정해 두면
                 운영·노선·차량 통계를 회사 단위로 묶어서 보는 것이 훨씬 편해집니다.
@@ -68,100 +94,148 @@
 
       <!-- 본문: 좌측 메인 패널 / 우측 안내 패널 -->
       <main class="play-body">
-        <!-- 좌측: 선택된 메뉴 내용 -->
-        <section class="play-primary">
-          <div class="play-primary-inner">
-            <!-- 메뉴: 회사 -->
-            <CompanyPage v-if="activeMenu === 'company'" />
+        <!-- 1단계: 아직 인증 상태 로딩 중 -->
+        <section v-if="!isAuthReady" class="play-gate">
+          <div class="gate-card">
+            <h3 class="gate-title">계정 상태를 확인하는 중입니다</h3>
+            <p class="gate-desc">
+              이전에 로그인한 기록이 있는지 확인하고 있습니다.
+              잠시만 기다리면 자동으로 플레이 허브 또는 로그인 안내 화면으로 전환됩니다.
+            </p>
+          </div>
+        </section>
 
-            <!-- 메뉴: 운영 -->
-            <OperationsPage
-              v-else-if="activeMenu === 'operations'"
-            />
+        <!-- 2단계: 인증 완료 + 로그아웃 상태 → 로그인 게이트 -->
+        <section v-else-if="!isLoggedIn" class="play-gate">
+          <div class="gate-card">
+            <h3 class="gate-title">로그인이 필요합니다</h3>
+            <p class="gate-desc">
+              RCTS 플레이 허브는 로그인된 계정을 기준으로
+              회사 정보와 노선·차량·운영 데이터를 관리합니다.
+              Google 계정으로 로그인하면, 나중에 다시 접속했을 때도
+              같은 계정으로 이어서 플레이할 수 있습니다.
+            </p>
 
-            <!-- 메뉴: 노선 (전용 컴포넌트) -->
-            <RoutesPage
-              v-else-if="activeMenu === 'routes'"
-            />
+            <ul class="gate-list">
+              <li>하나의 계정으로 여러 도시와 회사를 관리할 수 있습니다.</li>
+              <li>노선과 차량 설정, 운영 상태가 계정 기준으로 저장됩니다.</li>
+              <li>향후 멀티 디바이스 접속과 통계 기능도 이 계정을 기준으로 동작합니다.</li>
+            </ul>
 
-            <!-- 메뉴: 차량 (전용 컴포넌트) -->
-            <VehiclesPage
-              v-else-if="activeMenu === 'vehicles'"
-            />
-
-            <!-- 메뉴: 설정 -->
-            <div
-              v-else-if="activeMenu === 'settings'"
-              class="section-panel"
-            >
-              <h3 class="section-title">플레이 설정</h3>
-              <p class="section-desc">
-                플레이 환경과 표시 방식, 계정·회사 연동과 관련된 설정을 모아두는 화면입니다.
-                자주 변경되지는 않지만, 한 번 설정해 두면
-                이후 플레이 전체에 영향을 주는 항목들이 여기에 모이게 됩니다.
+            <div class="gate-actions">
+              <button
+                type="button"
+                class="gate-button gate-button-primary"
+                :disabled="isAuthLoading"
+                @click="handleSignIn"
+              >
+                <span v-if="!isAuthLoading">Google 계정으로 로그인</span>
+                <span v-else>로그인 진행 중…</span>
+              </button>
+              <p class="gate-note">
+                로그인 창이 뜨지 않으면 브라우저 팝업 차단 설정을 확인해 주세요.
               </p>
-
-              <div class="section-grid">
-                <div class="section-card">
-                  <h4 class="section-card-title">환경 설정</h4>
-                  <p class="section-card-text">
-                    게임 속도, 자동 저장 주기, 기본 표시 단위 등
-                    전반적인 플레이 환경을 조정하는 옵션이 들어올 예정입니다.
-                  </p>
-                </div>
-                <div class="section-card">
-                  <h4 class="section-card-title">표시 옵션</h4>
-                  <p class="section-card-text">
-                    UI 밀도, 효과 표시 여부, 색상 계열 등
-                    화면을 어떻게 보여줄지에 대한 옵션을 묶어서 관리하는 영역입니다.
-                  </p>
-                </div>
-                <div class="section-card">
-                  <h4 class="section-card-title">계정 &amp; 연동</h4>
-                  <p class="section-card-text">
-                    로그인 계정, 회사 프로필 연동, 향후 외부 서비스와의 연동 옵션 등을
-                    한곳에서 관리할 수 있도록 확장할 계획입니다.
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
         </section>
 
-        <!-- 우측: 안내/확장 슬롯 -->
-        <aside class="play-side">
-          <article class="side-card">
-            <h3 class="side-title">플레이 허브 안내</h3>
-            <p class="side-text">
-              플레이 허브는 RCTS에서 자주 오게 되는 기본 시작점입니다.
-              회사·운영·노선·차량·설정 화면으로 이동하기 전,
-              현재 상황을 정리하고 어디로 들어갈지 고르는 선택창 역할을 합니다.
-            </p>
-            <ol class="side-list">
-              <li>회사를 등록하거나, 회사 없이 바로 운영을 시작할 수 있습니다.</li>
-              <li>운영 화면에서 전체 상황을 확인한 뒤, 필요한 세부 화면으로 이동합니다.</li>
-              <li>노선과 차량 화면에서 상세한 편집과 정리를 수행합니다.</li>
-              <li>설정 화면에서 플레이 환경과 표시 방식을 한 번에 관리합니다.</li>
-            </ol>
-            <p class="side-note">
-              이 허브는 앞으로도 계속 확장되며,
-              최근 플레이 기록, 즐겨찾는 화면, 알림 요약 등이 추가될 수 있습니다.
-            </p>
-          </article>
+        <!-- 3단계: 인증 완료 + 로그인 상태 → 기존 허브 본문 -->
+        <template v-else>
+          <!-- 좌측: 선택된 메뉴 내용 -->
+          <section class="play-primary">
+            <div class="play-primary-inner">
+              <!-- 메뉴: 회사 -->
+              <CompanyPage v-if="activeMenu === 'company'" />
 
-          <article class="side-card side-card-muted">
-            <h3 class="side-title">이 화면을 활용하는 방법</h3>
-            <ul class="side-list bullet">
-              <li>새로 시작할 때는 회사 → 운영 순서로 진입해 보세요.</li>
-              <li>이미 플레이 중이라면 바로 운영 메뉴로 들어가 현재 상황을 확인합니다.</li>
-              <li>노선/차량 메뉴는 상세 편집이 필요할 때 사용하는 입구로 활용합니다.</li>
-              <li>환경이 마음에 들지 않으면 설정 메뉴에서 한 번에 조정할 수 있습니다.</li>
-            </ul>
-            <p class="side-note">
-              실제 서비스에서는 이 영역에 공지나 패치 노트, 가이드 링크도 함께 노출할 수 있습니다.
-            </p>
-          </article>
-        </aside>
+              <!-- 메뉴: 운영 -->
+              <OperationsPage
+                v-else-if="activeMenu === 'operations'"
+              />
+
+              <!-- 메뉴: 노선 (전용 컴포넌트) -->
+              <RoutesPage
+                v-else-if="activeMenu === 'routes'"
+              />
+
+              <!-- 메뉴: 차량 (전용 컴포넌트) -->
+              <VehiclesPage
+                v-else-if="activeMenu === 'vehicles'"
+              />
+
+              <!-- 메뉴: 설정 -->
+              <div
+                v-else-if="activeMenu === 'settings'"
+                class="section-panel"
+              >
+                <h3 class="section-title">플레이 설정</h3>
+                <p class="section-desc">
+                  플레이 환경과 표시 방식, 계정·회사 연동과 관련된 설정을 모아두는 화면입니다.
+                  자주 변경되지는 않지만, 한 번 설정해 두면
+                  이후 플레이 전체에 영향을 주는 항목들이 여기에 모이게 됩니다.
+                </p>
+
+                <div class="section-grid">
+                  <div class="section-card">
+                    <h4 class="section-card-title">환경 설정</h4>
+                    <p class="section-card-text">
+                      게임 속도, 자동 저장 주기, 기본 표시 단위 등
+                      전반적인 플레이 환경을 조정하는 옵션이 들어올 예정입니다.
+                    </p>
+                  </div>
+                  <div class="section-card">
+                    <h4 class="section-card-title">표시 옵션</h4>
+                    <p class="section-card-text">
+                      UI 밀도, 효과 표시 여부, 색상 계열 등
+                      화면을 어떻게 보여줄지에 대한 옵션을 묶어서 관리하는 영역입니다.
+                    </p>
+                  </div>
+                  <div class="section-card">
+                    <h4 class="section-card-title">계정 &amp; 연동</h4>
+                    <p class="section-card-text">
+                      로그인 계정, 회사 프로필 연동, 향후 외부 서비스와의 연동 옵션 등을
+                      한곳에서 관리할 수 있도록 확장할 계획입니다.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 우측: 안내/확장 슬롯 -->
+          <aside class="play-side">
+            <article class="side-card">
+              <h3 class="side-title">플레이 허브 안내</h3>
+              <p class="side-text">
+                플레이 허브는 RCTS에서 자주 오게 되는 기본 시작점입니다.
+                회사·운영·노선·차량·설정 화면으로 이동하기 전,
+                현재 상황을 정리하고 어디로 들어갈지 고르는 선택창 역할을 합니다.
+              </p>
+              <ol class="side-list">
+                <li>회사를 등록하거나, 회사 없이 바로 운영을 시작할 수 있습니다.</li>
+                <li>운영 화면에서 전체 상황을 확인한 뒤, 필요한 세부 화면으로 이동합니다.</li>
+                <li>노선과 차량 화면에서 상세한 편집과 정리를 수행합니다.</li>
+                <li>설정 화면에서 플레이 환경과 표시 방식을 한 번에 관리합니다.</li>
+              </ol>
+              <p class="side-note">
+                이 허브는 앞으로도 계속 확장되며,
+                최근 플레이 기록, 즐겨찾는 화면, 알림 요약 등이 추가될 수 있습니다.
+              </p>
+            </article>
+
+            <article class="side-card side-card-muted">
+              <h3 class="side-title">이 화면을 활용하는 방법</h3>
+              <ul class="side-list bullet">
+                <li>새로 시작할 때는 회사 → 운영 순서로 진입해 보세요.</li>
+                <li>이미 플레이 중이라면 바로 운영 메뉴로 들어가 현재 상황을 확인합니다.</li>
+                <li>노선/차량 메뉴는 상세 편집이 필요할 때 사용하는 입구로 활용합니다.</li>
+                <li>환경이 마음에 들지 않으면 설정 메뉴에서 한 번에 조정할 수 있습니다.</li>
+              </ul>
+              <p class="side-note">
+                실제 서비스에서는 이 영역에 공지나 패치 노트, 가이드 링크도 함께 노출할 수 있습니다.
+              </p>
+            </article>
+          </aside>
+        </template>
       </main>
     </section>
   </div>
@@ -173,8 +247,11 @@ import CompanyPage from '@/components/company/CompanyPage.vue'
 import OperationsPage from '@/components/operations/OperationsPage.vue'
 import RoutesPage from '@/components/routes/RoutesPage.vue'
 import VehiclesPage from '@/components/vehicles/VehiclesPage.vue'
+import { useFirebaseAuth } from '@/composables/useFirebaseAuth'
 
 type MenuKey = 'company' | 'operations' | 'routes' | 'vehicles' | 'settings'
+
+const { isLoggedIn, isAuthLoading, isAuthReady, signInWithGoogle } = useFirebaseAuth()
 
 const menuItems: { key: MenuKey; label: string; badge?: string }[] = [
   { key: 'company', label: '회사' },
@@ -190,6 +267,16 @@ const currentMenuLabel = computed(() => {
   const found = menuItems.find((m) => m.key === activeMenu.value)
   return found ? found.label : ''
 })
+
+const handleSignIn = async () => {
+  try {
+    await signInWithGoogle()
+    // onAuthStateChanged 에서 상태가 갱신되므로,
+    // isLoggedIn / isAuthReady 조합에 따라 화면이 자동으로 전환된다.
+  } catch (error) {
+    console.error('로그인 중 오류가 발생했습니다:', error)
+  }
+}
 </script>
 
 <style scoped>
@@ -267,6 +354,10 @@ const currentMenuLabel = computed(() => {
   border: 1px solid rgba(129, 140, 248, 0.8);
 }
 
+.play-nav.is-disabled {
+  opacity: 0.6;
+}
+
 .play-nav-item {
   position: relative;
   padding: 7px 16px;
@@ -289,7 +380,16 @@ const currentMenuLabel = computed(() => {
     background 0.16s ease-out,
     border-color 0.16s ease-out,
     box-shadow 0.16s ease-out,
-    transform 0.08s ease-out;
+    transform 0.08s ease-out,
+    opacity 0.16s ease-out;
+}
+
+.play-nav-item.is-readonly {
+  cursor: default;
+}
+
+.play-nav-item:disabled {
+  opacity: 0.7;
 }
 
 .play-nav-item .nav-label {
@@ -304,7 +404,7 @@ const currentMenuLabel = computed(() => {
   background: rgba(15, 23, 42, 0.9);
 }
 
-.play-nav-item:hover {
+.play-nav-item:hover:not(:disabled):not(.is-readonly) {
   border-color: rgba(191, 219, 254, 1);
   background: linear-gradient(
     135deg,
@@ -371,7 +471,107 @@ const currentMenuLabel = computed(() => {
   gap: 10px;
 }
 
-/* 좌측: 메인 패널 */
+/* 로그인 게이트 / 로딩 공통 */
+
+.play-gate {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  padding: 18px 18px;
+  box-sizing: border-box;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gate-card {
+  max-width: 520px;
+  width: 100%;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.9);
+  background: radial-gradient(
+    circle at top left,
+    rgba(59, 130, 246, 0.18),
+    rgba(15, 23, 42, 0.98)
+  );
+  box-shadow: 0 14px 40px rgba(15, 23, 42, 0.9);
+}
+
+.gate-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.gate-desc {
+  font-size: 0.8rem;
+  opacity: 0.92;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.gate-list {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  opacity: 0.9;
+}
+
+.gate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.gate-button {
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.gate-button-primary {
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 1),
+    rgba(79, 70, 229, 1)
+  );
+  color: #f9fafb;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.9);
+  transition:
+    transform 0.08s ease-out,
+    box-shadow 0.12s ease-out,
+    filter 0.12s ease-out;
+}
+
+.gate-button-primary:hover {
+  filter: brightness(1.02);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.95);
+}
+
+.gate-button-primary:active {
+  transform: translateY(1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.95);
+}
+
+.gate-note {
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+/* 좌측: 메인 패널 (로그인 이후) */
 
 .play-primary {
   flex: 1 1 auto;
@@ -438,7 +638,7 @@ const currentMenuLabel = computed(() => {
   line-height: 1.5;
 }
 
-/* 우측: 안내 패널 (보조 패널) */
+/* 우측: 안내 패널 (보조 패널, 로그인 이후) */
 
 .play-side {
   flex: 0 0 auto;
@@ -518,6 +718,20 @@ const currentMenuLabel = computed(() => {
 
   .section-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .play-gate {
+    flex: 1;
+  }
+}
+
+@media (max-width: 859px) {
+  .play-gate {
+    padding: 14px 12px;
+  }
+
+  .gate-card {
+    padding: 14px 14px;
   }
 }
 </style>

@@ -10,6 +10,8 @@ import { auth, googleProvider } from '@/libs/firebase'
 
 const currentUser = ref<User | null>(null)
 const isAuthLoading = ref(false)
+// ✅ 인증 초기 상태가 결정되었는지 여부
+const isAuthReady = ref(false)
 
 let unsubscribeAuth: (() => void) | null = null
 
@@ -18,6 +20,7 @@ function ensureAuthListener() {
 
   unsubscribeAuth = onAuthStateChanged(auth, (user) => {
     currentUser.value = user
+    isAuthReady.value = true // ✅ 첫 응답이 온 시점에 ready 처리
     console.log('[useFirebaseAuth] onAuthStateChanged:', user?.uid || 'null')
   })
 }
@@ -88,6 +91,7 @@ export function useFirebaseAuth() {
     user: currentUser,
     isLoggedIn,
     isAuthLoading,
+    isAuthReady,      // ✅ 추가
     signInWithGoogle,
     logout,
   }
