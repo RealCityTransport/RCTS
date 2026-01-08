@@ -1,50 +1,41 @@
 <!-- src/components/operations/OperationsPage.vue -->
 <template>
   <div class="operations-root">
-    <!-- 상단: 운영 헤더 + 내부 메뉴 -->
+    <!-- 상단: 메뉴만 표시 -->
     <header class="operations-header">
-      <div class="operations-header-main">
-        <h3 class="operations-title">운영 센터</h3>
-        <p class="operations-desc">
-          운영 센터는 실제 플레이 중 가장 오래 머무르게 될 화면입니다.
-          전체 운행 현황과 노선·차량 상태를 한 번에 확인하고,
-          상황에 맞게 각 영역을 바로 조정할 수 있도록 구성합니다.
-        </p>
-      </div>
-
-      <nav class="operations-nav">
+      <nav class="operations-body-menu">
         <button
           type="button"
-          class="operations-nav-item"
-          :class="{ 'is-active': activeTab === 'overview' }"
-          @click="activeTab = 'overview'"
+          class="operations-body-menu-item"
+          :class="{ 'is-active': activeSection === 'operations' }"
+          @click="activeSection = 'operations'"
         >
-          운영 현황
+          운영
         </button>
         <button
           type="button"
-          class="operations-nav-item"
-          :class="{ 'is-active': activeTab === 'routes' }"
-          @click="activeTab = 'routes'"
+          class="operations-body-menu-item"
+          :class="{ 'is-active': activeSection === 'routes' }"
+          @click="activeSection = 'routes'"
         >
-          노선 운영
+          노선
         </button>
         <button
           type="button"
-          class="operations-nav-item"
-          :class="{ 'is-active': activeTab === 'vehicles' }"
-          @click="activeTab = 'vehicles'"
+          class="operations-body-menu-item"
+          :class="{ 'is-active': activeSection === 'vehicles' }"
+          @click="activeSection = 'vehicles'"
         >
-          차량 운영
+          차량
         </button>
       </nav>
     </header>
 
     <!-- 본문 -->
     <main class="operations-body">
-      <!-- 탭: 운영 현황 -->
+      <!-- 섹션: 운영 영역 -->
       <section
-        v-if="activeTab === 'overview'"
+        v-if="activeSection === 'operations'"
         class="operations-section"
       >
         <section class="operations-panel operations-panel-main">
@@ -108,9 +99,9 @@
         </section>
       </section>
 
-      <!-- 탭: 노선 운영 (하위 탭 + 노선 영역 탭 컨포넌트 재사용) -->
+      <!-- 섹션: 노선 영역 -->
       <section
-        v-else-if="activeTab === 'routes'"
+        v-else-if="activeSection === 'routes'"
         class="operations-section"
       >
         <section class="operations-panel operations-panel-main">
@@ -119,7 +110,7 @@
               <h4 class="panel-title">노선 운영 현황</h4>
               <p class="panel-desc">
                 이 화면은 노선을 운영 관점에서 정리해서 보여주는 영역입니다.
-                노선 목록·정류장 구조·노선 상세를
+                노선 목록과 정류장·역 구조를
                 하위 탭으로 나누어, 노선 편집 영역과 동일한 모듈을
                 운영 센터에서도 그대로 재사용할 수 있게 구성합니다.
               </p>
@@ -143,14 +134,6 @@
               >
                 정류장 · 역
               </button>
-              <button
-                type="button"
-                class="operations-routes-nav-item"
-                :class="{ 'is-active': activeRoutesTab === 'details' }"
-                @click="activeRoutesTab = 'details'"
-              >
-                노선 · 정류장 상세
-              </button>
             </nav>
           </header>
 
@@ -161,9 +144,6 @@
             />
             <RoutesStopsEditorTab
               v-else-if="activeRoutesTab === 'stops'"
-            />
-            <RoutesDetailsTab
-              v-else-if="activeRoutesTab === 'details'"
             />
           </section>
         </section>
@@ -184,16 +164,16 @@
               <p class="sub-card-text">
                 이후에는 운영 알림, 수요 분석, 관제 화면과 연동해,
                 이 탭에서 선택한 노선의 상태를
-                지도/관제 UI와 함께 동시에 확인할 수 있도록 확장할 예정입니다.
+                관제 UI와 함께 동시에 확인할 수 있도록 확장할 예정입니다.
               </p>
             </article>
           </div>
         </section>
       </section>
 
-      <!-- 탭: 차량 운영 (하위 탭 + vehicles 탭 컨포넌트 재사용) -->
+      <!-- 섹션: 차량 영역 -->
       <section
-        v-else-if="activeTab === 'vehicles'"
+        v-else-if="activeSection === 'vehicles'"
         class="operations-section"
       >
         <section class="operations-panel operations-panel-main">
@@ -271,16 +251,15 @@ import { ref } from 'vue'
 
 import RoutesLinesTab from '@/components/routes/RoutesListTab.vue'
 import RoutesStopsEditorTab from '@/components/routes/RoutesStopsEditorTab.vue'
-import RoutesDetailsTab from '@/components/routes/RoutesDetailTab.vue'
 
 import VehiclesOverviewTab from '@/components/vehicles/VehiclesOverviewTab.vue'
 import VehiclesListTab from '@/components/vehicles/VehiclesListTab.vue'
 
-type OperationsTab = 'overview' | 'routes' | 'vehicles'
-type RoutesOpsTab = 'lines' | 'stops' | 'details'
+type OperationsSection = 'operations' | 'routes' | 'vehicles'
+type RoutesOpsTab = 'lines' | 'stops'
 type VehiclesOpsTab = 'overview' | 'list'
 
-const activeTab = ref<OperationsTab>('overview')
+const activeSection = ref<OperationsSection>('operations')
 const activeRoutesTab = ref<RoutesOpsTab>('lines')
 const activeVehiclesTab = ref<VehiclesOpsTab>('overview')
 </script>
@@ -292,71 +271,13 @@ const activeVehiclesTab = ref<VehiclesOpsTab>('overview')
   gap: 10px;
 }
 
-/* 헤더 */
+/* 헤더: 이제 메뉴만 감싸는 영역 */
 
 .operations-header {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   padding-bottom: 6px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.4);
-}
-
-.operations-header-main {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.operations-title {
-  font-size: 0.95rem;
-  font-weight: 700;
-}
-
-.operations-desc {
-  font-size: 0.8rem;
-  opacity: 0.9;
-  line-height: 1.6;
-}
-
-/* 상단 운영 탭 메뉴 */
-
-.operations-nav {
-  display: inline-flex;
-  gap: 6px;
-  padding: 4px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(148, 163, 184, 0.7);
-}
-
-.operations-nav-item {
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.8);
-  background: rgba(15, 23, 42, 0.96);
-  font-size: 0.78rem;
-  cursor: pointer;
-  color: #e5e7eb;
-  transition:
-    background 0.15s ease-out,
-    border-color 0.15s ease-out,
-    transform 0.05s ease-out;
-}
-
-.operations-nav-item:hover {
-  border-color: rgba(191, 219, 254, 1);
-  background: rgba(30, 64, 175, 0.9);
-}
-
-.operations-nav-item.is-active {
-  border-color: rgba(129, 140, 248, 1);
-  background: linear-gradient(
-    135deg,
-    rgba(79, 70, 229, 0.95),
-    rgba(30, 64, 175, 0.95)
-  );
-  transform: translateY(-1px);
 }
 
 /* 본문 */
@@ -366,6 +287,43 @@ const activeVehiclesTab = ref<VehiclesOpsTab>('overview')
   flex-direction: column;
   gap: 10px;
 }
+
+/* 본문 상단 메뉴 (운영 / 노선 / 차량) */
+
+.operations-body-menu {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.operations-body-menu-item {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: #e5e7eb;
+  opacity: 0.9;
+  transition:
+    background 0.12s ease-out,
+    border-color 0.12s ease-out,
+    opacity 0.12s ease-out;
+}
+
+.operations-body-menu-item:hover {
+  opacity: 1;
+  border-color: rgba(148, 163, 184, 0.8);
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.operations-body-menu-item.is-active {
+  opacity: 1;
+  border-color: rgba(129, 140, 248, 0.95);
+  background: rgba(30, 64, 175, 0.9);
+}
+
+/* 섹션 공통 */
 
 .operations-section {
   display: flex;

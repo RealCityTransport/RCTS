@@ -45,6 +45,9 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const currentUser = ref<User | null>(null)
 
+// 현재 선택된 노선
+const activeRouteId = ref<string | null>(null)
+
 let authUnsub: (() => void) | null = null
 let routesUnsub: (() => void) | null = null
 let isInitialized = false
@@ -75,11 +78,11 @@ export function usePlayerRoutes() {
 
     if (!user) {
       loading.value = false
+      activeRouteId.value = null
       return
     }
 
     const uid = user.uid
-    // 여기! /routes/{uid} 기준으로 읽는다
     const routesRef = dbRef(rtdb, `routes/${uid}`)
 
     loading.value = true
@@ -101,8 +104,8 @@ export function usePlayerRoutes() {
               name: v.name ?? '',
               lineCode: v.lineCode ?? '',
               transport: v.transport ?? 'bus',
-              type: v.type ?? '',
-              status: v.status ?? '',
+              type: v.type ?? '가상',
+              status: v.status ?? '설계중',
               shape: v.shape ?? '',
               color: v.color ?? '#888888',
               description: v.description ?? '',
@@ -127,6 +130,17 @@ export function usePlayerRoutes() {
         })
 
         routes.value = next
+
+        // 선택된 노선이 없어졌거나 없으면 자동 선택
+        if (next.length === 0) {
+          activeRouteId.value = null
+        } else if (
+          !activeRouteId.value ||
+          !next.some(r => r.id === activeRouteId.value)
+        ) {
+          activeRouteId.value = next[0].id
+        }
+
         loading.value = false
       },
       err => {
@@ -141,6 +155,10 @@ export function usePlayerRoutes() {
   })
 
   const hasError = computed(() => !!error.value)
+
+  const selectRoute = (id: string | null) => {
+    activeRouteId.value = id
+  }
 
   // 새 노선 생성: /routes/{uid} 밑에 push
   const createRoute = async (payload: {
@@ -224,6 +242,14 @@ export function usePlayerRoutes() {
     const uid = user.uid
     const refPath = dbRef(rtdb, `routes/${uid}/${id}`)
     await remove(refPath)
+
+    if (activeRouteId.value === id) {
+      if (routes.value.length > 0) {
+        activeRouteId.value = routes.value[0].id
+      } else {
+        activeRouteId.value = null
+      }
+    }
   }
 
   return {
@@ -231,6 +257,8 @@ export function usePlayerRoutes() {
     loading,
     error,
     hasError,
+    activeRouteId,
+    selectRoute,
     createRoute,
     updateRoute,
     deleteRoute,

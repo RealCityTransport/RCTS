@@ -1,312 +1,233 @@
 <!-- src/components/routes/RoutesStopsEditorTab.vue -->
 <template>
   <section class="routes-section">
-    <!-- 메인 패널: 노선 선택 + 정류장/역 시퀀스 -->
+    <!-- 메인 패널: 정류장/역 시퀀스 편집 -->
     <section class="routes-panel routes-panel-main">
       <header class="routes-main-header">
         <div class="routes-main-header-left">
           <h4 class="panel-title">정류장·역 편집</h4>
-          <p class="panel-desc">
-            이 화면에서는 내 계정의 노선 중 하나를 선택하고,
-            해당 노선에 연결된 정류장·역 목록(시퀀스)을 한눈에 확인합니다.
-            현재는 기본 조회와 새 정류장 추가, 순서 조정 및 구간 거리 설정까지만
-            구현되어 있으며, 이후 정류장 마스터 연동 기능을 단계적으로 추가할 예정입니다.
-          </p>
         </div>
       </header>
 
       <div class="routes-stops-layout">
-        <!-- 왼쪽: 노선 선택 리스트 -->
-        <aside class="stops-panel stops-panel-left">
-          <h5 class="stops-panel-title">노선 선택</h5>
-
-          <p v-if="loading" class="stops-helper-text">
-            노선 목록을 불러오는 중입니다…
-          </p>
-          <p
-            v-else-if="!loading && routes.length === 0"
-            class="stops-helper-text"
-          >
-            아직 등록된 노선이 없습니다.
-            먼저 <strong>노선 목록</strong> 탭에서 노선을 생성해 주세요.
-          </p>
-
-          <ul
-            v-else
-            class="routes-list"
-          >
-            <li
-              v-for="(route, idx) in routes"
-              :key="route.id"
-              :class="[
-                'routes-list-item',
-                { 'is-active': route.id === selectedRouteId }
-              ]"
-            >
-              <button
-                type="button"
-                class="routes-list-button"
-                @click="selectedRouteId = route.id"
-              >
-                <div class="routes-list-top">
-                  <div class="routes-list-name-row">
-                    <span class="routes-list-index">
-                      {{ idx + 1 }}
-                    </span>
-                    <span
-                      class="routes-list-color-dot"
-                      :style="{ backgroundColor: route.color || '#888888' }"
-                    ></span>
-                    <span class="routes-list-name">
-                      {{ route.name || '(이름 없음)' }}
-                    </span>
-                  </div>
-                  <span
-                    class="routes-list-status"
-                    :data-status="route.status"
-                  >
-                    {{ route.status || '—' }}
-                  </span>
-                </div>
-
-                <div class="routes-list-bottom">
-                  <span class="routes-list-code">
-                    {{ route.lineCode || '코드 없음' }}
-                  </span>
-                  <span class="routes-list-dot">·</span>
-                  <span class="routes-list-transport">
-                    {{ route.transport || '수단 미지정' }}
-                  </span>
-                </div>
-              </button>
-            </li>
-          </ul>
-        </aside>
-
-        <!-- 오른쪽: 선택된 노선의 정류장/역 시퀀스 -->
-        <section class="stops-panel stops-panel-right">
-          <div class="stops-panel-header">
-            <h5 class="stops-panel-title">정류장·역 시퀀스</h5>
-
-            <button
-              type="button"
-              class="stops-add-toggle"
-              :disabled="!selectedRoute"
-              @click="toggleAddStationForm"
-            >
-              {{ showAddStationForm ? '입력 닫기' : '새 정류장 추가' }}
-            </button>
-          </div>
-
-          <!-- 인라인 정류장 추가 폼 -->
-          <div
-            v-if="selectedRoute && showAddStationForm"
-            class="stops-add-form"
-          >
-            <label class="stops-add-label">
-              정류장·역 이름
-            </label>
-            <div class="stops-add-fields">
-              <input
-                v-model="newStationName"
-                type="text"
-                class="stops-add-input"
-                placeholder="예: 중앙역 / ○○주공아파트 / ○○공단 앞"
-                @keyup.enter="handleAddStation"
-              />
-              <button
-                type="button"
-                class="stops-add-submit"
-                :disabled="addingStation || !newStationName.trim()"
-                @click="handleAddStation"
-              >
-                추가
-              </button>
-            </div>
-          </div>
-
+        <!-- 정류장/역 시퀀스 전체 영역 -->
+        <section class="stops-main">
           <template v-if="!selectedRoute">
             <p class="stops-helper-text">
-              왼쪽 목록에서 정류장·역 시퀀스를 확인할 노선을 선택해 주세요.
+              노선 목록에서 편집할 노선을 먼저 선택해 주세요.
             </p>
           </template>
 
           <template v-else>
-            <div class="stops-route-summary">
-              <div class="stops-route-main">
-                <span
-                  class="stops-route-color-dot"
-                  :style="{ backgroundColor: selectedRoute.color || '#888888' }"
-                ></span>
-                <div class="stops-route-text">
-                  <div class="stops-route-name">
-                    {{ selectedRoute.name || '(이름 없음)' }}
+            <!-- 선택된 노선 요약: 배지 + 정류장 수 우측 배치 -->
+            <div
+              class="stops-route-summary"
+              :style="{ borderColor: selectedRoute.color || 'rgba(148, 163, 184, 0.55)' }"
+            >
+              <div class="stops-route-header-row">
+                <div class="stops-route-header-left">
+                  <div class="stops-route-title-row">
+                    <span
+                      class="stops-route-color-dot"
+                      :style="{ backgroundColor: selectedRoute.color || '#888888' }"
+                    ></span>
+                    <span class="stops-route-name">
+                      {{ selectedRoute.name || '(이름 없음)' }}
+                    </span>
                   </div>
-                  <div class="stops-route-meta">
-                    {{ selectedRoute.lineCode || '코드 없음' }} ·
-                    {{ selectedRoute.transport || '수단 미지정' }} ·
-                    {{ selectedRoute.shape || '형태 미지정' }}
+
+                  <div class="stops-route-tags">
+                    <span class="routes-badge">
+                      {{ selectedRoute.transport || '수단 미지정' }}
+                    </span>
+                    <span class="routes-badge routes-badge--soft">
+                      {{ selectedRoute.shape || '형태 미지정' }}
+                    </span>
+                    <span
+                      class="routes-status-pill"
+                      :data-status="selectedRoute.status"
+                    >
+                      {{ selectedRoute.status || '상태 미지정' }}
+                    </span>
+                    <span class="routes-badge routes-badge--outline">
+                      {{ selectedRoute.type || '타입 미지정' }}
+                    </span>
                   </div>
                 </div>
-              </div>
-              <div class="stops-route-count">
-                정류장 수:
-                <strong>{{ stationItems.length }}</strong>
+
+                <div class="stops-route-count">
+                  정류장 수:
+                  <strong>{{ stationItems.length }}</strong>
+                </div>
               </div>
             </div>
 
+            <!-- 1) 정류장 리스트 영역: 카드형 리스트 -->
             <div
               v-if="stationItems.length === 0"
               class="stops-helper-text"
             >
               이 노선에는 아직 연결된 정류장·역 정보가 없습니다.
-              상단의 <strong>새 정류장 추가</strong> 버튼으로
+              아래 <strong>새 정류장·역 만들기</strong> 버튼으로
               첫 정류장을 등록해 보세요.
             </div>
 
             <div
               v-else
-              class="stops-table-wrapper"
+              class="stops-list"
             >
-              <table class="stops-table">
-                <thead>
-                  <tr>
-                    <th class="col-index">#</th>
-                    <th class="col-name">정류장·역 이름</th>
-                    <th class="col-distance">앞 정류장까지 거리 (km)</th>
-                    <th class="col-actions">순서</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="(station, idx) in stationItems"
-                    :key="station.key"
-                    class="stops-row"
-                  >
-                    <td class="col-index">
+              <button
+                v-for="(station, idx) in stationItems"
+                :key="station.key"
+                type="button"
+                class="stops-list-item"
+                :class="{ 'is-active': idx === selectedStationIndex }"
+                :style="
+                  idx === selectedStationIndex
+                    ? { borderColor: selectedRoute?.color || 'rgba(129, 140, 248, 1)' }
+                    : {}
+                "
+                @click="handleSelectStation(idx)"
+              >
+                <!-- 상단: 순번 배지 + 정류장 이름 -->
+                <div class="stops-list-top">
+                  <div class="stops-list-top-left">
+                    <span class="stops-index-pill">
                       {{ idx + 1 }}
-                    </td>
-                    <td class="col-name">
-                      <div
-                        v-if="editingIndex === idx"
-                        class="name-edit-wrap"
-                      >
-                        <input
-                          v-model="editingNameDraft"
-                          type="text"
-                          class="name-edit-input"
-                          placeholder="정류장·역 이름"
-                          @keyup.enter="saveStationName(idx)"
-                        />
-                        <div class="name-edit-actions">
-                          <button
-                            type="button"
-                            class="name-edit-btn name-edit-btn--primary"
-                            :disabled="savingName || !editingNameDraft.trim()"
-                            @click="saveStationName(idx)"
-                          >
-                            저장
-                          </button>
-                          <button
-                            type="button"
-                            class="name-edit-btn"
-                            :disabled="savingName"
-                            @click="cancelEditName"
-                          >
-                            취소
-                          </button>
-                        </div>
-                      </div>
-                      <div
-                        v-else
-                        class="name-display-wrap"
-                      >
-                        <span class="name-text">
-                          {{ station.name }}
-                        </span>
-                        <button
-                          type="button"
-                          class="name-inline-edit-btn"
-                          @click="startEditName(idx)"
-                        >
-                          이름 수정
-                        </button>
-                      </div>
-                    </td>
-                    <td class="col-distance">
-                      <div
-                        v-if="idx === 0"
-                        class="distance-first"
-                      >
-                        —
-                      </div>
-                      <div
-                        v-else
-                        class="distance-input-wrap"
-                      >
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          class="distance-input"
-                          :value="station.distanceFromPrevKm ?? ''"
-                          @change="onDistanceChange(idx, $event)"
-                        />
-                      </div>
-                    </td>
-                    <td class="col-actions">
-                      <div class="stops-actions">
-                        <button
-                          type="button"
-                          class="stops-order-btn"
-                          :disabled="idx === 0 || !selectedRoute"
-                          @click="moveStation(idx, idx - 1)"
-                        >
-                          ▲
-                        </button>
-                        <button
-                          type="button"
-                          class="stops-order-btn"
-                          :disabled="idx === stationItems.length - 1 || !selectedRoute"
-                          @click="moveStation(idx, idx + 1)"
-                        >
-                          ▼
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                    </span>
+                    <span class="stops-name-main">
+                      {{ station.name }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- 하단: 거리/출발 정보 + 순서 화살표 -->
+                <div class="stops-list-bottom">
+                  <div class="stops-bottom-left">
+                    <template v-if="idx === 0">
+                      <span class="stops-chip stops-chip--origin">
+                        출발 정류장
+                      </span>
+                    </template>
+                    <template v-else>
+                      <span class="stops-chip">
+                        앞 정류장까지
+                        {{
+                          station.distanceFromPrevKm != null
+                            ? station.distanceFromPrevKm.toFixed(1)
+                            : '미설정'
+                        }} km
+                      </span>
+                    </template>
+                  </div>
+
+                  <div class="stops-actions">
+                    <button
+                      type="button"
+                      class="stops-order-btn"
+                      :disabled="idx === 0 || !selectedRoute"
+                      @click.stop="moveStation(idx, idx - 1)"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      class="stops-order-btn"
+                      :disabled="idx === stationItems.length - 1 || !selectedRoute"
+                      @click.stop="moveStation(idx, idx + 1)"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <!-- 2) 리스트 아래: 새 정류장 만들기 / 삭제 버튼 줄 -->
+            <div class="stops-header-actions stops-actions-row">
+              <button
+                type="button"
+                class="stops-add-toggle"
+                :disabled="!selectedRoute"
+                @click="handleAddStation"
+              >
+                새 정류장·역 만들기
+              </button>
+
+              <button
+                type="button"
+                class="stops-delete-btn"
+                :disabled="!selectedRoute || selectedStationIndex === null"
+                @click="handleDeleteStation"
+              >
+                정류장 삭제
+              </button>
+            </div>
+
+            <!-- 3) 버튼 아래: 선택 정류장 상세 -->
+            <div class="stops-detail-body">
+              <div
+                v-if="selectedStationIndex === null || !stationItems[selectedStationIndex]"
+                class="stops-detail-empty"
+              >
+                위 목록에서 상세 정보를 수정할 정류장·역을 선택해 주세요.
+              </div>
+
+              <div
+                v-else
+                class="stops-detail-form"
+              >
+                <div class="stops-detail-row">
+                  <div class="stops-detail-field stops-detail-field-full">
+                    <label class="stops-detail-label">
+                      정류장·역 이름
+                    </label>
+                    <input
+                      class="stops-detail-input"
+                      type="text"
+                      v-model="stationNameDraft"
+                      placeholder="정류장·역 이름"
+                    />
+                  </div>
+                </div>
+
+                <div class="stops-detail-row">
+                  <div class="stops-detail-field">
+                    <label class="stops-detail-label">
+                      앞 정류장·역까지 거리 (km)
+                    </label>
+                    <input
+                      class="stops-detail-input"
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      v-model.number="stationDistanceDraft"
+                      :disabled="selectedStationIndex === 0"
+                      :placeholder="selectedStationIndex === 0 ? '첫 정류장은 거리를 입력하지 않습니다.' : '예: 1.5'"
+                    />
+                    <p
+                      v-if="selectedStationIndex === 0"
+                      class="stops-detail-hint"
+                    >
+                      출발 정류장은 앞 정류장이 없으므로 거리를 입력하지 않습니다.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="stops-detail-actions">
+                  <button
+                    type="button"
+                    class="stops-save-btn"
+                    :disabled="savingStation || !stationNameDraft.trim()"
+                    @click="handleSaveStation"
+                  >
+                    {{ savingStation ? '저장 중…' : '변경 내용 저장' }}
+                  </button>
+                </div>
+              </div>
             </div>
           </template>
         </section>
-      </div>
-    </section>
-
-    <!-- 하단: 설명/향후 기능 패널 -->
-    <section class="routes-panel routes-panel-sub">
-      <div class="sub-grid">
-        <article class="sub-card">
-          <h4 class="sub-card-title">정류장 마스터 &amp; 초안 관리</h4>
-          <p class="sub-card-text">
-            정류장 이름, 내부 코드, 위치 설명, 유형 등을 관리하는
-            정류장 마스터 데이터와,
-            아직 확정되지 않은 시퀀스를 초안으로 저장해 두는 기능은
-            앞으로 이 탭에 단계적으로 추가될 예정입니다.
-            현재는 선택한 노선에 연결된 정류장 정보를
-            간단히 추가·조회하고, 순서를 조정하는 역할에
-            초점을 맞추고 있습니다.
-          </p>
-        </article>
-
-        <article class="sub-card">
-          <h4 class="sub-card-title">운영 반영 전 검증</h4>
-          <p class="sub-card-text">
-            향후에는 정류장 수, 구간 수, 예상 소요 시간 등의 기본 지표를 기준으로
-            노선 설계에 문제가 없는지 간단히 점검하는 검증 기능이 추가됩니다.
-            이 검증 정보는 운영 센터에서 사용할 계획·실적 비교의 기반이 됩니다.
-          </p>
-        </article>
       </div>
     </section>
   </section>
@@ -314,49 +235,39 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { usePlayerRoutes, type RouteRecord } from '@/composables/usePlayerRoutes'
+import { usePlayerRoutes } from '@/composables/usePlayerRoutes'
 
-const { routes, loading, updateRoute } = usePlayerRoutes()
+const { routes, loading, updateRoute, activeRouteId } = usePlayerRoutes()
 
-const selectedRouteId = ref<string | null>(null)
-
-const selectedRoute = computed<RouteRecord | null>(() =>
-  routes.value.find((r) => r.id === selectedRouteId.value) ?? null
-)
-
-type StationItem = {
-  key: string
-  name: string
-  id?: string
-  order?: number
-  distanceFromPrevKm: number | null
-}
-
-/**
- * 선택된 노선의 stations 필드를 그대로 사용해서
- * 화면용 정류장 리스트로 변환한다.
- */
-const stationItems = computed<StationItem[]>(() => {
-  return normalizeStationsFromRoute(selectedRoute.value)
+/** 현재 선택된 노선 (노선 탭의 activeRoute 기준) */
+const selectedRoute = computed(() => {
+  return routes.value.find((r: any) => r.id === activeRouteId.value) ?? null
 })
 
-/** order 기준 정렬용 헬퍼 */
+/** order 기준 정렬 헬퍼 */
 const sortByOrder = (a: any, b: any) => {
   const ao = typeof a?.order === 'number' ? a.order : 999999
   const bo = typeof b?.order === 'number' ? b.order : 999999
   return ao - bo
 }
 
-function normalizeStationsFromRoute(route: RouteRecord | null): StationItem[] {
+/** 선택된 노선의 stations를 화면용 리스트로 변환 */
+const stationItems = computed(() => {
+  return normalizeStationsFromRoute(selectedRoute.value)
+})
+
+function normalizeStationsFromRoute(route: any | null) {
   if (!route || !route.stations) return []
 
-  const raw = route.stations as any
+  const raw: any = route.stations
 
-  const normalizeEntry = (entry: any, idx: number): StationItem => {
+  const normalizeEntry = (entry: any, idx: number) => {
     const order =
       typeof entry?.order === 'number'
         ? entry.order
-        : (typeof entry?.sequence === 'number' ? entry.sequence : idx + 1)
+        : typeof entry?.sequence === 'number'
+          ? entry.sequence
+          : idx + 1
 
     return {
       key: (entry?.id as string) ?? String(idx),
@@ -373,13 +284,11 @@ function normalizeStationsFromRoute(route: RouteRecord | null): StationItem[] {
     }
   }
 
-  // 배열 형태
   if (Array.isArray(raw)) {
     const sorted = [...raw].sort(sortByOrder)
     return sorted.map(normalizeEntry)
   }
 
-  // 객체 맵 형태
   if (typeof raw === 'object' && raw !== null) {
     const entries = Object.values(raw)
     return (entries as any[]).map(normalizeEntry)
@@ -388,62 +297,57 @@ function normalizeStationsFromRoute(route: RouteRecord | null): StationItem[] {
   return []
 }
 
-/**
- * routes 목록이 변할 때:
- * - 아무 것도 선택 안 되어 있으면 첫 노선 자동 선택
- * - 선택된 노선이 사라지면 다시 첫 노선으로 보정
- */
-watch(
-  routes,
-  (newRoutes) => {
-    if (!newRoutes || newRoutes.length === 0) {
-      selectedRouteId.value = null
-      return
-    }
+/** 정류장 선택 상태 & 상세 입력 드래프트 */
+const selectedStationIndex = ref<number | null>(null)
+const stationNameDraft = ref('')
+const stationDistanceDraft = ref<number | null>(null)
+const savingStation = ref(false)
 
-    if (!selectedRouteId.value) {
-      selectedRouteId.value = newRoutes[0].id
-      return
-    }
-
-    const stillExists = newRoutes.some(
-      (r) => r.id === selectedRouteId.value
-    )
-    if (!stillExists) {
-      selectedRouteId.value = newRoutes[0].id
-    }
-  },
-  { immediate: true }
-)
-
-/** 인라인 정류장 추가 UI 상태 */
-const showAddStationForm = ref(false)
-const newStationName = ref('')
-const addingStation = ref(false)
-
-const toggleAddStationForm = () => {
-  if (!selectedRoute.value) return
-  showAddStationForm.value = !showAddStationForm.value
-  if (showAddStationForm.value) {
-    newStationName.value = ''
-  }
+/** 정류장 행 클릭 → 선택 & 드래프트 값 채우기 */
+const handleSelectStation = (index: number) => {
+  const s = stationItems.value[index]
+  if (!s) return
+  selectedStationIndex.value = index
+  stationNameDraft.value = s.name ?? ''
+  stationDistanceDraft.value =
+    index === 0 ? null : (s.distanceFromPrevKm ?? null)
 }
 
-/**
- * 새 정류장 추가
- * - 현재 선택된 노선의 stations 배열을 기반으로 새 객체를 append
- * - updateRoute(id, { stations: nextArray }) 로 통째로 저장
- */
+/** 노선이 바뀌면 선택 상태 초기화 */
+watch(
+  () => selectedRoute.value && (selectedRoute.value as any).id,
+  () => {
+    selectedStationIndex.value = null
+    stationNameDraft.value = ''
+    stationDistanceDraft.value = null
+  }
+)
+
+/** 정류장 리스트가 바뀌면 선택 상태 보정 */
+watch(
+  stationItems,
+  (items) => {
+    if (selectedStationIndex.value == null) return
+    const idx = selectedStationIndex.value
+    if (idx < 0 || idx >= items.length) {
+      selectedStationIndex.value = null
+      stationNameDraft.value = ''
+      stationDistanceDraft.value = null
+      return
+    }
+    const s = items[idx]
+    stationNameDraft.value = s.name ?? ''
+    stationDistanceDraft.value =
+      idx === 0 ? null : (s.distanceFromPrevKm ?? null)
+  }
+)
+
+/** 새 정류장·역 만들기 (즉시 생성 후 마지막 정류장 선택) */
 const handleAddStation = async () => {
   if (!selectedRoute.value) return
 
-  const name = newStationName.value.trim()
-  if (!name || addingStation.value) return
-
   try {
-    addingStation.value = true
-
-    const baseRaw = (selectedRoute.value.stations ?? []) as any
+    const baseRaw = (selectedRoute.value as any).stations ?? []
     let base: any[]
 
     if (Array.isArray(baseRaw)) {
@@ -459,9 +363,9 @@ const handleAddStation = async () => {
 
     const newStation = {
       id: `st_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      name,
+      name: '새 정류장·역',
       order: nextOrder,
-      distanceFromPrevKm: 0,
+      distanceFromPrevKm: nextOrder === 1 ? null : 0,
       isBuilt: false,
       isMajor: false,
       isTerminal: false,
@@ -469,27 +373,83 @@ const handleAddStation = async () => {
 
     const next = [...sorted, newStation]
 
-    await updateRoute(selectedRoute.value.id, {
+    await updateRoute((selectedRoute.value as any).id, {
       stations: next,
     })
 
-    // 성공 후 입력값만 초기화 (폼은 열어둔 상태 유지)
-    newStationName.value = ''
+    const newIndex = next.length - 1
+    selectedStationIndex.value = newIndex
+    stationNameDraft.value = newStation.name
+    stationDistanceDraft.value =
+      newIndex === 0 ? null : (newStation.distanceFromPrevKm as number | null)
   } catch (err) {
     console.error('[RoutesStopsEditorTab] handleAddStation error:', err)
-  } finally {
-    addingStation.value = false
   }
 }
 
-/**
- * 정류장 순서 변경 (위/아래 이동)
- * - fromIndex, toIndex는 "정렬된 화면상 인덱스" 기준
- */
+/** 정류장 삭제 */
+const handleDeleteStation = async () => {
+  if (!selectedRoute.value) return
+  if (selectedStationIndex.value == null) return
+
+  const index = selectedStationIndex.value
+  const baseRaw = (selectedRoute.value as any).stations ?? []
+  let base: any[]
+
+  if (Array.isArray(baseRaw)) {
+    base = [...baseRaw]
+  } else if (typeof baseRaw === 'object' && baseRaw !== null) {
+    base = Object.values(baseRaw)
+  } else {
+    base = []
+  }
+
+  if (!base.length) return
+
+  const sorted = [...base].sort(sortByOrder)
+
+  if (index < 0 || index >= sorted.length) return
+
+  sorted.splice(index, 1)
+
+  const reindexed = sorted.map((s, idx) => ({
+    ...s,
+    order: idx + 1,
+  }))
+
+  try {
+    await updateRoute((selectedRoute.value as any).id, {
+      stations: reindexed,
+    })
+
+    if (reindexed.length === 0) {
+      selectedStationIndex.value = null
+      stationNameDraft.value = ''
+      stationDistanceDraft.value = null
+    } else if (index >= reindexed.length) {
+      const newIndex = reindexed.length - 1
+      selectedStationIndex.value = newIndex
+      const s: any = reindexed[newIndex]
+      stationNameDraft.value = s.name ?? ''
+      stationDistanceDraft.value =
+        newIndex === 0 ? null : (s.distanceFromPrevKm ?? null)
+    } else {
+      const s: any = reindexed[index]
+      selectedStationIndex.value = index
+      stationNameDraft.value = s.name ?? ''
+      stationDistanceDraft.value =
+        index === 0 ? null : (s.distanceFromPrevKm ?? null)
+    }
+  } catch (err) {
+    console.error('[RoutesStopsEditorTab] handleDeleteStation error:', err)
+  }
+}
+
+/** 순서 변경 (위/아래 이동) */
 const moveStation = async (fromIndex: number, toIndex: number) => {
   if (!selectedRoute.value) return
 
-  const baseRaw = (selectedRoute.value.stations ?? []) as any
+  const baseRaw = (selectedRoute.value as any).stations ?? []
   let base: any[]
 
   if (Array.isArray(baseRaw)) {
@@ -516,139 +476,49 @@ const moveStation = async (fromIndex: number, toIndex: number) => {
   const [moved] = sorted.splice(fromIndex, 1)
   sorted.splice(toIndex, 0, moved)
 
-  // order 재부여
   const reindexed = sorted.map((s, idx) => ({
     ...s,
     order: idx + 1,
   }))
 
   try {
-    await updateRoute(selectedRoute.value.id, {
+    await updateRoute((selectedRoute.value as any).id, {
       stations: reindexed,
     })
+
+    if (selectedStationIndex.value != null) {
+      if (selectedStationIndex.value === fromIndex) {
+        selectedStationIndex.value = toIndex
+      } else if (
+        selectedStationIndex.value > fromIndex &&
+        selectedStationIndex.value <= toIndex
+      ) {
+        selectedStationIndex.value -= 1
+      } else if (
+        selectedStationIndex.value < fromIndex &&
+        selectedStationIndex.value >= toIndex
+      ) {
+        selectedStationIndex.value += 1
+      }
+    }
   } catch (err) {
     console.error('[RoutesStopsEditorTab] moveStation error:', err)
   }
 }
 
-/**
- * 앞 정류장까지 거리 변경
- * - index는 화면상 인덱스 (정렬 기준)
- * - 첫 번째 정류장(index 0)은 거리 입력을 받지 않는다.
- */
-const onDistanceChange = async (index: number, event: Event) => {
+/** 선택된 정류장 이름·거리 저장 */
+const handleSaveStation = async () => {
   if (!selectedRoute.value) return
-  if (index === 0) return
+  if (selectedStationIndex.value == null) return
 
-  const input = event.target as HTMLInputElement
-  const rawValue = input.value
-
-  if (rawValue === '') {
-    // 빈 값이면 비움
-    input.value = ''
-  }
-
-  let nextValue = Number.parseFloat(rawValue)
-  if (Number.isNaN(nextValue)) {
-    // 잘못된 값이면 기존 값으로 되돌림
-    const current = stationItems.value[index]
-    input.value =
-      current && current.distanceFromPrevKm != null
-        ? String(current.distanceFromPrevKm)
-        : ''
-    return
-  }
-
-  if (nextValue < 0) {
-    nextValue = 0
-  }
-
-  const baseRaw = (selectedRoute.value.stations ?? []) as any
-  let base: any[]
-
-  if (Array.isArray(baseRaw)) {
-    base = [...baseRaw]
-  } else if (typeof baseRaw === 'object' && baseRaw !== null) {
-    base = Object.values(baseRaw)
-  } else {
-    base = []
-  }
-
-  if (!base.length) return
-
-  const sorted = [...base].sort(sortByOrder)
-
-  if (index < 0 || index >= sorted.length) return
-
-  const target = sorted[index] ?? null
-  if (!target || typeof target !== 'object') return
-
-  const updated = {
-    ...target,
-    distanceFromPrevKm: nextValue,
-  }
-
-  sorted.splice(index, 1, updated)
-
-  // order 보정 (없으면 부여)
-  const reindexed = sorted.map((s, idx) => ({
-    ...s,
-    order: typeof s.order === 'number' ? s.order : idx + 1,
-  }))
+  const index = selectedStationIndex.value
+  const name = stationNameDraft.value.trim()
+  if (!name) return
 
   try {
-    await updateRoute(selectedRoute.value.id, {
-      stations: reindexed,
-    })
-  } catch (err) {
-    console.error('[RoutesStopsEditorTab] onDistanceChange error:', err)
-  }
-}
+    savingStation.value = true
 
-/**
- * 정류장 이름 인라인 수정 상태
- */
-const editingIndex = ref<number | null>(null)
-const editingNameDraft = ref('')
-const savingName = ref(false)
-
-/** 이름 수정 시작 */
-const startEditName = (index: number) => {
-  const s = stationItems.value[index]
-  if (!s) return
-  editingIndex.value = index
-  editingNameDraft.value = s.name ?? ''
-}
-
-/** 이름 수정 취소 */
-const cancelEditName = () => {
-  editingIndex.value = null
-  editingNameDraft.value = ''
-}
-
-/**
- * 정류장 이름 저장
- * - index는 화면상 인덱스(정렬 기준)
- */
-const saveStationName = async (index: number) => {
-  if (!selectedRoute.value) return
-
-  const station = stationItems.value[index]
-  if (!station) return
-
-  const name = editingNameDraft.value.trim()
-  if (!name || savingName.value) return
-
-  // 변경 없음
-  if (station.name === name) {
-    editingIndex.value = null
-    return
-  }
-
-  try {
-    savingName.value = true
-
-    const baseRaw = (selectedRoute.value.stations ?? []) as any
+    const baseRaw = (selectedRoute.value as any).stations ?? []
     let base: any[]
 
     if (Array.isArray(baseRaw)) {
@@ -665,42 +535,40 @@ const saveStationName = async (index: number) => {
 
     if (index < 0 || index >= sorted.length) return
 
-    const target = sorted[index]
-    if (!target || typeof target !== 'object') return
+    const original: any = sorted[index]
+    if (!original || typeof original !== 'object') return
+
+    let nextDistance: number | null
+    if (index === 0) {
+      nextDistance = null
+    } else if (typeof stationDistanceDraft.value === 'number') {
+      nextDistance = Math.max(0, stationDistanceDraft.value)
+    } else {
+      nextDistance = null
+    }
 
     const updated = {
-      ...target,
+      ...original,
       name,
+      distanceFromPrevKm: nextDistance,
     }
 
     sorted.splice(index, 1, updated)
 
-    // order 유지/보정
     const reindexed = sorted.map((s, idx) => ({
       ...s,
-      order: typeof s.order === 'number' ? s.order : idx + 1,
+      order: typeof (s as any).order === 'number' ? (s as any).order : idx + 1,
     }))
 
-    await updateRoute(selectedRoute.value.id, {
+    await updateRoute((selectedRoute.value as any).id, {
       stations: reindexed,
     })
-
-    editingIndex.value = null
   } catch (err) {
-    console.error('[RoutesStopsEditorTab] saveStationName error:', err)
+    console.error('[RoutesStopsEditorTab] handleSaveStation error:', err)
   } finally {
-    savingName.value = false
+    savingStation.value = false
   }
 }
-
-/** 노선이 바뀌면 이름 편집 상태 초기화 */
-watch(
-  selectedRoute,
-  () => {
-    editingIndex.value = null
-    editingNameDraft.value = ''
-  }
-)
 </script>
 
 <style scoped>
@@ -710,21 +578,18 @@ watch(
   gap: 10px;
 }
 
-/* 공통 패널 */
-
+/* 바깥 카드: 노선 목록 탭과 동일 스타일 */
 .routes-panel {
   border-radius: 10px;
   border: 1px solid rgba(148, 163, 184, 0.55);
   background: rgba(15, 23, 42, 0.96);
-  padding: 8px 10px;
+  padding: 10px 12px;
 }
-
-/* 메인 패널 */
 
 .routes-panel-main {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .routes-main-header {
@@ -746,291 +611,52 @@ watch(
   font-weight: 700;
 }
 
-.panel-desc {
-  font-size: 0.8rem;
-  opacity: 0.9;
-  line-height: 1.6;
-}
-
-/* 좌우 레이아웃 */
-
+/* 레이아웃 */
 .routes-stops-layout {
   margin-top: 6px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
-.stops-panel {
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.6);
-  background: rgba(15, 23, 42, 0.98);
-  padding: 8px 10px;
-}
-
-.stops-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.stops-panel-title {
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-/* 정류장 추가 토글 버튼 */
-
-.stops-add-toggle {
-  padding: 4px 10px;
-  font-size: 0.74rem;
-  border-radius: 999px;
-  border: 1px solid rgba(129, 140, 248, 1);
-  background: rgba(30, 64, 175, 0.9);
-  color: #e5e7eb;
-  cursor: pointer;
-  transition:
-    background 0.15s ease-out,
-    transform 0.05s ease-out,
-    opacity 0.1s ease-out;
-}
-
-.stops-add-toggle:disabled {
-  opacity: 0.5;
-  cursor: default;
-  transform: none;
-}
-
-.stops-add-toggle:not(:disabled):hover {
-  transform: translateY(-1px);
-}
-
-/* 인라인 정류장 추가 폼 */
-
-.stops-add-form {
-  margin-bottom: 6px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px dashed rgba(148, 163, 184, 0.7);
-  background: rgba(15, 23, 42, 0.98);
+.stops-main {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-
-.stops-add-label {
-  font-size: 0.78rem;
-  opacity: 0.9;
-}
-
-.stops-add-fields {
-  display: flex;
   gap: 6px;
-  align-items: center;
-}
-
-.stops-add-input {
-  flex: 1;
-  min-width: 0;
-  padding: 5px 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.8);
-  background: rgba(15, 23, 42, 0.95);
-  color: #e5e7eb;
-  font-size: 0.78rem;
-}
-
-.stops-add-input::placeholder {
-  color: rgba(148, 163, 184, 0.9);
-}
-
-.stops-add-submit {
-  padding: 4px 10px;
-  font-size: 0.74rem;
-  border-radius: 999px;
-  border: 1px solid rgba(129, 140, 248, 1);
-  background: rgba(30, 64, 175, 0.9);
-  color: #e5e7eb;
-  cursor: pointer;
-  transition:
-    background 0.15s ease-out,
-    transform 0.05s ease-out,
-    opacity 0.1s ease-out;
-}
-
-.stops-add-submit:disabled {
-  opacity: 0.5;
-  cursor: default;
-  transform: none;
-}
-
-.stops-add-submit:not(:disabled):hover {
-  transform: translateY(-1px);
 }
 
 /* 공통 텍스트 */
-
 .stops-helper-text {
   font-size: 0.78rem;
   opacity: 0.9;
   line-height: 1.5;
 }
 
-/* 왼쪽: 노선 리스트 */
-
-.routes-list {
-  list-style: none;
-  margin: 0;
-  margin-top: 4px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 260px;
-  overflow-y: auto;
-  /* 스크롤바는 숨기되, 스크롤 동작은 유지 */
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
-}
-
-.routes-list::-webkit-scrollbar {
-  display: none; /* Chrome/Safari */
-}
-
-.routes-list-item {
-  border-radius: 8px;
-  border: 1px solid rgba(30, 41, 59, 0.9);
-  background: rgba(15, 23, 42, 0.98);
-  transition:
-    border-color 0.12s ease-out,
-    background 0.12s ease-out,
-    transform 0.05s ease-out,
-    box-shadow 0.1s ease-out;
-}
-
-/* 비선택 상태에서도 글자 잘 보이도록 기본 텍스트 밝게 */
-.routes-list-button {
-  width: 100%;
-  border: none;
-  background: transparent;
-  padding: 7px 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 3px;
-  cursor: pointer;
-  text-align: left;
-  color: #e5e7eb;
-}
-
-.routes-list-item.is-active {
-  border-color: rgba(129, 140, 248, 1);
-  background: radial-gradient(
-      circle at top left,
-      rgba(56, 189, 248, 0.22),
-      rgba(15, 23, 42, 0.98)
-    );
-  transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.9);
-}
-
-/* 노선 리스트 상단/하단 레이아웃 */
-
-.routes-list-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 6px;
-}
-
-.routes-list-name-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.routes-list-index {
-  min-width: 18px;
-  font-size: 0.7rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    'Liberation Mono', 'Courier New', monospace;
-  opacity: 0.9;
-  color: #e5e7eb;
-}
-
-.routes-list-color-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(15, 23, 42, 0.9);
-}
-
-.routes-list-name {
-  font-size: 0.8rem;
-  font-weight: 600;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  color: #f9fafb;
-}
-
-.routes-list-status {
-  padding: 1px 7px;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.7);
-  font-size: 0.7rem;
-  white-space: nowrap;
-  background: rgba(15, 23, 42, 0.95);
-  color: #e5e7eb;
-}
-
-.routes-list-status[data-status='설계중'] {
-  border-color: rgba(148, 163, 184, 0.9);
-}
-
-.routes-list-status[data-status='운행중'] {
-  border-color: rgba(34, 197, 94, 0.9);
-}
-
-.routes-list-status[data-status='중단'] {
-  border-color: rgba(248, 113, 113, 0.9);
-}
-
-.routes-list-bottom {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.72rem;
-  opacity: 0.9;
-  color: #cbd5f5;
-}
-
-.routes-list-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    'Liberation Mono', 'Courier New', monospace;
-}
-
-.routes-list-dot {
-  opacity: 0.7;
-}
-
-.routes-list-transport {
-  white-space: nowrap;
-}
-
-/* 오른쪽: 선택된 노선 요약 + 정류장 테이블 */
-
+/* 선택 노선 요약 박스 */
 .stops-route-summary {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  flex-direction: column;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  background: rgba(15, 23, 42, 0.98);
 }
 
-.stops-route-main {
+.stops-route-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stops-route-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stops-route-title-row {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1043,187 +669,124 @@ watch(
   border: 1px solid rgba(15, 23, 42, 0.9);
 }
 
-.stops-route-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
 .stops-route-name {
-  font-size: 0.82rem;
+  font-size: 0.86rem;
   font-weight: 600;
 }
 
-.stops-route-meta {
-  font-size: 0.72rem;
-  opacity: 0.85;
+.stops-route-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .stops-route-count {
   font-size: 0.76rem;
   opacity: 0.9;
+  white-space: nowrap;
 }
 
-/* 정류장 테이블 */
-
-.stops-table-wrapper {
-  margin-top: 4px;
-  border-radius: 6px;
-  border: 1px solid rgba(30, 41, 59, 0.9);
-  overflow: hidden;
-  background: rgba(15, 23, 42, 0.95);
-  max-height: 260px;
-  overflow-y: auto;
+/* 정류장 카드 리스트 */
+.stops-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.stops-table {
+.stops-list-item {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 0.78rem;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(30, 41, 59, 0.9);
+  background: rgba(15, 23, 42, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease-out,
+    background 0.12s ease-out,
+    transform 0.05s ease-out,
+    box-shadow 0.1s ease-out;
+  color: #e5e7eb;
 }
 
-.stops-table thead {
+.stops-list-item:hover {
+  border-color: rgba(129, 140, 248, 0.9);
   background: rgba(15, 23, 42, 0.98);
 }
 
-.stops-table th,
-.stops-table td {
-  padding: 5px 8px;
-  text-align: left;
-  border-bottom: 1px solid rgba(30, 41, 59, 0.9);
+.stops-list-item.is-active {
+  background: radial-gradient(
+    circle at top left,
+    rgba(56, 189, 248, 0.22),
+    rgba(15, 23, 42, 0.98)
+  );
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.9);
 }
 
-.col-index {
-  width: 40px;
+/* 상단: 순번 + 이름 */
+.stops-list-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.col-distance {
-  width: 130px;
-}
-
-.col-actions {
-  width: 72px;
-}
-
-/* 행 배경 */
-
-.stops-row:nth-child(odd) {
-  background: rgba(15, 23, 42, 0.7);
-}
-
-.stops-row:nth-child(even) {
-  background: rgba(15, 23, 42, 0.5);
-}
-
-/* 이름 인라인 수정 */
-
-.name-display-wrap {
+.stops-list-top-left {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.name-text {
-  font-size: 0.78rem;
-}
-
-.name-inline-edit-btn {
-  padding: 2px 8px;
-  font-size: 0.7rem;
+.stops-index-pill {
+  min-width: 20px;
+  padding: 2px 6px;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.8);
-  background: transparent;
-  color: #e5e7eb;
-  cursor: pointer;
-  transition:
-    background 0.15s ease-out,
-    transform 0.05s ease-out,
-    opacity 0.1s ease-out;
-}
-
-.name-inline-edit-btn:hover {
-  background: rgba(30, 64, 175, 0.35);
-  transform: translateY(-1px);
-}
-
-.name-edit-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.name-edit-input {
-  width: 100%;
-  padding: 4px 6px;
-  border-radius: 4px;
-  border: 1px solid rgba(148, 163, 184, 0.9);
-  background: rgba(15, 23, 42, 0.98);
-  color: #e5e7eb;
-  font-size: 0.76rem;
-}
-
-.name-edit-input::placeholder {
-  color: rgba(148, 163, 184, 0.9);
-}
-
-.name-edit-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.name-edit-btn {
-  padding: 3px 8px;
+  background: rgba(30, 64, 175, 0.5);
+  border: 1px solid rgba(129, 140, 248, 0.9);
   font-size: 0.7rem;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.8);
-  background: transparent;
-  color: #e5e7eb;
-  cursor: pointer;
-  transition:
-    background 0.15s ease-out,
-    transform 0.05s ease-out,
-    opacity 0.1s ease-out;
+  text-align: center;
 }
 
-.name-edit-btn--primary {
-  border-color: rgba(129, 140, 248, 1);
-  background: rgba(30, 64, 175, 0.9);
+.stops-name-main {
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
-.name-edit-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-  transform: none;
-}
-
-.name-edit-btn:not(:disabled):hover {
-  transform: translateY(-1px);
-}
-
-/* 거리 입력 */
-
-.distance-first {
-  font-size: 0.76rem;
-  opacity: 0.8;
-}
-
-.distance-input-wrap {
+/* 하단: 거리/출발 칩 + 순서 버튼 */
+.stops-list-bottom {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
-.distance-input {
-  width: 100%;
-  padding: 3px 6px;
-  border-radius: 4px;
-  border: 1px solid rgba(148, 163, 184, 0.9);
+.stops-bottom-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 칩 스타일 */
+.stops-chip {
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
   background: rgba(15, 23, 42, 0.98);
-  color: #e5e7eb;
-  font-size: 0.76rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  opacity: 0.95;
+}
+
+.stops-chip--origin {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.9);
 }
 
 /* 순서 조정 버튼 */
-
 .stops-actions {
   display: inline-flex;
   gap: 4px;
@@ -1260,48 +823,193 @@ watch(
   transform: translateY(-1px);
 }
 
-/* 하단 서브 패널 */
-
-.routes-panel-sub {
+/* 버튼 줄 (새 정류장 / 삭제) */
+.stops-header-actions {
   display: flex;
-  flex-direction: column;
+  gap: 6px;
 }
 
-.sub-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+.stops-actions-row {
+  margin-top: 6px;
+}
+
+.stops-add-toggle {
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  border-radius: 999px;
+  border: 1px solid rgba(129, 140, 248, 1);
+  background: rgba(30, 64, 175, 0.9);
+  color: #e5e7eb;
+  cursor: pointer;
+  transition:
+    background 0.15s ease-out,
+    transform 0.05s ease-out,
+    opacity 0.1s ease-out;
+}
+
+.stops-add-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+.stops-add-toggle:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.stops-delete-btn {
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 113, 113, 0.9);
+  background: rgba(127, 29, 29, 0.65);
+  color: #fee2e2;
+  cursor: pointer;
+  transition:
+    background 0.15s ease-out,
+    transform 0.05s ease-out,
+    opacity 0.1s.ease-out;
+}
+
+.stops-delete-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+.stops-delete-btn:not(:disabled):hover {
+  background: rgba(185, 28, 28, 0.85);
+  transform: translateY(-1px);
+}
+
+/* 하단 정류장 상세 편집 */
+.stops-detail-body {
+  margin-top: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(15, 23, 42, 0.98);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stops-detail-empty {
+  font-size: 0.78rem;
+  opacity: 0.9;
+}
+
+.stops-detail-form {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
-.sub-card {
-  border-radius: 8px;
-  border: 1px dashed rgba(148, 163, 184, 0.7);
+.stops-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stops-detail-field {
+  flex: 1 1 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stops-detail-field-full {
+  flex-basis: 100%;
+}
+
+.stops-detail-label {
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.stops-detail-input {
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.8);
   background: rgba(15, 23, 42, 0.96);
-  padding: 8px 10px;
-  font-size: 0.78rem;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  color: #e5e7eb;
 }
 
-.sub-card-title {
-  font-size: 0.84rem;
+.stops-detail-input:focus {
+  outline: 1px solid rgba(96, 165, 250, 0.9);
+  outline-offset: 1px;
+}
+
+.stops-detail-hint {
+  margin-top: 2px;
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+.stops-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.stops-save-btn {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  border: 1px solid rgba(52, 211, 153, 0.9);
+  background: rgba(5, 150, 105, 0.6);
+  color: #ecfdf5;
+  cursor: pointer;
   font-weight: 600;
-  margin-bottom: 4px;
 }
 
-.sub-card-text {
-  font-size: 0.78rem;
-  opacity: 0.9;
-  line-height: 1.5;
+.stops-save-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.stops-save-btn:not(:disabled):hover {
+  background: rgba(5, 150, 105, 0.8);
+}
+
+/* 노선 목록 배지 스타일 재사용 */
+.routes-badge {
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  font-size: 0.7rem;
+}
+
+.routes-badge--soft {
+  background: rgba(30, 64, 175, 0.3);
+}
+
+.routes-badge--outline {
+  background: transparent;
+}
+
+.routes-status-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+}
+
+.routes-status-pill[data-status='설계중'] {
+  background: rgba(148, 163, 184, 0.3);
+}
+
+.routes-status-pill[data-status='운행중'] {
+  background: rgba(34, 197, 94, 0.25);
+}
+
+.routes-status-pill[data-status='중단'] {
+  background: rgba(248, 113, 113, 0.25);
 }
 
 /* 반응형 */
-
 @media (min-width: 1040px) {
   .routes-stops-layout {
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr);
-  }
-
-  .sub-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-direction: column;
   }
 }
 </style>
