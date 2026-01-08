@@ -868,7 +868,7 @@ const handleSaveStation = async () => {
   transition:
     background 0.15s ease-out,
     transform 0.05s ease-out,
-    opacity 0.1s.ease-out;
+    opacity 0.1s ease-out;
 }
 
 .stops-delete-btn:disabled {
