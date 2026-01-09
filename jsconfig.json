@@ -23,6 +23,6 @@
     "src/**/*.d.ts",
     "src/**/*.tsx",
     "src/**/*.vue"
-  ],
+, "PlayView.vue", "useRoutesStore.js", "useSystemLog.js", "world.js", "geoToWorld.js", "timeFormat.js", "MainCommunityPage.vue", "MainAboutPage.vue", "PanZoomSurface.vue"  ],
   "exclude": ["node_modules", "dist"]
 }

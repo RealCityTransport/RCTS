@@ -7,26 +7,10 @@
 </script>
 
 <style>
-html,
-body,
-#app {
-  margin: 0;
-  padding: 0;
+/* 필요하면 나중에 전역 스타일 여기서 시작 */
+html, body, #app {
   width: 100%;
   height: 100%;
-
-  /* 스크롤은 허용 */
-  overflow-y: auto;
-
-  /* 스크롤바만 숨김 (Firefox) */
-  scrollbar-width: none;
-}
-
-/* 스크롤바만 숨김 (Chrome, Edge, Safari 등 WebKit 계열) */
-html::-webkit-scrollbar,
-body::-webkit-scrollbar,
-#app::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+  margin: 0;
 }
 </style>

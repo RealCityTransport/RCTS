@@ -2,10 +2,13 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <base href="%BASE_URL%" />
-    <link rel="icon" href="%BASE_URL%favicon.png" />
+
+    <!-- base 태그 제거 (Vite base 설정으로 충분) -->
+    <link rel="icon" type="image/png" href="/favicon.png" />
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RCTS</title>
+
     <link
       href="https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/web/SUIT-Variable.css"
       rel="stylesheet"
@@ -17,7 +20,8 @@
         if (!redirect) return;
         sessionStorage.removeItem("rcts:redirect");
 
-        const base = document.querySelector("base")?.getAttribute("href") || "/";
+        // base 대신 location 기반으로 안전하게 처리
+        const base = import.meta.env.BASE_URL || "/";
         const baseNoTrail = base.endsWith("/") ? base.slice(0, -1) : base;
 
         const next = baseNoTrail + (redirect.startsWith("/") ? redirect : "/" + redirect);

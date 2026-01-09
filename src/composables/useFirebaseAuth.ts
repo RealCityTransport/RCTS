@@ -6,8 +6,8 @@ import {
   signOut,
   type User,
 } from 'firebase/auth'
-import { auth, googleProvider } from '@/libs/firebase'
-import { startRctsTimeTicker } from '@/services/rctsTimeTicker'
+import { auth, googleProvider } from '@/composables/firebase'
+import { startRctsTimeTicker } from '@/composables/rctsTimeTicker'
 
 const currentUser = ref<User | null>(null)
 const isAuthLoading = ref(false)

@@ -1,3 +1,4 @@
+<!-- src/views/MainView.vue -->
 <template>
   <div
     class="hub-root"
@@ -290,10 +291,8 @@ import hubImage from '@/assets/rcts-hub-main.png'
 
 /* ===========================
    모바일 전용 스타일
-   (완전 다른 허브 느낌)
 =========================== */
 @media (max-width: 767px) {
-  /* 배경은 이미지 대신 그라디언트로 */
   .hub-root {
     background-image: radial-gradient(
         circle at top,
@@ -304,12 +303,10 @@ import hubImage from '@/assets/rcts-hub-main.png'
     background-color: #000;
   }
 
-  /* 로고 표시 */
   .mobile-logo {
     display: block;
   }
 
-  /* 오버레이: 위에서 아래로 꽉 채우고 스크롤 가능 */
   .hub-overlay {
     width: 100%;
     height: 100%;
@@ -324,7 +321,6 @@ import hubImage from '@/assets/rcts-hub-main.png'
     overflow-y: auto;
   }
 
-  /* 메인: 세로로 쌓기 (Play + 나머지 메뉴 묶음) */
   .hub-main {
     display: flex;
     flex-direction: column;
@@ -342,13 +338,11 @@ import hubImage from '@/assets/rcts-hub-main.png'
     gap: 10px;
   }
 
-  /* 공통: 카드 배경 이미지/그라디언트 제거 */
   .card-image,
   .card-gradient {
     display: none;
   }
 
-  /* 카드 기본 스타일: 모바일 기준 재정의 */
   .card {
     width: 100%;
     height: auto;
@@ -386,10 +380,6 @@ import hubImage from '@/assets/rcts-hub-main.png'
     opacity: 0.8;
   }
 
-  /* ===========================
-     PRIMARY: Start Playing
-     → 가장 강조되는 큰 버튼
-  ============================ */
   .card-start {
     min-height: 82px;
     background: linear-gradient(
@@ -416,10 +406,6 @@ import hubImage from '@/assets/rcts-hub-main.png'
     filter: brightness(1.05);
   }
 
-  /* ===========================
-     SECONDARY: Wiki / Devlog / Community / About
-     → 리스트형 메뉴 버튼
-  ============================ */
   .card-wiki,
   .card-devlog,
   .card-community,
