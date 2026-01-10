@@ -10,16 +10,8 @@
           <h2 class="play-title">RCTS</h2>
         </div>
 
-        <!-- RIGHT: 표준시간(KST) + 로그인 + 모바일 햄버거 -->
+        <!-- RIGHT: 로그인 + 모바일 햄버거 -->
         <div class="play-header-right">
-          <div class="play-kst-clock" aria-label="표준시간 KST">
-            <div class="kst-date">{{ kstDate }}</div>
-            <div class="kst-time-row">
-              <span class="kst-weekday">{{ kstWeekday }}</span>
-              <span class="kst-time">{{ kstTime }}</span>
-            </div>
-          </div>
-
           <button
             type="button"
             class="play-auth-button"
@@ -35,7 +27,7 @@
           <button
             type="button"
             class="play-mobile-menu-toggle"
-            :class="{ 'is-open': isMobileMenuOpen }"
+            :class="[{ 'is-open': isMobileMenuOpen }, `menu-theme--${menuTheme}`]"
             @click="toggleMobileMenu"
             aria-label="모바일 메뉴"
           >
@@ -49,12 +41,16 @@
       <!-- 본문 -->
       <main class="play-body">
         <section class="play-layout">
-          <!-- ✅ 사이드 메뉴 영역 -->
+          <!-- ✅ 사이드 메뉴 영역 (데스크톱용) + (모바일 메뉴 패널은 Teleport로 body에 뜸) -->
           <PlaySideMenu
             class="play-sidebar"
             :active-menu="activeMenu"
             :active-global="activeGlobal"
-            :is-mobile-menu-open="false"
+            :is-mobile-menu-open="isMobileMenuOpen"
+            :kst-date="kstDate"
+            :kst-weekday="kstWeekday"
+            :kst-time="kstTime"
+            :menu-theme="menuTheme"
             @select-play="handleSelectPlayMenu"
             @select-global="handleSelectGlobalMenu"
           />
@@ -76,7 +72,6 @@
       <div class="play-bottom-notice" aria-label="운영 알림">
         <div ref="noticeMarqueeEl" class="notice-marquee">
           <div ref="noticeTrackEl" class="notice-track">
-            <!-- ✅ 내용은 여기 1번만 작성 -->
             <div ref="noticeContentEl" class="notice-content">
               <span class="notice-text">[완료] KST 표준시간</span>
               <span class="notice-text">[완료] 구글로그인</span>
@@ -89,7 +84,6 @@
               <span class="notice-text">[예정] 운영메뉴 게정에 연결하여 연동. </span>
               <span class="notice-text">[예정] 위키메뉴 게정에 연결하여 연동. </span>
             </div>
-            <!-- ✅ 두번째 내용(복제본)은 JS가 자동으로 붙임 -->
           </div>
         </div>
       </div>
@@ -150,7 +144,6 @@ const activeMenu = computed(() => {
   return playMenuKeys.includes(key) ? key : 'company'
 })
 
-// ✅ /play 본문에서 GLOBAL 컨텐츠 렌더링용
 const activeGlobal = computed(() => {
   const section = route.query.section
   const key = typeof section === 'string' ? section : ''
@@ -178,7 +171,6 @@ const currentTitle = computed(() => {
 })
 
 const handleSelectPlayMenu = async (key) => {
-  // ✅ PLAY 메뉴를 누르면 GLOBAL section은 제거 (본문이 play로 돌아옴)
   if (activeMenu.value === key && !activeGlobal.value) {
     isMobileMenuOpen.value = false
     return
@@ -193,7 +185,6 @@ const handleSelectPlayMenu = async (key) => {
 }
 
 const handleSelectGlobalMenu = async (key) => {
-  // ✅ GLOBAL 메뉴는 /play 내부에서 section으로만 교체
   if (activeGlobal.value === key) {
     isMobileMenuOpen.value = false
     return
@@ -211,14 +202,44 @@ const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value
 }
 
-/* ✅ 표준시간(KST): 컴포저블에서 가져오기 */
+/* ✅ 표준시간(KST) */
 const { kstDate, kstWeekday, kstTime } = useKstClock({
   intervalMs: 1000,
   timeZone: 'Asia/Seoul',
   locale: 'ko-KR',
 })
 
-/* ✅ 하단 알림: “내용 1번만” + 속도(px/s) 통일 + 끊김 없는 무한루프 */
+/* ✅ Depot 고정 */
+const menuTheme = computed(() => 'depot')
+
+/* ✅ 데스크톱 전환 시 “모바일 메뉴 자동 닫기” (중복/유령 패널 방지) */
+let mq = null
+const handleMqChange = (e) => {
+  if (e.matches) {
+    // (min-width: 860px) => desktop
+    isMobileMenuOpen.value = false
+  }
+}
+
+onMounted(() => {
+  if ('matchMedia' in window) {
+    mq = window.matchMedia('(min-width: 860px)')
+    // 초기 1회
+    if (mq.matches) isMobileMenuOpen.value = false
+    // 리스너
+    if ('addEventListener' in mq) mq.addEventListener('change', handleMqChange)
+    else mq.addListener(handleMqChange)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (mq) {
+    if ('removeEventListener' in mq) mq.removeEventListener('change', handleMqChange)
+    else mq.removeListener(handleMqChange)
+  }
+})
+
+/* ✅ 하단 알림 */
 const noticeMarqueeEl = ref(null)
 const noticeTrackEl = ref(null)
 const noticeContentEl = ref(null)
@@ -233,8 +254,6 @@ const ensureNoticeLoop = () => {
   const track = noticeTrackEl.value
   const content = noticeContentEl.value
   if (!track || !content) return
-
-  // 이미 복제했다면 중복 방지
   if (track.dataset.loopReady === 'true') return
 
   const clone = content.cloneNode(true)
@@ -290,7 +309,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* ✅ 하단 고정 알림 높이 (본문이 가리지 않게 padding-bottom으로 확보) */
 .play-page-root {
   width: 100%;
   min-height: 100vh;
@@ -315,7 +333,6 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
-/* 헤더: 단색 다크 */
 .play-header {
   padding: 10px 14px;
   border-radius: 14px;
@@ -358,44 +375,6 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-}
-
-.play-kst-clock {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.65);
-  background: rgba(15, 23, 42, 0.74);
-  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.35);
-}
-
-.kst-date {
-  font-size: 0.72rem;
-  color: rgba(203, 213, 225, 0.9);
-  letter-spacing: 0.02em;
-  opacity: 0.95;
-}
-
-.kst-time-row {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.kst-weekday {
-  font-size: 0.86rem;
-  font-weight: 800;
-  color: rgba(226, 232, 240, 0.96);
-}
-
-.kst-time {
-  font-size: 1.08rem;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  color: rgba(248, 250, 252, 0.98);
-  font-variant-numeric: tabular-nums;
 }
 
 .play-auth-button {
@@ -456,8 +435,8 @@ onBeforeUnmount(() => {
 
 .play-mobile-menu-toggle.is-open {
   transform: scale(1.05);
-  border-color: rgba(129, 140, 248, 1);
-  box-shadow: 0 0 18px rgba(96, 165, 250, 0.9);
+  border-color: rgba(251, 191, 36, 0.95);
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.35);
   background: rgba(15, 23, 42, 0.98);
 }
 
@@ -487,6 +466,9 @@ onBeforeUnmount(() => {
 .hamburger-line.is-open:nth-child(1) { transform: translateY(4px) rotate(42deg); }
 .hamburger-line.is-open:nth-child(2) { opacity: 0; width: 0; }
 .hamburger-line.is-open:nth-child(3) { transform: translateY(-4px) rotate(-42deg); }
+
+/* ✅ Depot 고정 감성(버튼 라인) */
+.menu-theme--depot .hamburger-line { box-shadow: 0 0 10px rgba(251, 191, 36, 0.65); }
 
 /* 본문 레이아웃 공통 */
 .play-body {
@@ -584,8 +566,6 @@ onBeforeUnmount(() => {
   font-size: 0.86rem;
   color: rgba(226, 232, 240, 0.96);
   letter-spacing: 0.02em;
-
-  /* 문구 사이 간격 */
   margin-right: 32px;
 }
 .notice-text:last-child {
@@ -613,18 +593,15 @@ onBeforeUnmount(() => {
   .play-title { font-size: 0.96rem; }
   .play-mobile-menu-toggle { display: inline-flex; }
 
-  .play-kst-clock { padding: 5px 8px; }
-  .kst-date { font-size: 0.68rem; }
-  .kst-weekday { font-size: 0.82rem; }
-  .kst-time { font-size: 1.02rem; }
-
   .play-auth-button {
     height: 32px;
     padding: 0 10px;
     font-size: 0.78rem;
   }
 
+  /* ✅ 모바일에서 데스크톱 사이드바는 숨김 (모바일 메뉴는 Teleport로 body에 뜸) */
   .play-sidebar { display: none; }
+
   .play-layout { flex-direction: column; }
   .play-main { padding: 8px 8px; }
 

@@ -98,41 +98,40 @@
 
           <div class="detail-body">
             <div v-if="activeMenu === 'account'" class="grid">
-              <!-- ✅ 프로필 영역 -->
-              <div class="card">
-                <h5 class="card-title">프로필</h5>
+              <div class="card card-wide">
+                <h5 class="card-title">계정</h5>
+
                 <div class="kv">
                   <div class="kv-row">
                     <span class="kv-key">표시 이름</span>
                     <span class="kv-val">{{ profile.name }}</span>
                   </div>
-                  <div class="kv-row">
-                    <span class="kv-key">자동 로그인</span>
-                    <span class="kv-val">구현예정</span>
-                  </div>
-                </div>
-              </div>
 
-              <!-- ✅ 연결정보 영역 (card-wide 제거: 2열로 분리, 모바일은 자동 1열) -->
-              <div class="card">
-                <h5 class="card-title">연결 정보</h5>
-                <div class="kv">
                   <div class="kv-row">
                     <span class="kv-key">로그인 상태</span>
                     <span class="kv-val">{{ loginStateLabel }}</span>
                   </div>
+
                   <div class="kv-row">
                     <span class="kv-key">이메일</span>
                     <span class="kv-val">{{ emailLabel }}</span>
                   </div>
+
                   <div class="kv-row">
                     <span class="kv-key">계정 ID</span>
                     <span class="kv-val">{{ uidLabel }}</span>
                   </div>
+
+                  <div class="kv-row">
+                    <span class="kv-key">로그인 유지</span>
+                    <span class="kv-val">{{ autoLoginLabel }}</span>
+                  </div>
+
                   <div class="kv-row">
                     <span class="kv-key">접속 시각(KST)</span>
                     <span class="kv-val">{{ connectedAtLabel }}</span>
                   </div>
+
                   <div class="kv-row">
                     <span class="kv-key">접속 중</span>
                     <span class="kv-val">{{ connectedDurationLabel }}</span>
@@ -385,7 +384,7 @@ const { nowMs } = useKstClock({
   locale: 'ko-KR',
 })
 
-/* ✅ 표시 이름은 Google 표시 이름(고정) */
+/* ✅ Auth */
 const { displayName, isLoggedIn, email, uid } = useAuth()
 
 const profile = ref({
@@ -400,17 +399,72 @@ watch(
   { immediate: true }
 )
 
-/* ✅ 연결 정보(접속 시각/접속 중) */
+/* ✅ 연결 정보(접속 시각/접속 중): 페이지 이동해도 유지, "로그아웃" 시 반드시 초기화 */
 const connectedAtMs = ref<number | null>(null)
+
+const CONNECTED_AT_PREFIX = 'rcts_connectedAtMs:'
+const getConnectedKey = (userId: string) => `${CONNECTED_AT_PREFIX}${userId}`
+
+const readConnectedAt = (userId: string) => {
+  try {
+    const raw = window.sessionStorage.getItem(getConnectedKey(userId))
+    if (!raw) return null
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : null
+  } catch {
+    return null
+  }
+}
+
+const writeConnectedAt = (userId: string, ms: number) => {
+  try {
+    window.sessionStorage.setItem(getConnectedKey(userId), String(ms))
+  } catch {
+    // ignore
+  }
+}
+
+const clearConnectedAt = (userId: string) => {
+  try {
+    window.sessionStorage.removeItem(getConnectedKey(userId))
+  } catch {
+    // ignore
+  }
+}
+
+/** ✅ 핵심: 로그아웃 시 uid가 먼저 null이 되어도 지울 수 있게 "마지막 uid"를 기억 */
+const lastUid = ref<string | null>(null)
+
+watch(
+  () => uid.value,
+  (v) => {
+    if (typeof v === 'string' && v) lastUid.value = v
+  },
+  { immediate: true }
+)
 
 watch(
   () => isLoggedIn.value,
   (logged) => {
-    if (logged) {
-      if (connectedAtMs.value == null) connectedAtMs.value = nowMs.value
-    } else {
+    // ✅ 로그아웃: 저장값 제거 + 표시값 초기화
+    if (!logged) {
+      if (lastUid.value) clearConnectedAt(lastUid.value)
       connectedAtMs.value = null
+      return
     }
+
+    // ✅ 로그인: uid 확정 후 복구/설정
+    const userId = uid.value
+    if (!userId) return
+
+    const stored = readConnectedAt(userId)
+    if (stored != null) {
+      connectedAtMs.value = stored
+      return
+    }
+
+    connectedAtMs.value = nowMs.value
+    writeConnectedAt(userId, nowMs.value)
   },
   { immediate: true }
 )
@@ -418,6 +472,11 @@ watch(
 const loginStateLabel = computed(() => (isLoggedIn.value ? '로그인됨' : '게스트'))
 const emailLabel = computed(() => (email.value ? email.value : '-'))
 const uidLabel = computed(() => (uid.value ? uid.value : '-'))
+
+const autoLoginLabel = computed(() => {
+  if (!isLoggedIn.value) return '-'
+  return '브라우저 유지(기본)'
+})
 
 const formatKstDateTime = (ms: number) => {
   const d = new Date(ms)
