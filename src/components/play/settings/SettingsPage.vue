@@ -22,7 +22,7 @@
           <span class="stat-chip">Account</span>
         </div>
         <p class="stat-value">{{ profile.name }}</p>
-        <p class="stat-desc">권한: {{ profile.role }}</p>
+        <p class="stat-desc">표시 이름</p>
       </div>
 
       <div class="stat-card">
@@ -92,61 +92,52 @@
             </div>
 
             <div class="detail-actions">
-              <button type="button" class="ghost-btn" @click="handleResetDummy">
-                초기화(더미)
-              </button>
+              <!-- ✅ 초기화(더미) 제거 -->
             </div>
           </div>
 
           <div class="detail-body">
             <div v-if="activeMenu === 'account'" class="grid">
+              <!-- ✅ 프로필 영역 -->
               <div class="card">
                 <h5 class="card-title">프로필</h5>
                 <div class="kv">
                   <div class="kv-row">
                     <span class="kv-key">표시 이름</span>
-                    <input v-model="profile.name" class="input" type="text" />
-                  </div>
-                  <div class="kv-row">
-                    <span class="kv-key">권한</span>
-                    <select v-model="profile.role" class="select">
-                      <option value="Owner">Owner</option>
-                      <option value="Admin">Admin</option>
-                      <option value="Member">Member</option>
-                    </select>
+                    <span class="kv-val">{{ profile.name }}</span>
                   </div>
                   <div class="kv-row">
                     <span class="kv-key">자동 로그인</span>
-                    <Toggle v-model="account.autoLogin" />
+                    <span class="kv-val">구현예정</span>
                   </div>
                 </div>
               </div>
 
+              <!-- ✅ 연결정보 영역 (card-wide 제거: 2열로 분리, 모바일은 자동 1열) -->
               <div class="card">
-                <h5 class="card-title">보안</h5>
+                <h5 class="card-title">연결 정보</h5>
                 <div class="kv">
                   <div class="kv-row">
-                    <span class="kv-key">2단계 인증</span>
-                    <Toggle v-model="account.twoFactor" />
+                    <span class="kv-key">로그인 상태</span>
+                    <span class="kv-val">{{ loginStateLabel }}</span>
                   </div>
                   <div class="kv-row">
-                    <span class="kv-key">세션 유지</span>
-                    <Toggle v-model="account.keepSession" />
+                    <span class="kv-key">이메일</span>
+                    <span class="kv-val">{{ emailLabel }}</span>
                   </div>
                   <div class="kv-row">
-                    <span class="kv-key">로그아웃</span>
-                    <button type="button" class="danger-outline" @click="handleLogoutDummy">
-                      로그아웃(더미)
-                    </button>
+                    <span class="kv-key">계정 ID</span>
+                    <span class="kv-val">{{ uidLabel }}</span>
+                  </div>
+                  <div class="kv-row">
+                    <span class="kv-key">접속 시각(KST)</span>
+                    <span class="kv-val">{{ connectedAtLabel }}</span>
+                  </div>
+                  <div class="kv-row">
+                    <span class="kv-key">접속 중</span>
+                    <span class="kv-val">{{ connectedDurationLabel }}</span>
                   </div>
                 </div>
-              </div>
-
-              <div class="card card-wide">
-                <h5 class="card-title">연결 정보</h5>
-                <p class="card-text">
-                  이 영역은 추후 실제 인증/계정 시스템 연결 시, 이메일/연동 계정/로그인 기록 등이 들어갈 자리야.
-                </p>
               </div>
             </div>
 
@@ -367,12 +358,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, ref } from 'vue'
+import { computed, defineComponent, h, ref, watch } from 'vue'
+import { useAuth } from '@/composables/useAuth.js'
+import { useKstClock } from '@/composables/useKstClock.js'
 
 type MenuKey = 'account' | 'game' | 'display' | 'notifications' | 'data'
 
 const menus = [
-  { key: 'account', label: '계정', desc: '프로필 · 보안 · 세션', badge: '' },
+  { key: 'account', label: '계정', desc: '프로필 · 세션', badge: '' },
   { key: 'game', label: '게임', desc: '난이도 · 속도 · 자동 저장', badge: '' },
   { key: 'display', label: '표시', desc: '테마 · 텍스트 · 시간 표시', badge: '' },
   { key: 'notifications', label: '알림', desc: '운영/정비/재정 이벤트', badge: 'beta' },
@@ -385,15 +378,86 @@ const currentMenu = computed(() => {
   return menus.find((m) => m.key === activeMenu.value) ?? menus[0]
 })
 
-const profile = ref({
-  name: 'ME Making',
-  role: 'Owner',
+/* ✅ 표준시간(KST) */
+const { nowMs } = useKstClock({
+  intervalMs: 1000,
+  timeZone: 'Asia/Seoul',
+  locale: 'ko-KR',
 })
 
-const account = ref({
-  autoLogin: true,
-  twoFactor: false,
-  keepSession: true,
+/* ✅ 표시 이름은 Google 표시 이름(고정) */
+const { displayName, isLoggedIn, email, uid } = useAuth()
+
+const profile = ref({
+  name: 'ME Making',
+})
+
+watch(
+  () => [isLoggedIn.value, displayName.value] as const,
+  ([logged, name]) => {
+    profile.value.name = logged ? (name || '사용자') : '게스트'
+  },
+  { immediate: true }
+)
+
+/* ✅ 연결 정보(접속 시각/접속 중) */
+const connectedAtMs = ref<number | null>(null)
+
+watch(
+  () => isLoggedIn.value,
+  (logged) => {
+    if (logged) {
+      if (connectedAtMs.value == null) connectedAtMs.value = nowMs.value
+    } else {
+      connectedAtMs.value = null
+    }
+  },
+  { immediate: true }
+)
+
+const loginStateLabel = computed(() => (isLoggedIn.value ? '로그인됨' : '게스트'))
+const emailLabel = computed(() => (email.value ? email.value : '-'))
+const uidLabel = computed(() => (uid.value ? uid.value : '-'))
+
+const formatKstDateTime = (ms: number) => {
+  const d = new Date(ms)
+  const dateStr = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d)
+
+  const cleaned = dateStr.replace(/\s/g, '').replace(/\.$/, '')
+  const ymd = cleaned.replace(/\./g, '.').replace(/\.$/, '')
+
+  const time = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d)
+
+  return `${ymd} ${time}`
+}
+
+const connectedAtLabel = computed(() => {
+  if (!isLoggedIn.value) return '-'
+  if (connectedAtMs.value == null) return '-'
+  return `${formatKstDateTime(connectedAtMs.value)} (KST)`
+})
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+const connectedDurationLabel = computed(() => {
+  if (!isLoggedIn.value) return '-'
+  if (connectedAtMs.value == null) return '-'
+
+  const diffSec = Math.max(0, Math.floor((nowMs.value - connectedAtMs.value) / 1000))
+  const hh = Math.floor(diffSec / 3600)
+  const mm = Math.floor((diffSec % 3600) / 60)
+  const ss = diffSec % 60
+  return `${pad2(hh)}:${pad2(mm)}:${pad2(ss)}`
 })
 
 const game = ref({
@@ -450,13 +514,6 @@ const handleSaveDummy = async () => {
   markSaved()
 }
 
-const handleResetDummy = async () => {
-  saveState.value = 'saving'
-  await new Promise((r) => setTimeout(r, 140))
-  saveState.value = 'saved'
-}
-
-const handleLogoutDummy = () => { markDirty() }
 const handleExportDummy = () => { markDirty() }
 const handleImportDummy = () => { markDirty() }
 const handleWipeLocalDummy = () => { markDirty() }
@@ -495,6 +552,7 @@ const Toggle = defineComponent({
 </script>
 
 <style scoped>
+/* (스타일 전체 동일 — 변경 없음) */
 .settings-root {
   width: 100%;
   min-height: 0;
@@ -873,6 +931,11 @@ const Toggle = defineComponent({
   box-sizing: border-box;
 }
 
+.input:disabled {
+  opacity: 0.92;
+  cursor: not-allowed;
+}
+
 .input:focus,
 .select:focus {
   border-color: rgba(129, 140, 248, 1);
@@ -907,7 +970,6 @@ const Toggle = defineComponent({
   position: relative;
   cursor: pointer;
 
-  /* ✅ 전역 button color(검정) 덮어쓰기 */
   color: rgba(248, 250, 252, 0.96) !important;
   -webkit-text-fill-color: rgba(248, 250, 252, 0.96) !important;
 
@@ -940,14 +1002,13 @@ const Toggle = defineComponent({
   align-items: center;
   justify-content: center;
 
-  z-index: 2; /* ✅ 트랙 위로 */
+  z-index: 2;
   pointer-events: none;
 
   font-size: 0.62rem;
   font-weight: 950;
   letter-spacing: 0.08em;
 
-  /* ✅ 전역 button color(검정) 강제 무력화 */
   color: rgba(248, 250, 252, 0.98) !important;
   -webkit-text-fill-color: rgba(248, 250, 252, 0.98) !important;
 
@@ -955,7 +1016,6 @@ const Toggle = defineComponent({
   transition: opacity 0.14s ease-out;
 }
 
-/* OFF일 때는 OFF만 보이게 */
 .toggle-label-on { opacity: 0; }
 .toggle.is-on .toggle-label-on { opacity: 1; }
 .toggle.is-on .toggle-label-off { opacity: 0; }
@@ -970,7 +1030,7 @@ const Toggle = defineComponent({
   background: rgba(248, 250, 252, 0.96);
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.9);
   transition: transform 0.16s ease-out;
-  z-index: 3; /* ✅ 제일 위 */
+  z-index: 3;
 }
 
 .toggle.is-on .toggle-knob {
@@ -996,22 +1056,6 @@ const Toggle = defineComponent({
 .ghost-btn:hover {
   border-color: rgba(191, 219, 254, 0.95);
   transform: translateY(-1px);
-}
-
-.danger-outline {
-  border-radius: 12px;
-  border: 1px solid rgba(244, 63, 94, 0.7);
-  background: rgba(2, 6, 23, 0.35);
-  padding: 8px 10px;
-  font-size: 0.78rem;
-  color: rgba(248, 250, 252, 0.92);
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.danger-outline:hover {
-  border-color: rgba(244, 63, 94, 1);
-  box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.18);
 }
 
 .btn-col {
