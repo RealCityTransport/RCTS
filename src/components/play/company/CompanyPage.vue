@@ -6,7 +6,7 @@
       <div class="company-header-main">
         <h3 class="company-title">회사 관리</h3>
         <p class="company-sub">
-          현재는 UI 골격만 적용된 상태입니다. (로직/데이터/연동 없음)
+          회사 정보는 계정 기준으로 안전하게 저장되며, 이후 모든 게임 진행의 기준이 됩니다.
         </p>
       </div>
     </header>
@@ -16,7 +16,7 @@
       <header class="section-header">
         <h4 class="section-title">회사 정보</h4>
         <p class="section-desc">
-          회사 프로필/기본 설정 영역. 추후 계정 기준으로 저장되는 회사 데이터를 연결합니다.
+          회사의 기본 프로필과 향후 확장될 자회사 구조를 관리하는 영역입니다.
         </p>
       </header>
 
@@ -26,12 +26,11 @@
     </section>
 
     <!-- 연구 영역 -->
-    <section class="company-section">
+    <section v-if="hasCompany" class="company-section">
       <header class="section-header">
         <h4 class="section-title">회사 연구</h4>
         <p class="section-desc">
           회사 단위 연구 트리 / 진행 슬롯 / 해금 효과 요약을 구성하는 영역입니다.
-          (현재는 레이아웃 고정용 더미)
         </p>
       </header>
 
@@ -39,12 +38,27 @@
         <CompanyResearchPanel />
       </div>
     </section>
+
+    <!-- 회사 미등록 상태 -->
+    <section v-else class="company-section">
+      <header class="section-header">
+        <h4 class="section-title">회사 연구</h4>
+        <p class="section-desc">
+          회사를 먼저 등록하면 연구 시스템을 이용할 수 있어요.
+        </p>
+      </header>
+    </section>
   </div>
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import CompanyProfilePanel from './CompanyProfilePanel.vue'
 import CompanyResearchPanel from './CompanyResearchPanel.vue'
+import { useCompany } from '@/composables/useCompany.js'
+
+const { hasCompany: _hasCompany } = useCompany()
+const hasCompany = computed(() => _hasCompany.value)
 </script>
 
 <style scoped>
@@ -55,7 +69,6 @@ import CompanyResearchPanel from './CompanyResearchPanel.vue'
 }
 
 /* 상단 헤더 */
-
 .company-header {
   display: flex;
   flex-direction: column;
@@ -86,13 +99,11 @@ import CompanyResearchPanel from './CompanyResearchPanel.vue'
 }
 
 /* 공통 섹션 */
-
 .company-section {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 12px 12px;
-
   border-radius: 14px;
   border: 1px solid rgba(148, 163, 184, 0.55);
   background: radial-gradient(

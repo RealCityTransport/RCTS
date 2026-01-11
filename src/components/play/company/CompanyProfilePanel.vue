@@ -14,6 +14,7 @@
             type="text"
             class="form-input"
             placeholder="예: 스카이 교통"
+            :disabled="isSaving"
           />
         </div>
 
@@ -21,7 +22,7 @@
           <button
             type="submit"
             class="primary-button"
-            :disabled="!canSubmit || isSaving"
+            :disabled="!canSubmit || isSaving || !isLoggedIn"
           >
             <span v-if="isSaving">저장 중...</span>
             <span v-else>회사 등록</span>
@@ -37,53 +38,76 @@
           </button>
         </div>
 
-        <p class="hint-text">
-          지금은 UI 시연 단계라서 실제 저장은 하지 않아. (나중에 로그인/계정 저장 붙이면 연결할 예정)
+        <p class="hint-text" v-if="!isLoggedIn">
+          구글 로그인 후에 회사를 등록할 수 있어요.
         </p>
       </form>
     </div>
 
-    <!-- 회사가 있는 경우: 정보 표시 -->
+    <!-- 회사가 있는 경우 -->
     <div v-else>
       <h3 class="company-title">회사 정보</h3>
 
-      <div class="company-summary">
-        <div class="summary-row">
-          <span class="summary-label">회사 이름</span>
+      <div class="company-summary company-summary--plain">
+        <div class="summary-row summary-row--plain">
+          <span class="summary-label">현재 회사명</span>
           <span class="summary-value">{{ company.name }}</span>
         </div>
 
-        <div class="summary-row">
-          <span class="summary-label">상태</span>
-          <span class="summary-value">UI 더미 (저장 미연동)</span>
+        <div class="summary-row summary-row--plain">
+          <span class="summary-label">자회사</span>
+          <span class="summary-value">구현 예정</span>
         </div>
       </div>
 
-      <div class="form-actions">
-        <button
-          type="button"
-          class="danger-button"
-          :disabled="isSaving"
-          @click="onDeleteCompany"
-        >
-          회사 삭제
-        </button>
-      </div>
+      <!-- 이름 수정 -->
+      <form class="company-form" @submit.prevent="onSubmitRename">
+        <div class="form-row">
+          <label class="form-label" for="company-rename">회사 이름 변경</label>
+          <input
+            id="company-rename"
+            v-model="rename.name"
+            type="text"
+            class="form-input"
+            placeholder="새 회사 이름 입력"
+            :disabled="isSaving"
+          />
+        </div>
+
+        <div class="form-actions">
+          <button
+            type="submit"
+            class="primary-button"
+            :disabled="!canRename || isSaving"
+          >
+            <span v-if="isSaving">저장 중...</span>
+            <span v-else>이름 수정</span>
+          </button>
+
+          <button
+            type="button"
+            class="ghost-button"
+            :disabled="isSaving"
+            @click="onResetRename"
+          >
+            되돌리기
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 </template>
 
 <script setup>
-import { reactive, computed, ref } from 'vue'
+import { reactive, computed, watch } from 'vue'
+import { useCompany } from '@/composables/useCompany.js'
 
-/* ---------------------------
-   UI 더미 상태 (저장/계정 연동 X)
---------------------------- */
-const company = ref(null)
+const { company, loading, isLoggedIn, createCompany, updateCompanyName } =
+  useCompany()
 
-/* ---------------------------
-   랜덤 회사 이름 생성 (UI 연출용)
---------------------------- */
+const isSaving = computed(() => loading.value)
+
+/* 랜덤 회사 이름 */
 const companyPrefixes = [
   '미래',
   '한빛',
@@ -115,18 +139,12 @@ function randomCompanyName() {
   return `${pick(companyPrefixes)} ${pick(companySuffixes)}`
 }
 
-/* ---------------------------
-   폼 초기값
---------------------------- */
+/* 등록 폼 */
 const form = reactive({
   name: randomCompanyName(),
 })
 
-const isSaving = ref(false)
-
-const canSubmit = computed(() => {
-  return form.name.trim().length > 0
-})
+const canSubmit = computed(() => form.name.trim().length > 0)
 
 const onRandomizeName = () => {
   if (isSaving.value) return
@@ -134,31 +152,39 @@ const onRandomizeName = () => {
 }
 
 const onSubmitCreate = async () => {
+  if (!isLoggedIn.value) return
   if (!canSubmit.value || isSaving.value) return
-  isSaving.value = true
-
-  try {
-    // “저장되는 척” 연출
-    await new Promise((r) => setTimeout(r, 350))
-    company.value = {
-      name: form.name.trim(),
-    }
-  } finally {
-    isSaving.value = false
-  }
+  await createCompany(form.name)
 }
 
-const onDeleteCompany = async () => {
-  if (isSaving.value) return
-  isSaving.value = true
+/* 이름 수정 폼 */
+const rename = reactive({
+  name: '',
+})
 
-  try {
-    await new Promise((r) => setTimeout(r, 250))
-    company.value = null
-    form.name = randomCompanyName()
-  } finally {
-    isSaving.value = false
-  }
+watch(
+  company,
+  (c) => {
+    rename.name = c?.name ?? ''
+  },
+  { immediate: true }
+)
+
+const canRename = computed(() => {
+  const next = rename.name.trim()
+  const cur = company.value?.name ?? ''
+  return next && next !== cur
+})
+
+const onSubmitRename = async () => {
+  if (!company.value) return
+  if (!canRename.value || isSaving.value) return
+  await updateCompanyName(rename.name)
+}
+
+const onResetRename = () => {
+  if (isSaving.value) return
+  rename.name = company.value?.name ?? ''
 }
 </script>
 
@@ -180,7 +206,6 @@ const onDeleteCompany = async () => {
 }
 
 /* 폼 */
-
 .company-form {
   margin-top: 4px;
   display: flex;
@@ -224,7 +249,6 @@ const onDeleteCompany = async () => {
 }
 
 /* 버튼 */
-
 .form-actions {
   margin-top: 2px;
   display: flex;
@@ -233,7 +257,6 @@ const onDeleteCompany = async () => {
 }
 
 .primary-button,
-.danger-button,
 .ghost-button {
   padding: 7px 12px;
   border-radius: 999px;
@@ -282,21 +305,7 @@ const onDeleteCompany = async () => {
   transform: translateY(1px);
 }
 
-.danger-button {
-  border-color: rgba(248, 113, 113, 0.85);
-  background: rgba(248, 113, 113, 0.16);
-}
-
-.danger-button:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.24);
-}
-
-.danger-button:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
 /* 요약 */
-
 .company-summary {
   margin: 6px 0 2px;
   display: flex;
@@ -327,8 +336,20 @@ const onDeleteCompany = async () => {
   font-weight: 800;
 }
 
-/* 힌트 */
+/* ✅ 테두리 상자 제거(요약 영역) */
+.company-summary--plain {
+  margin: 6px 0 2px;
+  gap: 6px;
+}
 
+.summary-row--plain {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* 힌트 */
 .hint-text {
   margin: 0;
   font-size: 0.74rem;
