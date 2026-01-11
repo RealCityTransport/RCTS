@@ -1,1021 +1,817 @@
-<!-- src/components/devlog/devlogpage.vue -->
+<!-- src/components/devlog/DevlogPage.vue -->
 <template>
-  <section class="devlog-shell">
-    <!-- Global Topbar -->
-    <header class="topbar">
-      <div class="topbar-inner">
-        <div class="brand">
-          <div class="brand-mark">R</div>
-          <div class="brand-text">
-            <div class="brand-kicker">RCTS</div>
-            <div class="brand-title">Devlog</div>
-          </div>
-        </div>
+  <section class="devlog-root">
+    <header class="devlog-head">
+      <div class="devlog-head-left">
+        <div class="devlog-title">개발로그</div>
+        <div class="devlog-sub">예정/진행은 드래그로 순서 조정 가능</div>
+      </div>
 
-        <div class="search">
-          <div class="search-wrap">
-            <span class="search-icon" aria-hidden="true">⌕</span>
-            <input
-              class="search-input"
-              type="text"
-              placeholder="검색 (준비 중)"
-              disabled
-            />
-          </div>
-          <button class="search-btn" type="button" disabled>검색</button>
+      <div class="devlog-head-right">
+        <div class="devlog-auth">
+          <span class="auth-state" :class="{ 'is-on': isLoggedIn }">
+            {{ isLoggedIn ? '로그인됨' : '로그아웃됨' }}
+          </span>
+          <span v-if="isLoggedIn" class="auth-mail">{{ userEmail }}</span>
         </div>
-
-        <nav class="top-actions" aria-label="개발로그 상단 액션">
-          <router-link to="/" class="btn btn-ghost">← Home</router-link>
-          <button class="btn btn-primary" type="button" disabled>새 글</button>
-        </nav>
       </div>
     </header>
 
-    <!-- Layout -->
-    <div class="layout">
-      <div class="layout-inner">
-        <!-- Sidebar -->
-        <aside class="sidebar" aria-label="개발로그 내비게이션">
-          <div class="side-card">
-            <div class="side-title">Devlog</div>
-            <p class="side-sub">
-              개발 기록/업데이트 노트 영역.
-              <span class="side-sub-weak">(추후 목록/필터/태그/검색 확장)</span>
-            </p>
-          </div>
+    <!-- ✅ 관리자 등록 영역 (evepoi86@gmail.com 만) -->
+    <section v-if="isAdmin" class="compose">
+      <div class="compose-title">등록</div>
 
-          <div class="side-section">
-            <div class="side-section-title">필터</div>
-            <div class="filter-row">
-              <button class="filter-pill is-active" type="button" disabled>전체</button>
-              <button class="filter-pill" type="button" disabled>업데이트</button>
-              <button class="filter-pill" type="button" disabled>UI</button>
-              <button class="filter-pill" type="button" disabled>시스템</button>
-              <button class="filter-pill" type="button" disabled>배포</button>
-            </div>
-          </div>
+      <div class="compose-grid">
+        <label class="field">
+          <div class="label">제목</div>
+          <input v-model="newTitle" class="input" type="text" placeholder="한 줄 제목" />
+        </label>
 
-          <div class="side-section">
-            <div class="side-section-title">아카이브</div>
-            <div class="side-links">
-              <a class="side-link is-active" href="#" @click.prevent>
-                <span class="dot" aria-hidden="true"></span>
-                최신
-              </a>
-              <a class="side-link" href="#" @click.prevent>
-                <span class="dot" aria-hidden="true"></span>
-                2026
-              </a>
-              <a class="side-link" href="#" @click.prevent>
-                <span class="dot" aria-hidden="true"></span>
-                2025
-              </a>
-              <a class="side-link" href="#" @click.prevent>
-                <span class="dot" aria-hidden="true"></span>
-                2024
-              </a>
-            </div>
-          </div>
+        <label class="field">
+          <div class="label">상세</div>
+          <textarea
+            v-model="newDetail"
+            class="textarea"
+            rows="3"
+            placeholder="세부 내용 (짧게)"
+          ></textarea>
+        </label>
+      </div>
 
-          <div class="side-footer">
-            <div class="side-footer-row">
-              <span class="side-footer-label">상태</span>
-              <span class="side-footer-value">초기 구성</span>
-            </div>
-            <div class="side-footer-row">
-              <span class="side-footer-label">글</span>
-              <span class="side-footer-value">0</span>
-            </div>
-            <div class="side-footer-row">
-              <span class="side-footer-label">태그</span>
-              <span class="side-footer-value">0</span>
-            </div>
-          </div>
-        </aside>
+      <div class="compose-actions">
+        <button class="btn btn-primary" type="button" @click="handleAdd" :disabled="adding">
+          {{ adding ? '등록 중...' : '등록 (예정으로)' }}
+        </button>
+        <div v-if="composeError" class="hint is-error">{{ composeError }}</div>
+        <div v-else class="hint">등록은 항상 “예정”으로 들어가요.</div>
+      </div>
+    </section>
 
-        <!-- Main -->
-        <main class="main">
-          <!-- Page header -->
-          <div class="pagehead">
-            <div class="crumbs">
-              <span class="crumb">RCTS</span>
-              <span class="sep">/</span>
-              <span class="crumb is-current">Devlog</span>
-            </div>
+    <!-- Tabs -->
+    <nav class="tabs" aria-label="개발로그 탭">
+      <button
+        type="button"
+        class="tab"
+        :class="{ 'is-active': activeTab === 'plan' }"
+        @click="activeTab = 'plan'"
+      >
+        예정 <span class="count">{{ planList.length }}</span>
+      </button>
+      <button
+        type="button"
+        class="tab"
+        :class="{ 'is-active': activeTab === 'doing' }"
+        @click="activeTab = 'doing'"
+      >
+        진행 <span class="count">{{ doingList.length }}</span>
+      </button>
+      <button
+        type="button"
+        class="tab"
+        :class="{ 'is-active': activeTab === 'done' }"
+        @click="activeTab = 'done'"
+      >
+        완료 <span class="count">{{ doneList.length }}</span>
+      </button>
+    </nav>
 
-            <div class="page-title-row">
-              <h1 class="page-title">개발로그</h1>
-              <div class="page-meta">
-                <span class="meta-item">정렬: 최신순</span>
-                <span class="meta-sep">·</span>
-                <span class="meta-item">표시: 카드</span>
+    <!-- Lists -->
+    <main class="lists">
+      <!-- PLAN -->
+      <section v-if="activeTab === 'plan'" class="panel">
+        <div class="panel-head">
+          <div class="panel-title">예정</div>
+          <div class="panel-sub">드래그로 우선순위 정렬 (알림에도 반영)</div>
+        </div>
+
+        <div class="list">
+          <article
+            v-for="it in planList"
+            :key="it.id"
+            class="card status--plan"
+            :class="{ 'is-dragging': dragState.draggingId === it.id }"
+            :draggable="isAdmin"
+            @dragstart="onDragStart($event, it, 'plan')"
+            @dragover.prevent="onDragOver($event, it, 'plan')"
+            @drop.prevent="onDrop($event, it, 'plan')"
+            @dragend="onDragEnd"
+          >
+            <div class="card-row">
+              <div class="card-left">
+                <span v-if="isAdmin" class="drag-handle" title="드래그로 순서 변경">⋮⋮</span>
+                <div class="card-title">{{ it.title }}</div>
+              </div>
+
+              <div class="card-actions">
+                <button v-if="isAdmin" class="mini" type="button" @click="openEdit(it)">
+                  수정
+                </button>
+                <button v-if="isAdmin" class="mini" type="button" @click="moveToDoing(it.id)">
+                  → 진행
+                </button>
+                <button
+                  v-if="isAdmin"
+                  class="mini is-danger"
+                  type="button"
+                  @click="deletePlan(it)"
+                >
+                  삭제
+                </button>
               </div>
             </div>
 
-            <div class="notice">
-              <span class="notice-dot" aria-hidden="true"></span>
-              <span class="notice-text">
-                지금은 “운영형 레이아웃” 먼저 고정. 이후 실제 로그 데이터 + 태그/검색/페이지네이션이 붙는 구조야.
-              </span>
+            <div v-if="it.detail" class="card-detail">{{ it.detail }}</div>
+
+            <div v-if="dragState.overId === it.id && dragState.listKey === 'plan'" class="drop-hint">
+              여기로 이동
             </div>
-          </div>
+          </article>
 
-          <!-- Summary cards -->
-          <section class="stats" aria-label="개발로그 요약">
-            <article class="stat-card">
-              <div class="stat-label">이번 주</div>
-              <div class="stat-value">0</div>
-              <div class="stat-sub">업데이트</div>
-            </article>
+          <div v-if="!planList.length" class="empty">예정 항목이 없어요.</div>
+        </div>
+      </section>
 
-            <article class="stat-card">
-              <div class="stat-label">릴리즈</div>
-              <div class="stat-value">0</div>
-              <div class="stat-sub">태그/배포</div>
-            </article>
+      <!-- DOING -->
+      <section v-if="activeTab === 'doing'" class="panel">
+        <div class="panel-head">
+          <div class="panel-title">진행</div>
+          <div class="panel-sub">드래그로 진행 순서 정렬 (알림에도 반영)</div>
+        </div>
 
-            <article class="stat-card">
-              <div class="stat-label">이슈</div>
-              <div class="stat-value">0</div>
-              <div class="stat-sub">진행/해결</div>
-            </article>
-
-            <article class="stat-card">
-              <div class="stat-label">작업</div>
-              <div class="stat-value">0</div>
-              <div class="stat-sub">UI/시스템</div>
-            </article>
-          </section>
-
-          <!-- Feed -->
-          <section class="feed" aria-label="개발로그 피드">
-            <article class="post">
-              <div class="post-head">
-                <div class="post-title-row">
-                  <h2 class="post-title">초기 세팅</h2>
-                  <span class="status-badge">Draft</span>
-                </div>
-                <div class="post-meta">
-                  <span class="meta-chip">2026-01-XX</span>
-                  <span class="meta-dot">·</span>
-                  <span class="meta-chip">Setup</span>
-                  <span class="meta-dot">·</span>
-                  <span class="meta-chip">Vite / Vue3</span>
-                </div>
+        <div class="list">
+          <article
+            v-for="it in doingList"
+            :key="it.id"
+            class="card status--doing"
+            :class="{ 'is-dragging': dragState.draggingId === it.id }"
+            :draggable="isAdmin"
+            @dragstart="onDragStart($event, it, 'doing')"
+            @dragover.prevent="onDragOver($event, it, 'doing')"
+            @drop.prevent="onDrop($event, it, 'doing')"
+            @dragend="onDragEnd"
+          >
+            <div class="card-row">
+              <div class="card-left">
+                <span v-if="isAdmin" class="drag-handle" title="드래그로 순서 변경">⋮⋮</span>
+                <div class="card-title">{{ it.title }}</div>
               </div>
 
-              <p class="post-text">
-                Vite + Vue3 베이스를 새로 만들고, 구조를 components 기반으로 통일하기 시작.
-                <span class="weak">(이 카드들은 샘플. 나중에 실제 로그 데이터로 교체)</span>
-              </p>
-
-              <div class="post-actions">
-                <button class="mini-btn" type="button" disabled>자세히</button>
-                <span class="tag">Update</span>
-                <span class="tag">Structure</span>
-              </div>
-            </article>
-
-            <article class="post">
-              <div class="post-head">
-                <div class="post-title-row">
-                  <h2 class="post-title">레이아웃 통일</h2>
-                  <span class="status-badge is-soft">Planned</span>
-                </div>
-                <div class="post-meta">
-                  <span class="meta-chip">2026-01-XX</span>
-                  <span class="meta-dot">·</span>
-                  <span class="meta-chip">UI</span>
-                  <span class="meta-dot">·</span>
-                  <span class="meta-chip">Global Pages</span>
-                </div>
-              </div>
-
-              <ul class="post-list">
-                <li>About / Community / Devlog 페이지 레이아웃 톤 통일</li>
-                <li>메인 허브(MainView)에서 카드 단위로 진입</li>
-                <li>추후 Wiki도 동일 규칙 적용</li>
-              </ul>
-
-              <div class="post-actions">
-                <button class="mini-btn" type="button" disabled>작업 보기</button>
-                <span class="tag">UI</span>
-                <span class="tag">Layout</span>
-              </div>
-            </article>
-
-            <article class="post">
-              <div class="post-head">
-                <div class="post-title-row">
-                  <h2 class="post-title">다음 목표</h2>
-                  <span class="status-badge is-strong">Next</span>
-                </div>
-                <div class="post-meta">
-                  <span class="meta-chip">2026-01-XX</span>
-                  <span class="meta-dot">·</span>
-                  <span class="meta-chip">Plan</span>
-                  <span class="meta-dot">·</span>
-                  <span class="meta-chip">Operations</span>
-                </div>
-              </div>
-
-              <p class="post-text">
-                Devlog는 “짧은 카드형 업데이트”를 기본으로 두고, 나중에 태그/검색/페이지네이션을 붙이면
-                운영하기 편해질 거야.
-              </p>
-
-              <div class="post-actions">
-                <button class="mini-btn" type="button" disabled>로드맵</button>
-                <span class="tag">Plan</span>
-                <span class="tag">Backlog</span>
-              </div>
-            </article>
-
-            <!-- Empty state 느낌도 “운영형”으로 -->
-            <div class="empty">
-              <div class="empty-icon" aria-hidden="true">🗂️</div>
-              <div class="empty-title">실제 로그 데이터 연결 준비 중</div>
-              <div class="empty-sub">
-                다음 단계: 로그 스키마/태그/목록 컴포넌트 분리 → 필터/검색 연결
+              <div class="card-actions">
+                <button v-if="isAdmin" class="mini" type="button" @click="openEdit(it)">
+                  수정
+                </button>
+                <button v-if="isAdmin" class="mini" type="button" @click="moveDoingToPlan(it.id)">
+                  → 예정
+                </button>
+                <button v-if="isAdmin" class="mini" type="button" @click="moveDoingToDone(it.id)">
+                  → 완료
+                </button>
               </div>
             </div>
-          </section>
 
-          <!-- Footer inside main -->
-          <footer class="footer">
-            <div class="footer-inner">
-              <div class="footer-left">
-                <div class="footer-brand">RCTS Devlog</div>
-                <div class="footer-sub">업데이트 기록 · 배포 노트 · 개발 히스토리</div>
+            <div v-if="it.detail" class="card-detail">{{ it.detail }}</div>
+
+            <div v-if="dragState.overId === it.id && dragState.listKey === 'doing'" class="drop-hint">
+              여기로 이동
+            </div>
+          </article>
+
+          <div v-if="!doingList.length" class="empty">진행 항목이 없어요.</div>
+        </div>
+      </section>
+
+      <!-- DONE -->
+      <section v-if="activeTab === 'done'" class="panel">
+        <div class="panel-head">
+          <div class="panel-title">완료</div>
+          <div class="panel-sub">최신 완료가 위로 (최대 20개)</div>
+        </div>
+
+        <div class="list">
+          <article v-for="it in doneList" :key="it.id" class="card status--done">
+            <div class="card-row">
+              <div class="card-left">
+                <div class="card-title">{{ it.title }}</div>
               </div>
-              <div class="footer-right">
-                <span class="footer-chip">Feed</span>
-                <span class="footer-chip">Tags</span>
-                <span class="footer-chip">Releases</span>
+
+              <div class="card-actions">
+                <button v-if="isAdmin" class="mini" type="button" @click="openEdit(it)">
+                  수정
+                </button>
+                <button v-if="isAdmin" class="mini" type="button" @click="moveDoneToPlan(it.id)">
+                  → 예정
+                </button>
               </div>
             </div>
-          </footer>
-        </main>
+
+            <div v-if="it.detail" class="card-detail">{{ it.detail }}</div>
+          </article>
+
+          <div v-if="!doneList.length" class="empty">완료 항목이 없어요.</div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Edit modal -->
+    <div v-if="edit.open" class="modal-backdrop" @click.self="closeEdit">
+      <div class="modal">
+        <div class="modal-title">내용 수정</div>
+
+        <label class="field">
+          <div class="label">제목</div>
+          <input v-model="edit.title" class="input" type="text" />
+        </label>
+
+        <label class="field">
+          <div class="label">상세</div>
+          <textarea v-model="edit.detail" class="textarea" rows="4"></textarea>
+        </label>
+
+        <div class="modal-actions">
+          <button class="btn btn-ghost" type="button" @click="closeEdit">닫기</button>
+          <button class="btn btn-primary" type="button" @click="saveEdit" :disabled="edit.saving">
+            {{ edit.saving ? '저장 중...' : '저장' }}
+          </button>
+        </div>
+
+        <div v-if="edit.error" class="hint is-error">{{ edit.error }}</div>
       </div>
     </div>
-
-    <div class="bottom-fade" aria-hidden="true"></div>
   </section>
 </template>
 
 <script setup>
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useAuth } from '@/composables/useAuth.js'
+import { useDevlogsTicker } from '@/composables/useDevlogsTicker.js'
+
+const ADMIN_EMAIL = 'evepoi86@gmail.com'
+
+const { isLoggedIn, user } = useAuth()
+
+const userEmail = computed(() => {
+  const u = user?.value
+  const mail = u?.email
+  return typeof mail === 'string' ? mail : ''
+})
+
+const isAdmin = computed(() => isLoggedIn.value && userEmail.value === ADMIN_EMAIL)
+
+/* tabs */
+const activeTab = ref('plan')
+
+/* ✅ Drag state를 watch보다 먼저 선언(핵심 수정) */
+const dragState = reactive({
+  draggingId: '',
+  listKey: '', // 'plan' | 'doing'
+  overId: '',
+})
+
+/* devlogs */
+const {
+  start,
+  planItems,
+  doingItems,
+  doneItems,
+  addDevlog,
+  updateDevlog,
+  moveToDoing,
+  moveDoingToPlan,
+  moveDoingToDone,
+  moveDoneToPlan,
+  deactivatePlanOnly,
+  reorderStatus,
+} = useDevlogsTicker()
+
+onMounted(() => start())
+
+/* 로컬 리스트(드래그 즉시 반영용) */
+const planList = ref([])
+const doingList = ref([])
+const doneList = computed(() => doneItems.value || [])
+
+const syncFromServer = () => {
+  planList.value = [...(planItems.value || [])]
+  doingList.value = [...(doingItems.value || [])]
+}
+
+/* 서버 -> 로컬 동기화 (드래그 중에는 덮어쓰지 않음) */
+watch(
+  () => (planItems.value || []).map((x) => `${x.id}:${x.orderMs ?? x.createdAtMs ?? 0}`).join('|'),
+  () => {
+    if (!dragState.draggingId) syncFromServer()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => (doingItems.value || []).map((x) => `${x.id}:${x.orderMs ?? x.createdAtMs ?? 0}`).join('|'),
+  () => {
+    if (!dragState.draggingId) syncFromServer()
+  },
+  { immediate: true },
+)
+
+/* compose */
+const newTitle = ref('')
+const newDetail = ref('')
+const adding = ref(false)
+const composeError = ref('')
+
+const handleAdd = async () => {
+  composeError.value = ''
+  if (!isAdmin.value) return
+
+  const t = String(newTitle.value || '').trim()
+  if (!t) {
+    composeError.value = '제목을 입력해줘.'
+    return
+  }
+
+  adding.value = true
+  try {
+    await addDevlog({ title: t, detail: newDetail.value })
+    newTitle.value = ''
+    newDetail.value = ''
+    activeTab.value = 'plan'
+  } catch (e) {
+    composeError.value = e?.message ? String(e.message) : '등록 실패'
+  } finally {
+    adding.value = false
+  }
+}
+
+/* edit */
+const edit = reactive({
+  open: false,
+  id: '',
+  title: '',
+  detail: '',
+  saving: false,
+  error: '',
+})
+
+const openEdit = (it) => {
+  if (!isAdmin.value) return
+  edit.open = true
+  edit.id = it.id
+  edit.title = String(it.title ?? '')
+  edit.detail = String(it.detail ?? '')
+  edit.error = ''
+}
+
+const closeEdit = () => {
+  edit.open = false
+  edit.id = ''
+  edit.title = ''
+  edit.detail = ''
+  edit.saving = false
+  edit.error = ''
+}
+
+const saveEdit = async () => {
+  if (!isAdmin.value) return
+  if (!edit.id) return
+  edit.error = ''
+  edit.saving = true
+  try {
+    await updateDevlog(edit.id, { title: edit.title, detail: edit.detail })
+    closeEdit()
+  } catch (e) {
+    edit.error = e?.message ? String(e.message) : '저장 실패'
+  } finally {
+    edit.saving = false
+  }
+}
+
+const deletePlan = async (it) => {
+  if (!isAdmin.value) return
+  try {
+    await deactivatePlanOnly(it.id, it.status)
+  } catch (e) {
+    console.warn(e)
+  }
+}
+
+/* ✅ Drag & Drop helpers */
+const getListRef = (listKey) => (listKey === 'doing' ? doingList : planList)
+
+const onDragStart = (e, it, listKey) => {
+  if (!isAdmin.value) return
+
+  dragState.draggingId = it.id
+  dragState.listKey = listKey
+  dragState.overId = ''
+
+  try {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', it.id)
+  } catch (_) {}
+}
+
+const onDragOver = (e, it, listKey) => {
+  if (!isAdmin.value) return
+  if (!dragState.draggingId) return
+  if (dragState.listKey !== listKey) return
+  dragState.overId = it.id
+}
+
+const onDrop = async (e, it, listKey) => {
+  if (!isAdmin.value) return
+  if (!dragState.draggingId) return
+  if (dragState.listKey !== listKey) return
+
+  const listRef = getListRef(listKey)
+  const list = [...listRef.value]
+
+  const from = list.findIndex((x) => x.id === dragState.draggingId)
+  const to = list.findIndex((x) => x.id === it.id)
+  if (from < 0 || to < 0 || from === to) {
+    dragState.overId = ''
+    return
+  }
+
+  const [moved] = list.splice(from, 1)
+  list.splice(to, 0, moved)
+
+  // ✅ 즉시 UI 반영
+  listRef.value = list
+  dragState.overId = ''
+
+  // ✅ Firestore 저장
+  try {
+    await reorderStatus(listKey, list.map((x) => x.id))
+  } catch (err) {
+    // 실패 시 서버 기준으로 복구
+    syncFromServer()
+    console.warn(err)
+  }
+}
+
+const onDragEnd = () => {
+  dragState.draggingId = ''
+  dragState.listKey = ''
+  dragState.overId = ''
+}
 </script>
 
-<style scoped lang="scss">
-/* =========
-   Shell / Background
-   ========= */
-.devlog-shell {
-  min-height: 100vh;
-  color: rgba(255, 255, 255, 0.92);
-  background:
-    radial-gradient(1200px 520px at 20% -10%, rgba(99, 102, 241, 0.18), transparent 70%),
-    radial-gradient(900px 420px at 85% 0%, rgba(56, 189, 248, 0.14), transparent 65%),
-    radial-gradient(circle at top, #0b1220 0%, #05070d 62%, #000 100%);
-}
-
-/* =========
-   Topbar
-   ========= */
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  backdrop-filter: blur(14px);
-  background: rgba(2, 6, 23, 0.62);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-}
-
-.topbar-inner {
-  width: min(1180px, 100% - 28px);
-  margin: 0 auto;
-  padding: 14px 0;
-  display: grid;
-  grid-template-columns: 1fr minmax(260px, 520px) auto;
-  align-items: center;
-  gap: 14px;
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 220px;
-}
-
-.brand-mark {
-  width: 38px;
-  height: 38px;
-  border-radius: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-  color: rgba(248, 250, 252, 0.96);
-  background: rgba(129, 140, 248, 0.16);
-  border: 1px solid rgba(129, 140, 248, 0.45);
-  box-shadow: 0 0 18px rgba(129, 140, 248, 0.12);
-}
-
-.brand-kicker {
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.22em;
-  text-indent: 0.22em;
-  opacity: 0.92;
-}
-
-.brand-title {
-  margin-top: 2px;
-  font-size: 0.92rem;
-  font-weight: 900;
-  color: rgba(248, 250, 252, 0.94);
-}
-
-.search {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: center;
-}
-
-.search-wrap {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(15, 23, 42, 0.32);
-}
-
-.search-icon {
-  font-weight: 900;
-  opacity: 0.86;
-}
-
-.search-input {
+<style scoped>
+.devlog-root {
   width: 100%;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: rgba(248, 250, 252, 0.92);
-  font-weight: 800;
-  letter-spacing: 0.02em;
-}
-
-.search-input::placeholder {
-  color: rgba(226, 232, 240, 0.62);
-}
-
-.search-btn {
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(2, 6, 23, 0.25);
-  color: rgba(226, 232, 240, 0.86);
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.top-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-/* =========
-   Buttons
-   ========= */
-.btn {
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  user-select: none;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  border: 1px solid transparent;
-  transition:
-    transform 0.08s ease-out,
-    border-color 0.12s ease-out,
-    background 0.12s ease-out,
-    opacity 0.12s ease-out;
-}
-
-.btn-ghost {
-  background: rgba(15, 23, 42, 0.38);
-  border-color: rgba(148, 163, 184, 0.28);
-  color: rgba(255, 255, 255, 0.92);
-}
-
-.btn-ghost:hover {
-  border-color: rgba(191, 219, 254, 0.6);
-  background: rgba(15, 23, 42, 0.55);
-  transform: translateY(-1px);
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.95) 0%, rgba(99, 102, 241, 0.95) 45%, rgba(168, 85, 247, 0.95) 100%);
-  border: 1px solid rgba(129, 140, 248, 0.18);
-  color: #fff;
-}
-
-.btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* =========
-   Layout
-   ========= */
-.layout {
-  padding: 18px 0 44px;
-}
-
-.layout-inner {
-  width: min(1180px, 100% - 28px);
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-}
-
-/* =========
-   Sidebar
-   ========= */
-.sidebar {
-  position: sticky;
-  top: 72px;
-  align-self: start;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.side-card {
-  border-radius: 18px;
-  padding: 14px 14px;
-  background: rgba(2, 6, 23, 0.42);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-}
-
-.side-title {
-  font-size: 0.96rem;
-  font-weight: 900;
-  color: rgba(248, 250, 252, 0.95);
-}
-
-.side-sub {
-  margin: 8px 0 0;
-  font-size: 0.78rem;
-  line-height: 1.6;
-  color: rgba(226, 232, 240, 0.82);
-}
-
-.side-sub-weak {
-  color: rgba(226, 232, 240, 0.64);
-}
-
-.side-section {
-  border-radius: 18px;
-  padding: 12px 12px;
-  background: rgba(15, 23, 42, 0.28);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-}
-
-.side-section-title {
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.92);
-  margin-bottom: 10px;
-}
-
-.filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.filter-pill {
-  padding: 8px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(2, 6, 23, 0.22);
-  color: rgba(226, 232, 240, 0.86);
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  cursor: not-allowed;
-  opacity: 0.75;
-}
-
-.filter-pill.is-active {
-  border-color: rgba(129, 140, 248, 0.55);
-  background: rgba(129, 140, 248, 0.12);
-  color: rgba(248, 250, 252, 0.96);
-  opacity: 1;
-}
-
-.side-links {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.side-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 10px;
-  border-radius: 14px;
-  text-decoration: none;
-  color: rgba(226, 232, 240, 0.86);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(2, 6, 23, 0.22);
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  transition:
-    border-color 0.12s ease-out,
-    background 0.12s ease-out,
-    transform 0.08s ease-out;
-}
-
-.side-link:hover {
-  border-color: rgba(191, 219, 254, 0.6);
-  background: rgba(15, 23, 42, 0.5);
-  transform: translateY(-1px);
-}
-
-.side-link.is-active {
-  border-color: rgba(129, 140, 248, 0.55);
-  background: rgba(129, 140, 248, 0.12);
-  color: rgba(248, 250, 252, 0.96);
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(129, 140, 248, 0.9);
-  box-shadow: 0 0 12px rgba(129, 140, 248, 0.25);
-}
-
-.side-footer {
-  border-radius: 18px;
-  padding: 12px 12px;
-  background: rgba(2, 6, 23, 0.36);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-}
-
-.side-footer-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.side-footer-row + .side-footer-row {
-  margin-top: 8px;
-}
-
-.side-footer-label {
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.86);
-}
-
-.side-footer-value {
-  font-size: 0.78rem;
-  font-weight: 900;
-  color: rgba(226, 232, 240, 0.9);
-}
-
-/* =========
-   Main
-   ========= */
-.main {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.pagehead {
-  border-radius: 18px;
-  padding: 16px 16px;
-  background: rgba(2, 6, 23, 0.42);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-}
-
-.crumbs {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.9);
-  font-size: 0.72rem;
-}
-
-.sep {
-  opacity: 0.6;
-}
-
-.crumb.is-current {
+  min-height: 100%;
+  padding: 12px;
+  box-sizing: border-box;
   color: rgba(226, 232, 240, 0.92);
 }
 
-.page-title-row {
-  margin-top: 8px;
+.devlog-head {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 1.35rem;
-  font-weight: 900;
-  color: rgba(248, 250, 252, 0.96);
-  letter-spacing: 0.02em;
-}
-
-.page-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.78rem;
-  color: rgba(226, 232, 240, 0.72);
-  font-weight: 800;
-}
-
-.meta-sep {
-  opacity: 0.6;
-}
-
-.notice {
-  margin-top: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 10px;
+  padding: 10px 12px;
   border-radius: 14px;
-  border: 1px solid rgba(129, 140, 248, 0.22);
-  background: rgba(129, 140, 248, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(2, 6, 23, 0.22);
 }
 
-.notice-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(129, 140, 248, 0.9);
-  box-shadow: 0 0 12px rgba(129, 140, 248, 0.25);
-}
-
-.notice-text {
-  font-size: 0.78rem;
-  color: rgba(226, 232, 240, 0.86);
-  line-height: 1.55;
-}
-
-/* =========
-   Stats
-   ========= */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.stat-card {
-  border-radius: 18px;
-  padding: 14px 14px;
-  background: rgba(15, 23, 42, 0.28);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-}
-
-.stat-label {
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.92);
-  font-weight: 900;
-}
-
-.stat-value {
-  margin-top: 8px;
-  font-size: 1.05rem;
-  font-weight: 900;
+.devlog-title {
+  font-size: 1.08rem;
+  font-weight: 950;
+  letter-spacing: 0.02em;
   color: rgba(248, 250, 252, 0.96);
 }
 
-.stat-sub {
+.devlog-sub {
   margin-top: 4px;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   color: rgba(226, 232, 240, 0.72);
   font-weight: 800;
 }
 
-/* =========
-   Feed posts
-   ========= */
-.feed {
+.devlog-auth {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
+  align-items: flex-end;
 }
 
-.post {
-  border-radius: 18px;
-  padding: 16px 16px;
-  background: rgba(2, 6, 23, 0.36);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-}
-
-.post-head {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.post-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.post-title {
-  margin: 0;
-  font-size: 1.02rem;
-  font-weight: 900;
-  color: rgba(248, 250, 252, 0.96);
-}
-
-.status-badge {
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(129, 140, 248, 0.3);
-  background: rgba(129, 140, 248, 0.12);
-  color: rgba(248, 250, 252, 0.92);
-  font-size: 0.72rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.status-badge.is-soft {
-  border-color: rgba(148, 163, 184, 0.22);
-  background: rgba(15, 23, 42, 0.28);
-  color: rgba(226, 232, 240, 0.86);
-}
-
-.status-badge.is-strong {
-  border-color: rgba(56, 189, 248, 0.28);
-  background: rgba(56, 189, 248, 0.1);
-  color: rgba(248, 250, 252, 0.94);
-}
-
-.post-meta {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.meta-chip {
+.auth-state {
   font-size: 0.78rem;
   font-weight: 900;
-  color: rgba(226, 232, 240, 0.78);
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(15, 23, 42, 0.22);
+  color: rgba(226, 232, 240, 0.72);
+}
+.auth-state.is-on {
+  color: rgba(226, 232, 240, 0.92);
+}
+.auth-mail {
+  font-size: 0.78rem;
+  font-weight: 900;
+  color: rgba(191, 219, 254, 0.92);
 }
 
-.meta-dot {
-  opacity: 0.5;
-}
-
-.post-text {
-  margin: 12px 0 0;
-  color: rgba(226, 232, 240, 0.86);
-  line-height: 1.75;
-  font-size: 0.86rem;
-}
-
-.weak {
-  color: rgba(226, 232, 240, 0.66);
-}
-
-.post-list {
-  margin: 12px 0 0;
-  padding-left: 18px;
-  color: rgba(226, 232, 240, 0.86);
-  line-height: 1.95;
-  font-size: 0.86rem;
-}
-
-.post-actions {
+.compose {
   margin-top: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(2, 6, 23, 0.22);
+}
+
+.compose-title {
+  font-weight: 950;
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.compose-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.field .label {
+  font-size: 0.78rem;
+  font-weight: 900;
+  color: rgba(148, 163, 184, 0.92);
+  margin-bottom: 6px;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.22);
+  color: rgba(226, 232, 240, 0.92);
+  font-weight: 800;
+  padding: 10px 10px;
+  outline: none;
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 74px;
+}
+
+.compose-actions {
+  margin-top: 10px;
   display: flex;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: rgba(226, 232, 240, 0.7);
+  font-weight: 800;
+}
+.hint.is-error {
+  color: rgba(248, 113, 113, 0.95);
+}
+
+.tabs {
+  margin-top: 12px;
+  display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.mini-btn {
-  padding: 7px 10px;
+.tab {
+  padding: 8px 10px;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(2, 6, 23, 0.22);
+  background: rgba(2, 6, 23, 0.18);
   color: rgba(226, 232, 240, 0.86);
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  cursor: not-allowed;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.tab.is-active {
+  border-color: rgba(129, 140, 248, 0.55);
+  background: rgba(129, 140, 248, 0.10);
+  color: rgba(248, 250, 252, 0.96);
+}
+
+.count {
+  margin-left: 6px;
+  font-size: 0.78rem;
+  opacity: 0.9;
+}
+
+.lists {
+  margin-top: 12px;
+}
+
+.panel {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(2, 6, 23, 0.16);
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.panel-title {
+  font-weight: 950;
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.panel-sub {
+  font-size: 0.8rem;
+  color: rgba(226, 232, 240, 0.70);
+  font-weight: 800;
+}
+
+.list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card {
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(2, 6, 23, 0.22);
+  padding: 10px 10px;
+  position: relative;
+}
+
+.card.is-dragging {
   opacity: 0.75;
 }
 
-.tag {
-  padding: 7px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(129, 140, 248, 0.22);
-  background: rgba(129, 140, 248, 0.1);
-  color: rgba(248, 250, 252, 0.92);
-  font-weight: 900;
-  font-size: 0.74rem;
-  letter-spacing: 0.04em;
-}
-
-/* =========
-   Empty
-   ========= */
-.empty {
-  border-radius: 18px;
-  padding: 18px 16px;
-  background: rgba(15, 23, 42, 0.24);
-  border: 1px dashed rgba(148, 163, 184, 0.22);
-  display: grid;
-  gap: 6px;
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 1.35rem;
-}
-
-.empty-title {
-  font-weight: 900;
-  color: rgba(248, 250, 252, 0.92);
-}
-
-.empty-sub {
-  font-size: 0.84rem;
-  color: rgba(226, 232, 240, 0.72);
-  font-weight: 800;
-  line-height: 1.6;
-}
-
-/* =========
-   Footer
-   ========= */
-.footer {
-  border-radius: 18px;
-  padding: 16px 16px;
-  background: rgba(15, 23, 42, 0.26);
-  border: 1px solid rgba(148, 163, 184, 0.14);
-}
-
-.footer-inner {
+.card-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
-.footer-brand {
-  font-weight: 900;
-  color: rgba(248, 250, 252, 0.94);
+.card-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
-.footer-sub {
-  margin-top: 4px;
-  font-size: 0.78rem;
-  color: rgba(226, 232, 240, 0.68);
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.25);
+  color: rgba(226, 232, 240, 0.88);
+  font-weight: 1000;
+  cursor: grab;
+  user-select: none;
+}
+
+.card-title {
+  font-weight: 950;
+  color: rgba(248, 250, 252, 0.95);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(860px, 100%);
+}
+
+.card-detail {
+  margin-top: 8px;
+  font-size: 0.84rem;
+  color: rgba(226, 232, 240, 0.86);
   font-weight: 800;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
-.footer-right {
+.card-actions {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.footer-chip {
+.mini {
   padding: 7px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(2, 6, 23, 0.2);
-  color: rgba(226, 232, 240, 0.86);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(2, 6, 23, 0.18);
+  color: rgba(226, 232, 240, 0.88);
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.mini.is-danger {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.10);
+  color: rgba(248, 250, 252, 0.92);
+}
+
+.drop-hint {
+  margin-top: 10px;
+  font-size: 0.78rem;
   font-weight: 900;
-  font-size: 0.74rem;
-  letter-spacing: 0.06em;
+  color: rgba(226, 232, 240, 0.80);
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.18);
 }
 
-/* =========
-   Bottom fade
-   ========= */
-.bottom-fade {
-  height: 44px;
-  background: linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,0.55));
+.status--plan {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
 }
 
-/* =========
-   Responsive
-   ========= */
-@media (max-width: 1040px) {
-  .topbar-inner {
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      "brand actions"
-      "search search";
-    gap: 10px;
-  }
-
-  .brand {
-    grid-area: brand;
-  }
-  .top-actions {
-    grid-area: actions;
-    justify-content: flex-end;
-  }
-  .search {
-    grid-area: search;
-  }
-
-  .layout-inner {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    position: relative;
-    top: auto;
-    order: 2;
-  }
-
-  .main {
-    order: 1;
-  }
-
-  .stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.status--doing {
+  border-color: rgba(251, 191, 36, 0.40);
+  background: rgba(251, 191, 36, 0.08);
 }
 
-@media (max-width: 520px) {
-  .top-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
+.status--done {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.08);
+}
 
-  .search {
-    flex-direction: column;
-    align-items: stretch;
-  }
+.empty {
+  padding: 14px 12px;
+  border-radius: 14px;
+  border: 1px dashed rgba(148, 163, 184, 0.22);
+  background: rgba(2, 6, 23, 0.14);
+  text-align: center;
+  color: rgba(226, 232, 240, 0.68);
+  font-weight: 850;
+}
 
-  .search-btn {
-    width: 100%;
-  }
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  z-index: 9999;
+}
 
-  .stats {
-    grid-template-columns: 1fr;
-  }
+.modal {
+  width: min(720px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(10, 14, 24, 0.98);
+  padding: 14px;
+}
+
+.modal-title {
+  font-weight: 950;
+  color: rgba(248, 250, 252, 0.96);
+  margin-bottom: 10px;
+}
+
+.modal-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-weight: 950;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btn-ghost {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(2, 6, 23, 0.18);
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.btn-primary {
+  border-color: rgba(129, 140, 248, 0.22);
+  background: rgba(129, 140, 248, 0.18);
+  color: rgba(248, 250, 252, 0.96);
+}
+
+@media (max-width: 640px) {
+  .devlog-root { padding: 10px; }
+  .card-title { max-width: 100%; }
 }
 </style>
