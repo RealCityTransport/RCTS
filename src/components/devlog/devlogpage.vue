@@ -298,8 +298,21 @@ const syncFromServer = () => {
 }
 
 /* sync watchers */
+/**
+ * ✅ 기존 watch가 order/created만 보고 있어서
+ *    title/detail 수정 시에는 변화로 감지 못해서 화면이 갱신 안 됨
+ *    → title/detail(또는 updatedAtMs)가 비교에 포함되어야 함
+ */
 watch(
-  () => (planItems.value || []).map((x) => `${x.id}:${x.orderMs ?? x.createdAtMs ?? 0}`).join('|'),
+  () =>
+    (planItems.value || [])
+      .map((x) => {
+        const order = x.orderMs ?? x.createdAtMs ?? 0
+        const title = String(x.title ?? '')
+        const detail = String(x.detail ?? '')
+        return `${x.id}:${order}:${title}:${detail}`
+      })
+      .join('|'),
   () => {
     if (!dragState.draggingId) syncFromServer()
   },
@@ -307,7 +320,15 @@ watch(
 )
 
 watch(
-  () => (doingItems.value || []).map((x) => `${x.id}:${x.orderMs ?? x.createdAtMs ?? 0}`).join('|'),
+  () =>
+    (doingItems.value || [])
+      .map((x) => {
+        const order = x.orderMs ?? x.createdAtMs ?? 0
+        const title = String(x.title ?? '')
+        const detail = String(x.detail ?? '')
+        return `${x.id}:${order}:${title}:${detail}`
+      })
+      .join('|'),
   () => {
     if (!dragState.draggingId) syncFromServer()
   },
