@@ -25,8 +25,11 @@ import {
  *
  * ✅ 알림(기차)
  * - done: 최근 10개를 뽑되, 표시만 오래된→최신
- * - doing: 최대 2개
- * - plan: 최대 5개
+ * - doing: ✅ "상단 2개" (Devlog 진행 탭에서 위 2개)
+ * - plan:  "상단 5개" (Devlog 예정 탭에서 위 5개)
+ *
+ * ✅ 완료 자동 정리(prune)
+ * - done가 20개 초과 시, 21번째(가장 오래된 것)부터 Firestore 문서 삭제
  */
 export function useDevlogsTicker() {
   const db = getFirestore(getApp())
@@ -85,6 +88,7 @@ export function useDevlogsTicker() {
       .sort((a, b) => orderKey(a) - orderKey(b)),
   )
 
+  // ✅ 전체 완료(최신→오래된)
   const doneItemsAllDesc = computed(() =>
     activeDocs.value
       .filter((x) => x.status === 'done')
@@ -94,15 +98,19 @@ export function useDevlogsTicker() {
   // ✅ 완료는 페이지에서 최대 20개만 로드
   const doneItems = computed(() => doneItemsAllDesc.value.slice(0, 20))
 
+  // ✅ 완료 21번째부터(가장 오래된) 삭제 대상
+  const doneOverflowItems = computed(() => doneItemsAllDesc.value.slice(20))
+  const doneOverflowIds = computed(() => doneOverflowItems.value.map((x) => x.id).filter(Boolean))
+
   // ✅ 알림(기차) 한 바퀴 구성
   const tickerTrainItems = computed(() => {
     const doneLatest10 = doneItemsAllDesc.value.slice(0, 10) // 최신 10
     const doneForDisplay = [...doneLatest10].reverse() // 표시: 오래된→최신
 
-    // doing: 드래그 순서(오래된→최신) 기준에서 뒤 2개를 “현재 진행 핵심”으로
-    const doingTop2 = [...doingItems.value].slice(-2)
+    // ✅ FIX: 진행은 "상단 2개"가 나와야 함 (Devlog 진행 탭 위 2개)
+    const doingTop2 = doingItems.value.slice(0, 2)
 
-    // plan: 드래그 순서에서 앞 5개 = 우선 작업
+    // plan: 드래그 순서에서 상단 5개
     const planTop5 = planItems.value.slice(0, 5)
 
     return [...doneForDisplay, ...doingTop2, ...planTop5]
@@ -197,6 +205,30 @@ export function useDevlogsTicker() {
     await batch.commit()
   }
 
+  /**
+   * ✅ 완료 자동 정리(prune)
+   * - done가 20개 초과면, 21번째(가장 오래된)부터 Firestore 문서를 삭제
+   * - 관리자(DevlogPage에서 isAdmin일 때만 호출)만 실행하도록 설계
+   */
+  const pruneDoneOverflow = async (maxKeep = 20) => {
+    const max = typeof maxKeep === 'number' && maxKeep > 0 ? Math.floor(maxKeep) : 20
+
+    const all = doneItemsAllDesc.value
+    if (!Array.isArray(all) || all.length <= max) return
+
+    const overflow = all.slice(max) // 최신 max개 제외한 나머지(가장 오래된 묶음)
+    if (!overflow.length) return
+
+    const batch = writeBatch(db)
+
+    for (const it of overflow) {
+      if (!it?.id) continue
+      batch.delete(doc(db, 'devlogs', it.id))
+    }
+
+    await batch.commit()
+  }
+
   return {
     loading,
     error,
@@ -205,6 +237,8 @@ export function useDevlogsTicker() {
     planItems,
     doingItems,
     doneItems,
+
+    doneOverflowIds,
 
     tickerTrainItems,
 
@@ -220,5 +254,7 @@ export function useDevlogsTicker() {
     deactivatePlanOnly,
 
     reorderStatus,
+
+    pruneDoneOverflow,
   }
 }

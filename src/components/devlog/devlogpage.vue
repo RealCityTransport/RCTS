@@ -260,10 +260,10 @@ const isAdmin = computed(() => isLoggedIn.value && userEmail.value === ADMIN_EMA
 /* tabs */
 const activeTab = ref('plan')
 
-/* ✅ Drag state를 watch보다 먼저 선언(핵심 수정) */
+/* drag state */
 const dragState = reactive({
   draggingId: '',
-  listKey: '', // 'plan' | 'doing'
+  listKey: '',
   overId: '',
 })
 
@@ -273,6 +273,7 @@ const {
   planItems,
   doingItems,
   doneItems,
+  doneOverflowIds,
   addDevlog,
   updateDevlog,
   moveToDoing,
@@ -281,11 +282,12 @@ const {
   moveDoneToPlan,
   deactivatePlanOnly,
   reorderStatus,
+  pruneDoneOverflow,
 } = useDevlogsTicker()
 
 onMounted(() => start())
 
-/* 로컬 리스트(드래그 즉시 반영용) */
+/* local lists */
 const planList = ref([])
 const doingList = ref([])
 const doneList = computed(() => doneItems.value || [])
@@ -295,7 +297,7 @@ const syncFromServer = () => {
   doingList.value = [...(doingItems.value || [])]
 }
 
-/* 서버 -> 로컬 동기화 (드래그 중에는 덮어쓰지 않음) */
+/* sync watchers */
 watch(
   () => (planItems.value || []).map((x) => `${x.id}:${x.orderMs ?? x.createdAtMs ?? 0}`).join('|'),
   () => {
@@ -308,6 +310,30 @@ watch(
   () => (doingItems.value || []).map((x) => `${x.id}:${x.orderMs ?? x.createdAtMs ?? 0}`).join('|'),
   () => {
     if (!dragState.draggingId) syncFromServer()
+  },
+  { immediate: true },
+)
+
+/**
+ * ✅ 완료 21개 이상이면 Firestore에서 자동 삭제
+ * - 관리자만 실행
+ * - doneOverflowIds가 생기는 순간 prune
+ */
+let pruning = false
+watch(
+  () => (doneOverflowIds.value || []).join('|'),
+  async (v) => {
+    if (!isAdmin.value) return
+    if (!v) return
+    if (pruning) return
+    pruning = true
+    try {
+      await pruneDoneOverflow(20)
+    } catch (e) {
+      console.warn(e)
+    } finally {
+      pruning = false
+    }
   },
   { immediate: true },
 )
@@ -393,7 +419,7 @@ const deletePlan = async (it) => {
   }
 }
 
-/* ✅ Drag & Drop helpers */
+/* drag helpers */
 const getListRef = (listKey) => (listKey === 'doing' ? doingList : planList)
 
 const onDragStart = (e, it, listKey) => {
@@ -434,15 +460,12 @@ const onDrop = async (e, it, listKey) => {
   const [moved] = list.splice(from, 1)
   list.splice(to, 0, moved)
 
-  // ✅ 즉시 UI 반영
   listRef.value = list
   dragState.overId = ''
 
-  // ✅ Firestore 저장
   try {
     await reorderStatus(listKey, list.map((x) => x.id))
   } catch (err) {
-    // 실패 시 서버 기준으로 복구
     syncFromServer()
     console.warn(err)
   }
@@ -456,6 +479,7 @@ const onDragEnd = () => {
 </script>
 
 <style scoped>
+/* (스타일은 기존 그대로) */
 .devlog-root {
   width: 100%;
   min-height: 100%;
@@ -646,10 +670,6 @@ const onDragEnd = () => {
   position: relative;
 }
 
-.card.is-dragging {
-  opacity: 0.75;
-}
-
 .card-row {
   display: flex;
   align-items: center;
@@ -811,7 +831,11 @@ const onDragEnd = () => {
 }
 
 @media (max-width: 640px) {
-  .devlog-root { padding: 10px; }
-  .card-title { max-width: 100%; }
+  .devlog-root {
+    padding: 10px;
+  }
+  .card-title {
+    max-width: 100%;
+  }
 }
 </style>
