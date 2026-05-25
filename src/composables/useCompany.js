@@ -1,136 +1,139 @@
 // src/composables/useCompany.js
-import { ref, computed, watch } from 'vue'
-import { useAuth } from '@/composables/useAuth.js'
+import { computed, ref } from 'vue'
 
-/** @type {import('vue').Ref<{name:string, createdAt:number, updatedAt:number}|null>} */
+/**
+ * ✅ 회사 모듈(전역 싱글톤)
+ * - 앞으로 회사 확장(자회사/재정/시설/직원/권한 등)을 위해 PlayPage에서 분리
+ * - 현재는 로컬 저장 기반 (추후 구글 로그인/클라우드 저장으로 교체 가능)
+ */
+
+const STORAGE_KEY = 'rcts_company_v1'
+
+// 싱글톤 상태
 const _company = ref(null)
-/** @type {import('vue').Ref<boolean>} */
-const _loading = ref(false)
+const _loaded = ref(false)
 
-let _bound = false
+const nowIso = () => new Date().toISOString()
 
-const storageKey = (uid) => `rcts:company:${uid || 'guest'}`
-
-const readCompany = (uid) => {
-  if (!uid) return null
+const safeParse = (raw) => {
   try {
-    const raw = localStorage.getItem(storageKey(uid))
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed.name !== 'string') return null
-
-    // 하위호환: 예전 데이터(createdAt/updatedAt 없을 수 있음)
-    const createdAt =
-      typeof parsed.createdAt === 'number' ? parsed.createdAt : Date.now()
-    const updatedAt =
-      typeof parsed.updatedAt === 'number' ? parsed.updatedAt : createdAt
-
-    return {
-      ...parsed,
-      name: parsed.name,
-      createdAt,
-      updatedAt,
-    }
+    return JSON.parse(raw)
   } catch {
     return null
   }
 }
 
-const writeCompany = (uid, company) => {
-  if (!uid) return
-  localStorage.setItem(storageKey(uid), JSON.stringify(company))
+const loadOnce = () => {
+  if (_loaded.value) return
+  _loaded.value = true
+
+  const raw = localStorage.getItem(STORAGE_KEY)
+  if (!raw) return
+
+  const data = safeParse(raw)
+  if (!data || typeof data !== 'object') return
+
+  // 최소 스키마 검증(가볍게)
+  if (!data.id || !data.name) return
+
+  _company.value = {
+    id: String(data.id),
+    name: String(data.name),
+    createdAt: data.createdAt ? String(data.createdAt) : nowIso(),
+    updatedAt: data.updatedAt ? String(data.updatedAt) : nowIso()
+  }
 }
 
-export const useCompany = () => {
-  const { uid, isLoggedIn } = useAuth()
-
-  if (!_bound) {
-    _bound = true
-
-    watch(
-      uid,
-      (nextUid) => {
-        _loading.value = true
-        try {
-          _company.value = readCompany(nextUid)
-        } finally {
-          _loading.value = false
-        }
-      },
-      { immediate: true }
-    )
+const persist = () => {
+  if (!_loaded.value) _loaded.value = true
+  if (!_company.value) {
+    localStorage.removeItem(STORAGE_KEY)
+    return
   }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(_company.value))
+}
 
+const normalizeName = (name) => String(name ?? '').trim()
+
+export function useCompany() {
+  loadOnce()
+
+  const company = computed(() => _company.value)
   const hasCompany = computed(() => !!_company.value)
-  const companyName = computed(() => _company.value?.name ?? '')
 
-  const createCompany = async (name) => {
-    const u = uid.value
-    if (!u) return
+  const createCompany = (name) => {
+    const n = normalizeName(name)
 
-    // ✅ 이미 회사가 있으면 생성 불가(삭제도 없으니 안전장치)
-    if (_company.value) return
+    if (!n) throw new Error('회사명을 입력해 주세요.')
+    if (n.length < 2) throw new Error('회사명은 2자 이상이어야 합니다.')
+    if (n.length > 24) throw new Error('회사명은 24자 이하여야 합니다.')
 
-    const trimmed = String(name ?? '').trim()
-    if (!trimmed) return
+    // 1개만 운영(현재 정책). 추후 자회사/멀티로 확장 가능.
+    if (_company.value) throw new Error('회사는 이미 생성되어 있습니다.')
 
-    _loading.value = true
-    try {
-      // UI 연출
-      await new Promise((r) => setTimeout(r, 350))
-
-      const now = Date.now()
-      const payload = {
-        name: trimmed,
-        createdAt: now,
-        updatedAt: now,
-
-        // ✅ 확장 대비(추후 자회사/부서/사업부 등)
-        // subsidiaries: [],
-      }
-
-      _company.value = payload
-      writeCompany(u, payload)
-    } finally {
-      _loading.value = false
+    _company.value = {
+      id: `C-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      name: n,
+      createdAt: nowIso(),
+      updatedAt: nowIso()
     }
+
+    persist()
+    return _company.value
   }
 
-  const updateCompanyName = async (nextName) => {
-    const u = uid.value
-    if (!u) return
-    if (!_company.value) return
+  const renameCompany = (newName) => {
+    if (!_company.value) throw new Error('회사가 아직 생성되지 않았습니다.')
 
-    const trimmed = String(nextName ?? '').trim()
-    if (!trimmed) return
+    const n = normalizeName(newName)
+    if (!n) throw new Error('회사명을 입력해 주세요.')
+    if (n.length < 2) throw new Error('회사명은 2자 이상이어야 합니다.')
+    if (n.length > 24) throw new Error('회사명은 24자 이하여야 합니다.')
 
-    _loading.value = true
-    try {
-      // UI 연출 (생성보다 살짝 짧게)
-      await new Promise((r) => setTimeout(r, 200))
-
-      const updated = {
-        ..._company.value,
-        name: trimmed,
-        updatedAt: Date.now(),
-      }
-
-      _company.value = updated
-      writeCompany(u, updated)
-    } finally {
-      _loading.value = false
+    _company.value = {
+      ..._company.value,
+      name: n,
+      updatedAt: nowIso()
     }
+
+    persist()
+    return _company.value
+  }
+
+  const clearCompany = () => {
+    // 디버그/개발용 (나중에 정책적으로 막아도 됨)
+    _company.value = null
+    persist()
+  }
+
+  const exportCompany = () => {
+    // 추후 “파일 저장(다운로드)” 모듈과 연결할 수 있도록 미리 API 제공
+    return _company.value ? JSON.stringify(_company.value, null, 2) : ''
+  }
+
+  const importCompany = (jsonText) => {
+    const data = safeParse(jsonText)
+    if (!data || typeof data !== 'object') throw new Error('회사 데이터 형식이 올바르지 않습니다.')
+    if (!data.id || !data.name) throw new Error('회사 데이터에 필수 값이 없습니다.')
+
+    _company.value = {
+      id: String(data.id),
+      name: String(data.name),
+      createdAt: data.createdAt ? String(data.createdAt) : nowIso(),
+      updatedAt: data.updatedAt ? String(data.updatedAt) : nowIso()
+    }
+    persist()
   }
 
   return {
-    company: _company,
-    loading: _loading,
-    isLoggedIn,
-
+    company,
     hasCompany,
-    companyName,
 
     createCompany,
-    updateCompanyName,
+    renameCompany,
+    clearCompany,
+
+    exportCompany,
+    importCompany
   }
 }
