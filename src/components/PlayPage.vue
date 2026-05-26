@@ -204,6 +204,8 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 
+const SAVE_KEY = 'airport-observer-local-save-v1'
+
 const activeTab = ref('operation')
 const activeOperationMenu = ref('staff')
 const activeTransport = ref('rail')
@@ -221,6 +223,7 @@ const activeFlights = ref([])
 let timeTimer = null
 let flightTimer = null
 let spawnTimer = null
+let autoSaveTimer = null
 let flightId = 0
 
 const tabs = [
@@ -327,6 +330,138 @@ const currentOperation = computed(() => {
 })
 
 const currentTransport = computed(() => transportData[activeTransport.value])
+
+function saveGame(showMessage = false) {
+  try {
+    const saveData = {
+      activeTab: activeTab.value,
+      activeOperationMenu: activeOperationMenu.value,
+      activeTransport: activeTransport.value,
+      towerMessage: towerMessage.value,
+      transportLines: transportLines.value,
+      privateFlights: privateFlights.value,
+      activeFlights: activeFlights.value,
+      flightId,
+      departments: departments.map((item) => ({
+        id: item.id,
+        staff: item.staff,
+      })),
+      upgrades: upgrades.map((item) => ({
+        id: item.id,
+        level: item.level,
+      })),
+      researches: researches.map((item) => ({
+        id: item.id,
+        done: item.done,
+      })),
+      airport: {
+        gates: airport.gates,
+        runways: airport.runways,
+        groundVehicles: airport.groundVehicles,
+      },
+      savedAt: Date.now(),
+    }
+
+    localStorage.setItem(SAVE_KEY, JSON.stringify(saveData))
+
+    if (showMessage) {
+      updateTowerMessage('SAVE', '현재 진행 상황이 로컬에 저장되었습니다.')
+    }
+
+    return true
+  } catch (error) {
+    console.error('로컬 저장 실패:', error)
+
+    if (showMessage) {
+      updateTowerMessage('SAVE ERROR', '로컬 저장에 실패했습니다.')
+    }
+
+    return false
+  }
+}
+
+function loadGame(showMessage = false) {
+  try {
+    const rawSave = localStorage.getItem(SAVE_KEY)
+
+    if (!rawSave) {
+      return false
+    }
+
+    const saveData = JSON.parse(rawSave)
+
+    activeTab.value = saveData.activeTab || 'operation'
+    activeOperationMenu.value = saveData.activeOperationMenu || 'staff'
+    activeTransport.value = saveData.activeTransport || 'rail'
+
+    towerMessage.value = saveData.towerMessage || {
+      channel: 'ATC',
+      text: '공항관제 자동 시스템 대기중.',
+    }
+
+    transportLines.value = Number.isFinite(saveData.transportLines) ? saveData.transportLines : 4
+    privateFlights.value = Number.isFinite(saveData.privateFlights) ? saveData.privateFlights : 1
+    activeFlights.value = Array.isArray(saveData.activeFlights) ? saveData.activeFlights : []
+    flightId = Number.isFinite(saveData.flightId) ? saveData.flightId : activeFlights.value.length
+
+    if (Array.isArray(saveData.departments)) {
+      saveData.departments.forEach((savedItem) => {
+        const target = departments.find((item) => item.id === savedItem.id)
+
+        if (target && Number.isFinite(savedItem.staff)) {
+          target.staff = savedItem.staff
+        }
+      })
+    }
+
+    if (Array.isArray(saveData.upgrades)) {
+      saveData.upgrades.forEach((savedItem) => {
+        const target = upgrades.find((item) => item.id === savedItem.id)
+
+        if (target && Number.isFinite(savedItem.level)) {
+          target.level = savedItem.level
+        }
+      })
+    }
+
+    if (Array.isArray(saveData.researches)) {
+      saveData.researches.forEach((savedItem) => {
+        const target = researches.find((item) => item.id === savedItem.id)
+
+        if (target && typeof savedItem.done === 'boolean') {
+          target.done = savedItem.done
+        }
+      })
+    }
+
+    if (saveData.airport) {
+      airport.gates = Number.isFinite(saveData.airport.gates) ? saveData.airport.gates : airport.gates
+      airport.runways = Number.isFinite(saveData.airport.runways) ? saveData.airport.runways : airport.runways
+      airport.groundVehicles = Number.isFinite(saveData.airport.groundVehicles)
+        ? saveData.airport.groundVehicles
+        : airport.groundVehicles
+    }
+
+    if (showMessage) {
+      updateTowerMessage('LOAD', '로컬 저장 데이터를 불러왔습니다.')
+    }
+
+    return true
+  } catch (error) {
+    console.error('로컬 불러오기 실패:', error)
+
+    if (showMessage) {
+      updateTowerMessage('LOAD ERROR', '로컬 저장 데이터를 불러오지 못했습니다.')
+    }
+
+    return false
+  }
+}
+
+function resetSave() {
+  localStorage.removeItem(SAVE_KEY)
+  updateTowerMessage('RESET', '로컬 저장 데이터가 삭제되었습니다.')
+}
 
 function updateTime() {
   const now = new Date()
@@ -444,6 +579,7 @@ function assignStaff(id) {
   if (target) {
     target.staff++
     updateTowerMessage('STAFF', `${target.label} 직원 배치. 자동 커버 범위가 증가합니다.`)
+    saveGame()
   }
 }
 
@@ -451,6 +587,7 @@ function addPrivateFlight() {
   privateFlights.value++
   createFlight(60)
   updateTowerMessage('FACILITY', '사용자 전용 항공편성이 도착 예정 목록에 추가되었습니다.')
+  saveGame()
 }
 
 function progressDeparture(flight) {
@@ -738,10 +875,14 @@ function processTakeoffQueue() {
 onMounted(() => {
   updateTime()
 
-  createFlight(60)
-  createFlight(42)
-  createFlight(22)
-  createFlight(12)
+  const hasSaveData = loadGame()
+
+  if (!hasSaveData) {
+    createFlight(60)
+    createFlight(42)
+    createFlight(22)
+    createFlight(12)
+  }
 
   timeTimer = setInterval(updateTime, 1000)
 
@@ -765,12 +906,19 @@ onMounted(() => {
       createFlight(60)
     }
   }, 20000)
+
+  autoSaveTimer = setInterval(() => {
+    saveGame()
+  }, 5000)
 })
 
 onUnmounted(() => {
+  saveGame()
+
   clearInterval(timeTimer)
   clearInterval(flightTimer)
   clearInterval(spawnTimer)
+  clearInterval(autoSaveTimer)
 })
 </script>
 
