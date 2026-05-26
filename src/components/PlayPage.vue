@@ -10,6 +10,7 @@
       <div class="time-card">
         <span>STANDARD TIME</span>
         <strong>{{ worldTime }}</strong>
+        <small>1초 = 1틱</small>
       </div>
     </header>
 
@@ -168,13 +169,26 @@
               v-for="flight in flightsByZone(zone.id)"
               :key="flight.id"
               class="flight-card"
+              :class="{ fadeout: flight.fadeout }"
             >
               <div class="flight-top">
                 <strong>{{ flight.code }}</strong>
-                <span>{{ flight.remain }}분</span>
+
+                <span v-if="zone.id !== 'departure'">
+                  {{ formatRemain(flight.remainingSeconds) }}
+                </span>
+
+                <span v-else>
+                  {{ flight.altitude }}FT
+                </span>
               </div>
+
               <p>{{ flight.status }}</p>
               <small>{{ flight.detail }}</small>
+
+              <div v-if="zone.id === 'departure'" class="departure-info">
+                SPD {{ flight.speed }}KT
+              </div>
             </div>
 
             <div v-if="flightsByZone(zone.id).length === 0" class="empty-zone">
@@ -194,6 +208,7 @@ const activeTab = ref('operation')
 const activeOperationMenu = ref('staff')
 const activeTransport = ref('rail')
 const worldTime = ref('')
+
 const towerMessage = ref({
   channel: 'ATC',
   text: '공항관제 자동 시스템 대기중.',
@@ -205,7 +220,7 @@ const activeFlights = ref([])
 
 let timeTimer = null
 let flightTimer = null
-let messageTimer = null
+let spawnTimer = null
 let flightId = 0
 
 const tabs = [
@@ -297,23 +312,14 @@ const transportData = {
 }
 
 const atcZones = [
-  { id: 'arrival', code: 'ARRIVAL', label: '도착 예정' },
+  { id: 'scheduled', code: 'SCHEDULED', label: '도착 예정' },
+  { id: 'arrival', code: 'ARRIVAL', label: '도착 흐름' },
   { id: 'approach', code: 'APPROACH', label: '접근 관제' },
   { id: 'tower', code: 'TOWER', label: '관제탑' },
+  { id: 'landing', code: 'LANDING', label: '착륙' },
   { id: 'ground', code: 'GROUND', label: '지상 관제' },
   { id: 'gate', code: 'GATE', label: '게이트' },
   { id: 'departure', code: 'DEPARTURE', label: '출발 관제' },
-]
-
-const atcSteps = [
-  { zone: 'arrival', status: '도착 예정', detail: '공항 접근 전 항공 일정 대기', min: 8, max: 16, message: '도착 예정 항공편이 항공일정에 등록되었습니다.' },
-  { zone: 'approach', status: '공항 접근', detail: '접근 관제 주파수 연결', min: 4, max: 8, message: 'CONTACT APPROACH. 공항 접근 절차를 시작합니다.' },
-  { zone: 'tower', status: '착륙 허가 대기', detail: '활주로 슬롯 확인중', min: 3, max: 7, message: 'CONTACT TOWER. 착륙 순번을 배정합니다.' },
-  { zone: 'ground', status: '지상 이동중', detail: '활주로 이탈 후 게이트 이동', min: 5, max: 12, message: 'CONTACT GROUND. 게이트까지 지상 이동합니다.' },
-  { zone: 'gate', status: '승객 하차중', detail: '게이트 도착 후 하차 및 지상작업', min: 6, max: 14, message: 'GATE ARRIVAL. 승객 하차와 지상작업을 시작합니다.' },
-  { zone: 'gate', status: '보딩중', detail: '승객 탑승 및 수하물 처리', min: 8, max: 18, message: 'BOARDING ACTIVE. 출발 준비가 진행중입니다.' },
-  { zone: 'departure', status: '푸시백 대기', detail: '출발 허가 및 푸시백 대기', min: 4, max: 10, message: 'PUSHBACK STANDBY. 출발 관제 대기중입니다.' },
-  { zone: 'tower', status: '이륙 대기', detail: '활주로 이륙 슬롯 대기', min: 3, max: 8, message: 'CONTACT TOWER. 이륙 허가를 대기합니다.' },
 ]
 
 const currentOperation = computed(() => {
@@ -322,15 +328,34 @@ const currentOperation = computed(() => {
 
 const currentTransport = computed(() => transportData[activeTransport.value])
 
-const totalStaff = computed(() => departments.reduce((sum, item) => sum + item.staff, 0))
-const autoInterval = computed(() => (totalStaff.value > 0 ? 10 : 30))
-
 function updateTime() {
   const now = new Date()
+
   worldTime.value = now.toLocaleTimeString('ko-KR', {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatRemain(totalSeconds) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds))
+
+  if (safeSeconds < 60) {
+    return `${safeSeconds}S`
+  }
+
+  return `${Math.ceil(safeSeconds / 60)}M`
+}
+
+function toSeconds(minutes) {
+  return minutes * 60
+}
+
+function randomSeconds(minMinutes, maxMinutes) {
+  const min = toSeconds(minMinutes)
+  const max = toSeconds(maxMinutes)
+
+  return Math.floor(min + Math.random() * (max - min + 1))
 }
 
 function makeFlightCode() {
@@ -343,101 +368,74 @@ function makeFlightCode() {
   return `${prefix}${number}`
 }
 
-function randomMinutes(min, max) {
-  return Math.floor(min + Math.random() * (max - min + 1))
-}
-
-function createFlight() {
-  const firstStep = atcSteps[0]
-
-  return {
-    id: flightId++,
-    code: makeFlightCode(),
-    step: 0,
-    zone: firstStep.zone,
-    status: firstStep.status,
-    detail: firstStep.detail,
-    remain: randomMinutes(firstStep.min, firstStep.max),
-  }
-}
-
 function updateTowerMessage(channel, text) {
   towerMessage.value = { channel, text }
 }
 
-function activeChannelByZone(zone) {
-  const map = {
-    arrival: 'ARRIVAL',
-    approach: 'APPROACH',
-    tower: 'TOWER',
-    ground: 'GROUND',
-    gate: 'GATE',
-    departure: 'DEPARTURE',
-  }
-
-  return map[zone] || 'ATC'
+function isLandingBusy() {
+  return activeFlights.value.some((flight) => flight.zone === 'landing')
 }
 
-function progressFlights() {
-  if (activeFlights.value.length < Math.min(8, privateFlights.value + 2)) {
-    const flight = createFlight()
-    activeFlights.value.push(flight)
-    updateTowerMessage('ARRIVAL', `${flight.code} 항공일정 등록. 도착 예정 ${flight.remain}분.`)
-  }
-
-  activeFlights.value = activeFlights.value
-    .map((flight) => {
-      const nextRemain = flight.remain - 1
-
-      if (nextRemain > 0) {
-        return { ...flight, remain: nextRemain }
-      }
-
-      const nextStep = flight.step + 1
-
-      if (nextStep >= atcSteps.length) {
-        updateTowerMessage('TOWER', `${flight.code} CLEARED FOR TAKEOFF. 이륙 완료.`)
-        return null
-      }
-
-      const step = atcSteps[nextStep]
-      const remain = randomMinutes(step.min, step.max)
-
-      updateTowerMessage(activeChannelByZone(step.zone), `${flight.code} ${step.message}`)
-
-      return {
-        ...flight,
-        step: nextStep,
-        zone: step.zone,
-        status: step.status,
-        detail: step.detail,
-        remain,
-      }
-    })
-    .filter(Boolean)
+function isTakeoffBusy() {
+  return activeFlights.value.some((flight) => {
+    return (
+      flight.zone === 'tower' &&
+      flight.flow === 'departure' &&
+      ['LINE UP AND WAIT', 'CLEARED FOR TAKEOFF'].includes(flight.status)
+    )
+  })
 }
 
-function rotateMessage() {
-  const samples = [
-    ['ATC', `자동 처리 간격 ${autoInterval.value}분 기준으로 흐름을 유지합니다.`],
-    ['RAMP', '지상작업차량이 원거리 게이트로 이동중입니다.'],
-    ['GROUND', '지상 이동 대기열을 순차적으로 조정합니다.'],
-    ['TOWER', '활주로 사용 슬롯을 재계산합니다.'],
-  ]
+function createFlight(startMinutes = 60) {
+  const remainingSeconds = toSeconds(startMinutes)
 
-  const sample = samples[Math.floor(Math.random() * samples.length)]
-  updateTowerMessage(sample[0], sample[1])
+  const flight = {
+    id: flightId++,
+    code: makeFlightCode(),
+    flow: 'arrival',
+    zone: 'scheduled',
+    remainingSeconds,
+    status: 'FLIGHT PLAN REGISTERED',
+    detail: 'ETA 등록',
+    disembarkSeconds: 0,
+    cleaningSeconds: 0,
+    altitude: 0,
+    speed: 0,
+    goodDay: false,
+    fadeout: false,
+  }
+
+  if (startMinutes <= 30 && startMinutes > 15) {
+    flight.zone = 'arrival'
+    flight.status = 'ARRIVAL FLOW ACTIVE'
+    flight.detail = '도착 흐름 활성화'
+  }
+
+  if (startMinutes <= 15 && startMinutes > 10) {
+    flight.zone = 'approach'
+    flight.status = 'CONTACT APPROACH'
+    flight.detail = '접근 관제 연결'
+  }
+
+  if (startMinutes <= 10 && startMinutes > 2) {
+    flight.zone = 'tower'
+    flight.status = 'CLEARED FOR LANDING'
+    flight.detail = '최종 접근'
+  }
+
+  activeFlights.value.push(flight)
 }
 
 function flightsByZone(zoneId) {
-  return activeFlights.value.filter((flight) => flight.zone === zoneId)
-}
+  return activeFlights.value
+    .filter((flight) => flight.zone === zoneId)
+    .sort((a, b) => {
+      if (zoneId === 'departure') {
+        return a.altitude - b.altitude
+      }
 
-function addPrivateFlight() {
-  privateFlights.value++
-  const flight = createFlight()
-  activeFlights.value.push(flight)
-  updateTowerMessage('FACILITY', `${flight.code} 사용자 전용 항공편성이 추가되었습니다.`)
+      return a.remainingSeconds - b.remainingSeconds
+    })
 }
 
 function assignStaff(id) {
@@ -449,28 +447,337 @@ function assignStaff(id) {
   }
 }
 
+function addPrivateFlight() {
+  privateFlights.value++
+  createFlight(60)
+  updateTowerMessage('FACILITY', '사용자 전용 항공편성이 도착 예정 목록에 추가되었습니다.')
+}
+
+function progressDeparture(flight) {
+  flight.altitude += 250
+  flight.speed = Math.min(480, flight.speed + 8)
+
+  if (flight.altitude >= 6000 && !flight.goodDay) {
+    flight.goodDay = true
+    flight.status = 'GOOD DAY'
+    flight.detail = 'CONTROL TRANSFERRED'
+    updateTowerMessage('DEPARTURE', `${flight.code} GOOD DAY`)
+    return
+  }
+
+  if (flight.altitude >= 13000 && !flight.fadeout) {
+    flight.fadeout = true
+    flight.status = 'LEAVING TERMINAL AIRSPACE'
+    flight.detail = '공항 관제권 이탈'
+    updateTowerMessage('DEPARTURE', `${flight.code} LEAVING TERMINAL AIRSPACE`)
+
+    setTimeout(() => {
+      activeFlights.value = activeFlights.value.filter((item) => item.id !== flight.id)
+    }, 2500)
+  }
+}
+
+function processFlight(flight) {
+  if (flight.zone === 'departure') {
+    progressDeparture(flight)
+    return
+  }
+
+  if (flight.remainingSeconds > 0) {
+    flight.remainingSeconds--
+  }
+
+  if (flight.zone === 'scheduled' && flight.remainingSeconds <= toSeconds(30)) {
+    flight.zone = 'arrival'
+    flight.status = 'ARRIVAL FLOW ACTIVE'
+    flight.detail = '도착 흐름 활성화'
+    updateTowerMessage('ARRIVAL', `${flight.code} ARRIVAL FLOW ACTIVE`)
+    return
+  }
+
+  if (flight.zone === 'arrival' && flight.remainingSeconds <= toSeconds(15)) {
+    flight.zone = 'approach'
+    flight.status = 'CONTACT APPROACH'
+    flight.detail = '접근 관제 연결'
+    updateTowerMessage('APPROACH', `${flight.code} CONTACT APPROACH`)
+    return
+  }
+
+  if (flight.zone === 'approach' && flight.remainingSeconds <= toSeconds(10)) {
+    flight.zone = 'tower'
+    flight.status = 'CLEARED FOR LANDING'
+    flight.detail = '최종 접근'
+    updateTowerMessage('TOWER', `${flight.code} CLEARED FOR LANDING`)
+    return
+  }
+
+  if (
+    flight.zone === 'tower' &&
+    flight.flow === 'arrival' &&
+    flight.remainingSeconds <= toSeconds(2)
+  ) {
+    if (isLandingBusy()) {
+      flight.status = 'LANDING SEQUENCE HOLD'
+      flight.detail = '착륙 순번 대기'
+      return
+    }
+
+    flight.zone = 'landing'
+    flight.remainingSeconds = toSeconds(1)
+    flight.status = 'RUNWAY DECELERATION'
+    flight.detail = '활주로 감속'
+    updateTowerMessage('TOWER', `${flight.code} RUNWAY DECELERATION`)
+    return
+  }
+
+  if (flight.zone === 'landing' && flight.remainingSeconds <= 0) {
+    flight.zone = 'ground'
+    flight.remainingSeconds = toSeconds(10)
+    flight.status = 'TAXI TO GATE'
+    flight.detail = '활주로에서 게이트 이동'
+    updateTowerMessage('GROUND', `${flight.code} CONTACT GROUND`)
+    return
+  }
+
+  if (
+    flight.zone === 'ground' &&
+    flight.flow === 'arrival' &&
+    flight.status === 'TAXI TO GATE' &&
+    flight.remainingSeconds <= toSeconds(2)
+  ) {
+    flight.zone = 'gate'
+    flight.remainingSeconds = toSeconds(2)
+    flight.status = 'APPROACHING GATE'
+    flight.detail = '게이트 접근중'
+    updateTowerMessage('RAMP', `${flight.code} APPROACHING GATE`)
+    return
+  }
+
+  if (
+    flight.zone === 'gate' &&
+    flight.status === 'APPROACHING GATE' &&
+    flight.remainingSeconds <= 0
+  ) {
+    flight.disembarkSeconds = randomSeconds(60, 180)
+    flight.cleaningSeconds = Math.max(toSeconds(20), Math.floor(flight.disembarkSeconds / 3))
+    flight.remainingSeconds = flight.disembarkSeconds
+    flight.status = 'PASSENGER DISEMBARKING'
+    flight.detail = 'ENGINE CUT OFF · JET BRIDGE CONNECTED'
+    updateTowerMessage('GATE', `${flight.code} ENGINE CUT OFF · JET BRIDGE CONNECTED`)
+    return
+  }
+
+  if (
+    flight.zone === 'gate' &&
+    flight.status === 'PASSENGER DISEMBARKING' &&
+    flight.remainingSeconds <= 0
+  ) {
+    flight.remainingSeconds = toSeconds(10)
+    flight.status = 'CREW CHECK'
+    flight.detail = '승무원 체크'
+    updateTowerMessage('GATE', `${flight.code} CREW CHECK`)
+    return
+  }
+
+  if (
+    flight.zone === 'gate' &&
+    flight.status === 'CREW CHECK' &&
+    flight.remainingSeconds <= 0
+  ) {
+    flight.code = 'MT'
+    flight.remainingSeconds = flight.cleaningSeconds
+    flight.status = 'AIRCRAFT CLEANING'
+    flight.detail = '빈 항공기 청소 진행'
+    updateTowerMessage('GATE', 'MT AIRCRAFT CLEANING')
+    return
+  }
+
+  if (
+    flight.zone === 'gate' &&
+    flight.status === 'AIRCRAFT CLEANING' &&
+    flight.remainingSeconds <= 0
+  ) {
+    flight.code = makeFlightCode()
+    flight.remainingSeconds = toSeconds(10)
+    flight.status = 'CREW BOARDING'
+    flight.detail = '다음 출발편 승무원 탑승'
+    updateTowerMessage('GATE', `${flight.code} CREW BOARDING`)
+    return
+  }
+
+  if (
+    flight.zone === 'gate' &&
+    flight.status === 'CREW BOARDING' &&
+    flight.remainingSeconds <= 0
+  ) {
+    flight.remainingSeconds = randomSeconds(60, 180)
+    flight.status = 'PASSENGER BOARDING'
+    flight.detail = 'BOARDING READY · 승객 보딩중'
+    updateTowerMessage('GATE', `${flight.code} BOARDING READY`)
+    return
+  }
+
+  if (
+    flight.zone === 'gate' &&
+    flight.status === 'PASSENGER BOARDING' &&
+    flight.remainingSeconds <= 0
+  ) {
+    flight.remainingSeconds = toSeconds(1)
+    flight.status = 'READY FOR PUSHBACK'
+    flight.detail = 'DOOR CLOSED · PUSHBACK REQUEST'
+    updateTowerMessage('GATE', `${flight.code} READY FOR PUSHBACK`)
+    return
+  }
+
+  if (
+    flight.zone === 'gate' &&
+    flight.status === 'READY FOR PUSHBACK' &&
+    flight.remainingSeconds <= 0
+  ) {
+    flight.remainingSeconds = toSeconds(10)
+    flight.status = 'PUSHBACK ACTIVE'
+    flight.detail = '푸시백 진행중'
+    updateTowerMessage('RAMP', `${flight.code} PUSHBACK ACTIVE`)
+    return
+  }
+
+  if (
+    flight.zone === 'gate' &&
+    flight.status === 'PUSHBACK ACTIVE' &&
+    flight.remainingSeconds <= 0
+  ) {
+    flight.zone = 'ground'
+    flight.flow = 'departure'
+    flight.remainingSeconds = toSeconds(10)
+    flight.status = 'TAXI TO RWY'
+    flight.detail = 'REQUEST TAXI · 활주로 이동'
+    updateTowerMessage('GROUND', `${flight.code} REQUEST TAXI`)
+    return
+  }
+
+  if (
+    flight.zone === 'ground' &&
+    flight.flow === 'departure' &&
+    flight.status === 'TAXI TO RWY' &&
+    flight.remainingSeconds <= toSeconds(10)
+  ) {
+    flight.status = 'CONTACTING TOWER'
+    flight.detail = '타워 연결중'
+    updateTowerMessage('GROUND', `${flight.code} CONTACTING TOWER`)
+    return
+  }
+
+  if (
+    flight.zone === 'ground' &&
+    flight.flow === 'departure' &&
+    flight.remainingSeconds <= 0
+  ) {
+    flight.zone = 'tower'
+    flight.remainingSeconds = 0
+    flight.status = 'HOLD SHORT RWY'
+    flight.detail = '활주로 앞 대기'
+    updateTowerMessage('TOWER', `${flight.code} HOLD SHORT RWY`)
+    return
+  }
+
+  if (
+    flight.zone === 'tower' &&
+    flight.flow === 'departure' &&
+    flight.status === 'LINE UP AND WAIT' &&
+    flight.remainingSeconds <= toSeconds(2)
+  ) {
+    flight.remainingSeconds = toSeconds(2)
+    flight.status = 'CLEARED FOR TAKEOFF'
+    flight.detail = '이륙 활주중'
+    updateTowerMessage('TOWER', `${flight.code} CLEARED FOR TAKEOFF`)
+    return
+  }
+
+  if (
+    flight.zone === 'tower' &&
+    flight.flow === 'departure' &&
+    flight.status === 'CLEARED FOR TAKEOFF' &&
+    flight.remainingSeconds <= 0
+  ) {
+    flight.zone = 'departure'
+    flight.altitude = 1000
+    flight.speed = 180
+    flight.status = 'AIRBORNE'
+    flight.detail = '출발 상승중'
+    updateTowerMessage('DEPARTURE', `${flight.code} AIRBORNE`)
+  }
+}
+
+function processTakeoffQueue() {
+  if (isLandingBusy() || isTakeoffBusy()) {
+    return
+  }
+
+  const holdingFlights = activeFlights.value
+    .filter((flight) => {
+      return (
+        flight.zone === 'tower' &&
+        flight.flow === 'departure' &&
+        flight.status === 'HOLD SHORT RWY'
+      )
+    })
+    .sort((a, b) => a.id - b.id)
+
+  const nextFlight = holdingFlights[0]
+
+  if (!nextFlight) {
+    return
+  }
+
+  nextFlight.remainingSeconds = toSeconds(4)
+  nextFlight.status = 'LINE UP AND WAIT'
+  nextFlight.detail = '활주로 진입'
+  updateTowerMessage('TOWER', `${nextFlight.code} LINE UP AND WAIT`)
+}
+
 onMounted(() => {
   updateTime()
-  activeFlights.value = [createFlight(), createFlight(), createFlight()]
-  updateTowerMessage('ATC', '항공관제 패널이 활성화되었습니다.')
+
+  createFlight(60)
+  createFlight(42)
+  createFlight(22)
+  createFlight(12)
 
   timeTimer = setInterval(updateTime, 1000)
-  flightTimer = setInterval(progressFlights, 4000)
-  messageTimer = setInterval(rotateMessage, 7000)
+
+  flightTimer = setInterval(() => {
+    activeFlights.value.forEach(processFlight)
+    processTakeoffQueue()
+  }, 1000)
+
+  spawnTimer = setInterval(() => {
+    const wave = Math.random()
+
+    if (wave > 0.82) {
+      createFlight(60)
+      createFlight(58)
+      createFlight(55)
+      updateTowerMessage('ARRIVAL', 'ARRIVAL WAVE DETECTED')
+      return
+    }
+
+    if (wave > 0.45) {
+      createFlight(60)
+    }
+  }, 20000)
 })
 
 onUnmounted(() => {
   clearInterval(timeTimer)
   clearInterval(flightTimer)
-  clearInterval(messageTimer)
+  clearInterval(spawnTimer)
 })
 </script>
 
 <style scoped>
 .page {
   min-height: 100vh;
-  height: auto;
-  overflow-y: visible;
+  overflow-y: auto;
   padding: 28px;
   color: #edf8ff;
   background:
@@ -537,6 +844,7 @@ h1 {
 }
 
 .time-card span,
+.time-card small,
 .manage-card span,
 .wide-card span,
 .line-head span,
@@ -551,6 +859,10 @@ h1 {
   display: block;
   margin-top: 8px;
   font-size: 32px;
+}
+
+.time-card small {
+  margin-top: 8px;
 }
 
 .main-tabs,
@@ -749,7 +1061,7 @@ button:disabled {
 
 .atc-columns {
   display: grid;
-  grid-template-columns: repeat(6, minmax(150px, 1fr));
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
   gap: 12px;
 }
 
@@ -779,7 +1091,9 @@ button:disabled {
 .flight-stack {
   display: grid;
   gap: 10px;
+  max-height: 520px;
   padding: 12px;
+  overflow-y: auto;
 }
 
 .flight-card {
@@ -787,6 +1101,12 @@ button:disabled {
   border: 1px solid rgba(118, 223, 255, 0.22);
   border-radius: 18px;
   background: rgba(118, 223, 255, 0.08);
+  transition: 2.5s;
+}
+
+.flight-card.fadeout {
+  opacity: 0;
+  transform: translateY(90px);
 }
 
 .flight-top {
@@ -816,6 +1136,12 @@ button:disabled {
   color: #9eb8c8;
 }
 
+.departure-info {
+  margin-top: 8px;
+  color: #76dfff;
+  font-size: 13px;
+}
+
 .empty-zone {
   padding: 18px 10px;
   border-radius: 16px;
@@ -828,7 +1154,7 @@ button:disabled {
 
 @media (max-width: 1100px) {
   .atc-columns {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -861,6 +1187,10 @@ button:disabled {
 @media (max-width: 680px) {
   .atc-columns {
     grid-template-columns: 1fr;
+  }
+
+  .flight-stack {
+    max-height: 430px;
   }
 }
 </style>
