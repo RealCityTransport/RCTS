@@ -787,6 +787,21 @@ onUnmounted(() => {
   font-family: Pretendard, Inter, system-ui, sans-serif;
 }
 
+.page,
+.flight-stack,
+.main-tabs,
+.transport-tabs {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.page::-webkit-scrollbar,
+.flight-stack::-webkit-scrollbar,
+.main-tabs::-webkit-scrollbar,
+.transport-tabs::-webkit-scrollbar {
+  display: none;
+}
+
 .hero,
 .content-panel,
 .side-panel,
