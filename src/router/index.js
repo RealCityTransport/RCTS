@@ -9,6 +9,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
+      name: 'Home',
       component: PlayPage,
     },
 
@@ -17,6 +18,10 @@ const router = createRouter({
       redirect: '/',
     },
   ],
+
+  scrollBehavior() {
+    return { top: 0 }
+  },
 })
 
 export default router

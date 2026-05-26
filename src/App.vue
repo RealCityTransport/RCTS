@@ -11,11 +11,11 @@ html,
 body,
 #app {
   width: 100%;
-  height: 100%;
+  height: auto;
   margin: 0;
   background: #000;
   color: #d8d8d8;
-  overflow: hidden;
+  overflow-y: auto;
   font-family: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
 }
 
