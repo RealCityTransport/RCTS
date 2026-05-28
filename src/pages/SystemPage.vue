@@ -24,10 +24,16 @@ const {
   formatSeconds,
   hasSystemSecretary,
   isDataSaveUnlocked,
+  lastSavedAtMs,
+  saveGame,
 } = useRctsStore()
 
 const localTick = ref(0)
+const saveMessage = ref('')
+const saving = ref(false)
+
 let localTimer = null
+let saveMessageTimer = null
 
 const currentTick = computed(() => {
   return worldClock?.tick?.value ?? localTick.value
@@ -73,6 +79,30 @@ const canStartDataResearch = computed(() => {
   return canStartResearch('dataBasic')
 })
 
+const lastSavedText = computed(() => {
+  if (!lastSavedAtMs.value) return ''
+
+  const savedDate = new Date(lastSavedAtMs.value)
+
+  const parts = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(savedDate)
+
+  const year = parts.find((part) => part.type === 'year')?.value ?? '0000'
+  const month = parts.find((part) => part.type === 'month')?.value ?? '00'
+  const day = parts.find((part) => part.type === 'day')?.value ?? '00'
+  const hour = parts.find((part) => part.type === 'hour')?.value ?? '00'
+  const minute = parts.find((part) => part.type === 'minute')?.value ?? '00'
+
+  return `${year}.${month}.${day} ${hour}:${minute}`
+})
+
 function startResearch(researchId) {
   startSystemResearch(researchId, currentTick.value)
 }
@@ -91,6 +121,37 @@ function selectSystemSecretary(staffId) {
   assignSystemSecretary(staffId)
 }
 
+async function saveCurrentGame() {
+  if (!isDataSaveUnlocked.value || saving.value) return
+
+  saving.value = true
+  saveMessage.value = ''
+
+  try {
+    const saved = await saveGame()
+
+    if (saved) {
+      saveMessage.value = '저장 완료'
+    } else {
+      saveMessage.value = '저장 불가'
+    }
+  } catch (error) {
+    console.error(error)
+    saveMessage.value = '저장 실패'
+  } finally {
+    saving.value = false
+
+    if (saveMessageTimer) {
+      window.clearTimeout(saveMessageTimer)
+    }
+
+    saveMessageTimer = window.setTimeout(() => {
+      saveMessage.value = ''
+      saveMessageTimer = null
+    }, 2500)
+  }
+}
+
 watch(currentTick, () => {
   updateResearchCompletion()
 })
@@ -107,6 +168,11 @@ onUnmounted(() => {
   if (localTimer) {
     window.clearInterval(localTimer)
     localTimer = null
+  }
+
+  if (saveMessageTimer) {
+    window.clearTimeout(saveMessageTimer)
+    saveMessageTimer = null
   }
 })
 </script>
@@ -255,11 +321,30 @@ onUnmounted(() => {
           </div>
         </article>
 
-        <div class="save-status">
-          <strong>저장 상태</strong>
-          <span v-if="isDataSaveUnlocked">활성화</span>
-          <span v-else>비활성화</span>
-        </div>
+        <article class="save-card">
+          <div>
+            <strong>저장</strong>
+            <span v-if="isDataSaveUnlocked">활성화</span>
+            <span v-else>비활성화</span>
+          </div>
+
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="!isDataSaveUnlocked || saving"
+            @click="saveCurrentGame"
+          >
+            {{ saving ? '저장 중' : '현재 상태 저장' }}
+          </button>
+
+          <p v-if="lastSavedText">
+            마지막 저장 {{ lastSavedText }}
+          </p>
+
+          <p v-if="saveMessage">
+            {{ saveMessage }}
+          </p>
+        </article>
       </section>
     </section>
   </section>
@@ -332,7 +417,8 @@ onUnmounted(() => {
 
 .department-head-card,
 .secretary-card,
-.research-card {
+.research-card,
+.save-card {
   display: grid;
   gap: 12px;
   padding: 18px;
@@ -351,13 +437,16 @@ onUnmounted(() => {
 
 .department-head-card strong,
 .secretary-card strong,
-.research-card strong {
+.research-card strong,
+.save-card strong {
   color: #f8fafc;
   font-size: 18px;
   font-weight: 900;
 }
 
-.secretary-card span {
+.secretary-card span,
+.research-card span,
+.save-card span {
   color: #93c5fd;
   font-size: 13px;
   font-weight: 900;
@@ -397,19 +486,15 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.research-card > div:first-child {
+.research-card > div:first-child,
+.save-card > div:first-child {
   display: flex;
   justify-content: space-between;
   gap: 12px;
 }
 
-.research-card span {
-  color: #93c5fd;
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.research-card p {
+.research-card p,
+.save-card p {
   margin: 0;
   color: #94a3b8;
   font-size: 13px;
@@ -455,23 +540,6 @@ onUnmounted(() => {
   font-size: 14px;
   font-weight: 900;
   text-align: center;
-}
-
-.save-status {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 16px;
-  background: rgba(15, 23, 42, 0.52);
-}
-
-.save-status strong,
-.save-status span {
-  color: #f8fafc;
-  font-size: 14px;
-  font-weight: 900;
 }
 
 @media (max-width: 720px) {

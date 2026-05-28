@@ -13,6 +13,7 @@ const menusUnlocked = ref(false)
 const savingUnlocked = ref(false)
 const storeLoaded = ref(false)
 const systemSecretaryStaffId = ref('')
+const lastSavedAtMs = ref(null)
 
 const departments = [
   {
@@ -97,10 +98,10 @@ function openDatabase() {
   })
 }
 
-async function saveStateToIndexedDB() {
-  if (!savingUnlocked.value) return
-
+async function writeStateToIndexedDB() {
   const db = await openDatabase()
+
+  const savedAtMs = Date.now()
 
   const payload = {
     company: company.value,
@@ -110,6 +111,7 @@ async function saveStateToIndexedDB() {
     systemResearches: systemResearches.value,
     recruitment: recruitment.value,
     systemSecretaryStaffId: systemSecretaryStaffId.value,
+    lastSavedAtMs: savedAtMs,
   }
 
   await new Promise((resolve, reject) => {
@@ -122,6 +124,15 @@ async function saveStateToIndexedDB() {
   })
 
   db.close()
+
+  lastSavedAtMs.value = savedAtMs
+}
+
+async function saveGame() {
+  if (!isDataSaveUnlocked.value) return false
+
+  await writeStateToIndexedDB()
+  return true
 }
 
 async function loadStateFromIndexedDB() {
@@ -138,13 +149,14 @@ async function loadStateFromIndexedDB() {
 
   db.close()
 
-  if (!savedState || !savedState.savingUnlocked) return
+  if (!savedState) return
 
   company.value = savedState.company ?? null
   staffList.value = savedState.staffList ?? []
   menusUnlocked.value = savedState.menusUnlocked ?? false
   savingUnlocked.value = savedState.savingUnlocked ?? false
   systemSecretaryStaffId.value = savedState.systemSecretaryStaffId ?? ''
+  lastSavedAtMs.value = savedState.lastSavedAtMs ?? null
 
   if (savedState.systemResearches) {
     systemResearches.value = {
@@ -184,11 +196,6 @@ async function initRctsStore() {
   } finally {
     storeLoaded.value = true
   }
-}
-
-function persistIfSavingUnlocked() {
-  if (!savingUnlocked.value) return
-  saveStateToIndexedDB()
 }
 
 function normalizeRecruitmentState(currentTick) {
@@ -253,8 +260,6 @@ function registerFirstStaff({ name, gender, departmentId }) {
   staffList.value = [firstStaff]
   menusUnlocked.value = true
 
-  persistIfSavingUnlocked()
-
   return firstStaff
 }
 
@@ -266,8 +271,6 @@ function registerAdditionalStaff({ name, gender, departmentId }) {
   recruitment.value.pendingCandidate = null
   recruitment.value.candidateStartedAtTick = null
   recruitment.value.targetStaffNumber = null
-
-  persistIfSavingUnlocked()
 
   return newStaff
 }
@@ -319,7 +322,6 @@ function assignSystemSecretary(staffId) {
   if (targetStaff.id === systemHead?.id) return
 
   systemSecretaryStaffId.value = staffId
-  persistIfSavingUnlocked()
 }
 
 function getSystemSecretary() {
@@ -348,7 +350,6 @@ function startSystemResearch(researchId, currentTick) {
   if (!canStartResearch(researchId)) return
 
   systemResearches.value[researchId].startedAtTick = currentTick
-  persistIfSavingUnlocked()
 }
 
 function getResearchRemainingSeconds(researchId, currentTick) {
@@ -382,8 +383,6 @@ function completeSystemResearch(researchId) {
   if (researchId === 'dataBasic') {
     savingUnlocked.value = true
   }
-
-  persistIfSavingUnlocked()
 }
 
 function formatSeconds(seconds) {
@@ -423,8 +422,6 @@ function openRecruitment(currentTick) {
 
   recruitment.value.targetStaffNumber = staffList.value.length + 1
   recruitment.value.candidateStartedAtTick = currentTick
-
-  persistIfSavingUnlocked()
 }
 
 function updateRecruitment(currentTick) {
@@ -447,8 +444,6 @@ function updateRecruitment(currentTick) {
 
   recruitment.value.candidateStartedAtTick = null
   recruitment.value.targetStaffNumber = null
-
-  persistIfSavingUnlocked()
 }
 
 function getRecruitmentRemainingSeconds(currentTick) {
@@ -477,11 +472,13 @@ export function useRctsStore() {
     systemResearches,
     recruitment,
     systemSecretaryStaffId,
+    lastSavedAtMs,
     menuCards,
     isTimeDisplayUnlocked,
     isDataSaveUnlocked,
     hasSystemSecretary,
     initRctsStore,
+    saveGame,
     createCompany,
     registerFirstStaff,
     registerAdditionalStaff,
