@@ -212,6 +212,8 @@ import { database } from '../firebase'
 const KST_TIME_ZONE = 'Asia/Seoul'
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000
 const MINUTE_MS = 60 * 1000
+const HOUR_MS = 60 * MINUTE_MS
+const DAY_MS = 24 * HOUR_MS
 
 const DEFAULT_AIRPORT_WORLD = {
   meta: {
@@ -235,12 +237,17 @@ const DEFAULT_AIRPORT_WORLD = {
     text: '공용 읽기 전용 관제 시스템 운행중.',
   },
   scheduleRule: {
-    spawnIntervalMinutes: 30,
-    scheduledWindowMinutes: 60,
+    nightSpawnIntervalMinutes: 60,
+    daySpawnIntervalMinutes: 30,
+    scheduledCountdownMinutes: 30,
     approachMinutes: 30,
     calculationWindowHours: 12,
   },
   phaseRule: {
+    arrivalMinutes: 15,
+    approachControlMinutes: 10,
+    towerBeforeLandingMinutes: 5,
+    landingStartBeforeTouchdownMinutes: 1,
     landingMinutes: 1,
     taxiToGateMinutes: 5,
     gateApproachMinutes: 1,
@@ -254,9 +261,9 @@ const DEFAULT_AIRPORT_WORLD = {
     boardingMaxMinutes: 60,
     pushbackMinutes: 3,
     taxiToRunwayMinutes: 5,
-    lineUpMinutes: 1,
-    takeoffMinutes: 1,
-    departureDisplayMinutes: 2,
+    climbRateFtPerSecond: 250,
+    nextTakeoffAltitudeFt: 5000,
+    departureExitAltitudeFt: 13000,
   },
 }
 
@@ -309,13 +316,13 @@ const departments = [
     id: 'airport',
     label: '공항 관제',
     staff: 0,
-    effect: '착륙/이륙/게이트 자동 처리 흐름을 표준시간 기준으로 표시합니다.',
+    effect: '도착예정, 도착, 접근, 착륙, 게이트, 출발 흐름을 표준시간 기준으로 표시합니다.',
   },
   {
     id: 'ground',
     label: '지상 운영',
     staff: 0,
-    effect: '지상이동, 게이트 접근, 택싱 흐름을 계산해 표시합니다.',
+    effect: '지상이동, 게이트 접근, 푸시백, 택싱 흐름을 계산해 표시합니다.',
   },
   {
     id: 'rail',
@@ -363,7 +370,7 @@ const researches = [
     id: 'density',
     label: '밀도 제어',
     done: false,
-    effect: '시간대별 항공기 등장 수를 반영합니다.',
+    effect: '00~05시는 1시간, 그 외 시간은 30분 간격으로 도착예정을 생성합니다.',
   },
   {
     id: 'radar',
@@ -459,7 +466,7 @@ const privateFlights = computed(() => {
 const towerMessage = computed(() => {
   const priorityFlight =
     activeFlights.value.find((flight) => flight.zone === 'landing') ||
-    activeFlights.value.find((flight) => flight.status === 'CLEARED FOR TAKEOFF') ||
+    activeFlights.value.find((flight) => flight.zone === 'departure') ||
     activeFlights.value.find((flight) => flight.zone === 'tower') ||
     activeFlights.value.find((flight) => flight.zone === 'approach') ||
     activeFlights.value.find((flight) => flight.zone === 'scheduled') ||
@@ -541,32 +548,27 @@ function getKstParts(ms) {
   return {
     day: date.getUTCDay(),
     hour: date.getUTCHours(),
+    minute: date.getUTCMinutes(),
   }
 }
 
-function isWeekdayByMs(ms) {
-  const { day } = getKstParts(ms)
-
-  return day >= 1 && day <= 5
+function getKstDayStartMs(ms) {
+  return Math.floor((ms + KST_OFFSET_MS) / DAY_MS) * DAY_MS - KST_OFFSET_MS
 }
 
-function getAtcFlightLimit(ms) {
-  const { hour } = getKstParts(ms)
-  const weekday = isWeekdayByMs(ms)
+function isNightArrivalHour(hour) {
+  return hour >= 0 && hour < 6
+}
 
-  if (hour >= 0 && hour < 6) {
-    return 1
+function getSpawnIntervalMinutesByHour(hour) {
+  const config = worldConfig.value
+  const rule = config.scheduleRule
+
+  if (isNightArrivalHour(hour)) {
+    return Number(rule.nightSpawnIntervalMinutes || 60)
   }
 
-  if (weekday && hour >= 8 && hour < 10) {
-    return 3
-  }
-
-  if (weekday && hour >= 16 && hour < 18) {
-    return 3
-  }
-
-  return 2
+  return Number(rule.daySpawnIntervalMinutes || rule.spawnIntervalMinutes || 30)
 }
 
 function hashNumber(...parts) {
@@ -606,20 +608,57 @@ function secondsUntil(targetAt, now) {
   return Math.max(0, Math.ceil((targetAt - now) / 1000))
 }
 
+function generateSpawnTimes(windowStartAt, windowEndAt, startedAt) {
+  const times = []
+  const startDayAt = getKstDayStartMs(windowStartAt - DAY_MS)
+  const endDayAt = getKstDayStartMs(windowEndAt + DAY_MS)
+
+  for (let dayAt = startDayAt; dayAt <= endDayAt; dayAt += DAY_MS) {
+    for (let hour = 0; hour < 24; hour++) {
+      const intervalMinutes = getSpawnIntervalMinutesByHour(hour)
+      const safeInterval = Math.max(1, Math.min(60, intervalMinutes))
+
+      for (let minute = 0; minute < 60; minute += safeInterval) {
+        const spawnAt = dayAt + hour * HOUR_MS + minute * MINUTE_MS
+
+        if (spawnAt < startedAt) {
+          continue
+        }
+
+        if (spawnAt < windowStartAt || spawnAt > windowEndAt) {
+          continue
+        }
+
+        times.push(spawnAt)
+      }
+    }
+  }
+
+  return times.sort((a, b) => a - b)
+}
+
 function makeTimeline(flightIndex, spawnAt, runwayState) {
   const config = worldConfig.value
   const rule = config.phaseRule
   const seed = config.meta.seed
+
+  const arrivalMinutes = Number(rule.arrivalMinutes || 15)
+  const approachControlMinutes = Number(rule.approachControlMinutes || 10)
   const approachMinutes = Number(config.scheduleRule.approachMinutes || 30)
+  const towerBeforeLandingMinutes = Number(rule.towerBeforeLandingMinutes || 5)
+  const landingStartBeforeTouchdownMinutes = Number(rule.landingStartBeforeTouchdownMinutes || 1)
 
-  const arrivalEndAt = spawnAt + toMs(15)
-  const approachEndAt = spawnAt + toMs(20)
-  const landingRequestAt = spawnAt + toMs(Math.max(1, approachMinutes - 2))
-
-  const landingStartAt = Math.max(landingRequestAt, runwayState.landingAvailableAt)
+  const scheduledStartAt = spawnAt - toMs(
+    config.scheduleRule.scheduledCountdownMinutes ||
+      config.scheduleRule.scheduledWindowMinutes ||
+      30,
+  )
+  const arrivalEndAt = spawnAt + toMs(arrivalMinutes)
+  const approachEndAt = arrivalEndAt + toMs(approachControlMinutes)
+  const plannedTouchdownAt = spawnAt + toMs(approachMinutes)
+  const towerStartAt = plannedTouchdownAt - toMs(towerBeforeLandingMinutes)
+  const landingStartAt = plannedTouchdownAt - toMs(landingStartBeforeTouchdownMinutes)
   const landingEndAt = landingStartAt + toMs(rule.landingMinutes)
-
-  runwayState.landingAvailableAt = landingEndAt
 
   const taxiToGateStartAt = landingEndAt
   const gateApproachDelayMinutes = Math.max(
@@ -661,21 +700,26 @@ function makeTimeline(flightIndex, spawnAt, runwayState) {
   const pushbackEndAt = boardingEndAt + toMs(rule.pushbackMinutes)
   const taxiToRunwayEndAt = pushbackEndAt + toMs(rule.taxiToRunwayMinutes)
 
-  const lineUpStartAt = Math.max(taxiToRunwayEndAt, runwayState.takeoffAvailableAt)
-  const clearedForTakeoffAt = lineUpStartAt + toMs(rule.lineUpMinutes)
-  const airborneAt = clearedForTakeoffAt + toMs(rule.takeoffMinutes)
-  const exitAt = airborneAt + toMs(rule.departureDisplayMinutes)
+  const climbRate = Number(rule.climbRateFtPerSecond || 250)
+  const nextTakeoffAltitude = Number(rule.nextTakeoffAltitudeFt || 5000)
+  const departureExitAltitude = Number(rule.departureExitAltitudeFt || 13000)
 
-  runwayState.takeoffAvailableAt = airborneAt
+  const takeoffStartAt = Math.max(taxiToRunwayEndAt, runwayState.nextTakeoffAvailableAt)
+  const nextTakeoffAvailableAt = takeoffStartAt + Math.ceil(nextTakeoffAltitude / climbRate) * 1000
+  const exitAt = takeoffStartAt + Math.ceil(departureExitAltitude / climbRate) * 1000
+
+  runwayState.nextTakeoffAvailableAt = nextTakeoffAvailableAt
 
   return {
     id: `flight_${flightIndex}`,
     index: flightIndex,
     code: makeFlightCode(flightIndex),
+    scheduledStartAt,
     spawnAt,
     arrivalEndAt,
     approachEndAt,
-    landingRequestAt,
+    towerStartAt,
+    plannedTouchdownAt,
     landingStartAt,
     landingEndAt,
     taxiToGateStartAt,
@@ -688,14 +732,17 @@ function makeTimeline(flightIndex, spawnAt, runwayState) {
     boardingEndAt,
     pushbackEndAt,
     taxiToRunwayEndAt,
-    lineUpStartAt,
-    clearedForTakeoffAt,
-    airborneAt,
+    takeoffStartAt,
+    nextTakeoffAvailableAt,
     exitAt,
   }
 }
 
 function makeFlightView(timeline, now) {
+  const rule = worldConfig.value.phaseRule
+  const climbRate = Number(rule.climbRateFtPerSecond || 250)
+  const departureExitAltitude = Number(rule.departureExitAltitudeFt || 13000)
+
   const base = {
     id: timeline.id,
     code: timeline.code,
@@ -706,9 +753,12 @@ function makeFlightView(timeline, now) {
     detail: '',
     altitude: 0,
     speed: 0,
-    goodDay: false,
     fadeout: false,
     channel: 'ATC',
+  }
+
+  if (now < timeline.scheduledStartAt || now >= timeline.exitAt) {
+    return null
   }
 
   if (now < timeline.spawnAt) {
@@ -716,14 +766,10 @@ function makeFlightView(timeline, now) {
       ...base,
       zone: 'scheduled',
       status: 'SCHEDULED ARRIVAL',
-      detail: '도착 예정 · 표준시간 기준 다음 도착편',
+      detail: '도착 예정 · 30분 카운트다운',
       remainingSeconds: secondsUntil(timeline.spawnAt, now),
       channel: 'SCHEDULED',
     }
-  }
-
-  if (now > timeline.exitAt) {
-    return null
   }
 
   if (now < timeline.arrivalEndAt) {
@@ -731,7 +777,7 @@ function makeFlightView(timeline, now) {
       ...base,
       zone: 'arrival',
       status: 'ARRIVAL FLOW ACTIVE',
-      detail: '접근시간 30분 · 도착 흐름 활성화',
+      detail: '도착 흐름 15분',
       remainingSeconds: secondsUntil(timeline.arrivalEndAt, now),
       channel: 'ARRIVAL',
     }
@@ -742,20 +788,18 @@ function makeFlightView(timeline, now) {
       ...base,
       zone: 'approach',
       status: 'CONTACT APPROACH',
-      detail: '접근 관제 연결',
+      detail: '접근 관제 10분',
       remainingSeconds: secondsUntil(timeline.approachEndAt, now),
       channel: 'APPROACH',
     }
   }
 
   if (now < timeline.landingStartAt) {
-    const holding = now >= timeline.landingRequestAt
-
     return {
       ...base,
       zone: 'tower',
-      status: holding ? 'RUNWAY HOLD' : 'CLEARED FOR LANDING',
-      detail: holding ? '활주로 사용중 · 착륙 순번 대기' : '최종 접근',
+      status: 'TOWER FINAL',
+      detail: '관제탑 · 착륙 5분 전 구간',
       remainingSeconds: secondsUntil(timeline.landingStartAt, now),
       channel: 'TOWER',
     }
@@ -765,8 +809,8 @@ function makeFlightView(timeline, now) {
     return {
       ...base,
       zone: 'landing',
-      status: 'RUNWAY DECELERATION',
-      detail: '착륙 · 활주로 감속',
+      status: 'LANDING',
+      detail: '관제탑 1분 시점 · 착륙 전환',
       remainingSeconds: secondsUntil(timeline.landingEndAt, now),
       channel: 'TOWER',
     }
@@ -875,57 +919,32 @@ function makeFlightView(timeline, now) {
     }
   }
 
-  if (now < timeline.lineUpStartAt) {
+  if (now < timeline.takeoffStartAt) {
     return {
       ...base,
       flow: 'departure',
-      zone: 'tower',
-      status: 'HOLD SHORT RWY',
-      detail: '활주로 앞 대기',
-      remainingSeconds: secondsUntil(timeline.lineUpStartAt, now),
-      channel: 'TOWER',
+      zone: 'ground',
+      status: 'DEPARTURE SEQUENCE',
+      detail: '선행기 5000FT 통과 후 즉시 가속',
+      remainingSeconds: secondsUntil(timeline.takeoffStartAt, now),
+      channel: 'GROUND',
     }
   }
 
-  if (now < timeline.clearedForTakeoffAt) {
-    return {
-      ...base,
-      flow: 'departure',
-      zone: 'tower',
-      status: 'LINE UP AND WAIT',
-      detail: '활주로 진입 · 1대씩 이륙 처리',
-      remainingSeconds: secondsUntil(timeline.clearedForTakeoffAt, now),
-      channel: 'TOWER',
-    }
-  }
-
-  if (now < timeline.airborneAt) {
-    return {
-      ...base,
-      flow: 'departure',
-      zone: 'tower',
-      status: 'CLEARED FOR TAKEOFF',
-      detail: '이륙 활주중',
-      remainingSeconds: secondsUntil(timeline.airborneAt, now),
-      channel: 'TOWER',
-    }
-  }
-
-  const airborneElapsedSeconds = Math.floor((now - timeline.airborneAt) / 1000)
-  const altitude = Math.min(13000, 1000 + airborneElapsedSeconds * 250)
-  const speed = Math.min(480, 180 + airborneElapsedSeconds * 8)
-  const leavingSoon = now > timeline.exitAt - 2500
+  const airborneElapsedSeconds = Math.max(0, Math.floor((now - timeline.takeoffStartAt) / 1000))
+  const altitude = Math.min(departureExitAltitude, airborneElapsedSeconds * climbRate)
+  const speed = Math.min(480, 160 + airborneElapsedSeconds * 8)
+  const leavingSoon = timeline.exitAt - now < 3000
 
   return {
     ...base,
     flow: 'departure',
     zone: 'departure',
-    status: altitude >= 6000 ? 'GOOD DAY' : 'AIRBORNE',
-    detail: altitude >= 6000 ? 'CONTROL TRANSFERRED' : '출발 상승중',
+    status: altitude < 1000 ? 'TAKEOFF ROLL' : 'CLIMBING',
+    detail: '이륙 가속 · 13000FT 도달 시 관제 이탈',
     remainingSeconds: secondsUntil(timeline.exitAt, now),
     altitude,
     speed,
-    goodDay: altitude >= 6000,
     fadeout: leavingSoon,
     channel: 'DEPARTURE',
   }
@@ -935,45 +954,30 @@ function rebuildAirportByStandardTime() {
   const now = getStandardNow()
   const config = worldConfig.value
   const startedAt = Number(config.meta.startedAt) || DEFAULT_AIRPORT_WORLD.meta.startedAt
-  const spawnIntervalMs = toMs(config.scheduleRule.spawnIntervalMinutes || 30)
-  const scheduledWindowMs = toMs(
-    config.scheduleRule.scheduledWindowMinutes ||
-      config.scheduleRule.spawnIntervalMinutes ||
-      60,
+  const scheduledCountdownMs = toMs(
+    config.scheduleRule.scheduledCountdownMinutes ||
+      config.scheduleRule.scheduledWindowMinutes ||
+      30,
   )
   const windowHours = Number(config.scheduleRule.calculationWindowHours || 12)
-  const windowStartAt = Math.max(startedAt, now - windowHours * 60 * 60 * 1000)
+  const windowStartAt = Math.max(startedAt, now - windowHours * HOUR_MS)
+  const windowEndAt = now + scheduledCountdownMs
 
-  if (now + scheduledWindowMs < startedAt) {
+  if (windowEndAt < startedAt) {
     activeFlights.value = []
     return
   }
 
-  const firstSlot = Math.max(0, Math.floor((windowStartAt - startedAt) / spawnIntervalMs))
-  const lastSlot = Math.max(0, Math.floor((now + scheduledWindowMs - startedAt) / spawnIntervalMs))
+  const spawnTimes = generateSpawnTimes(windowStartAt, windowEndAt, startedAt)
 
   const runwayState = {
-    landingAvailableAt: windowStartAt,
-    takeoffAvailableAt: windowStartAt,
+    nextTakeoffAvailableAt: windowStartAt,
   }
 
-  const timelines = []
-
-  for (let slot = firstSlot; slot <= lastSlot; slot++) {
-    const slotBaseAt = startedAt + slot * spawnIntervalMs
-    const flightCount = getAtcFlightLimit(slotBaseAt)
-
-    for (let count = 0; count < flightCount; count++) {
-      const flightIndex = slot * 10 + count
-      const spacedSpawnAt = slotBaseAt + count * toMs(4)
-
-      if (spacedSpawnAt > now + scheduledWindowMs) {
-        continue
-      }
-
-      timelines.push(makeTimeline(flightIndex, spacedSpawnAt, runwayState))
-    }
-  }
+  const timelines = spawnTimes.map((spawnAt) => {
+    const flightIndex = Math.floor(spawnAt / MINUTE_MS)
+    return makeTimeline(flightIndex, spawnAt, runwayState)
+  })
 
   activeFlights.value = timelines
     .map((timeline) => makeFlightView(timeline, now))
