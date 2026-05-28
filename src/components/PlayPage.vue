@@ -4,13 +4,15 @@
       <div>
         <p class="eyebrow">RCTS NETWORK</p>
         <h1>REALTIME CONTROL HUB</h1>
-        <p class="desc">운영에서 세계를 조정하고, 교통과 항공관제는 그 결과를 보여줍니다.</p>
+        <p class="desc">
+          Firebase 기준 데이터를 읽고, 모든 접속자가 같은 표준시간 기반 공항 흐름을 봅니다.
+        </p>
       </div>
 
       <div class="time-card">
         <span>STANDARD TIME</span>
         <strong>{{ worldTime }}</strong>
-        <small>1초 = 1틱</small>
+        <small>{{ worldStatusText }}</small>
       </div>
     </header>
 
@@ -44,7 +46,7 @@
             <p class="eyebrow">{{ currentOperation.label }}</p>
             <h2>{{ currentOperation.title }}</h2>
           </div>
-          <span class="badge">{{ currentOperation.badge }}</span>
+          <span class="badge">READ ONLY</span>
         </div>
 
         <div v-if="activeOperationMenu === 'staff'" class="card-grid">
@@ -52,7 +54,7 @@
             <span>{{ dept.label }}</span>
             <strong>{{ dept.staff }}명</strong>
             <p>{{ dept.effect }}</p>
-            <button @click="assignStaff(dept.id)">직원 배치</button>
+            <button disabled>읽기 전용</button>
           </article>
         </div>
 
@@ -61,7 +63,7 @@
             <span>{{ upgrade.label }}</span>
             <strong>Lv.{{ upgrade.level }}</strong>
             <p>{{ upgrade.effect }}</p>
-            <button @click="upgrade.level++">업글</button>
+            <button disabled>읽기 전용</button>
           </article>
         </div>
 
@@ -70,9 +72,7 @@
             <span>{{ research.label }}</span>
             <strong>{{ research.done ? '완료' : '대기' }}</strong>
             <p>{{ research.effect }}</p>
-            <button :disabled="research.done" @click="research.done = true">
-              연구 시작
-            </button>
+            <button disabled>읽기 전용</button>
           </article>
         </div>
       </section>
@@ -81,8 +81,11 @@
     <section v-if="activeTab === 'facility'" class="dashboard">
       <article class="wide-card">
         <span>FACILITY SETUP</span>
-        <strong>사용자 전용 세계 설정</strong>
-        <p>교통 라인, 공항 규모, 사용자 전용 항공편성을 여기서 늘립니다.</p>
+        <strong>공용 세계 설정</strong>
+        <p>
+          시설 값은 Firebase의 airportWorld 기준 데이터를 읽어 표시합니다.
+          사이트 접속자는 수정할 수 없습니다.
+        </p>
       </article>
 
       <div class="card-grid">
@@ -90,21 +93,21 @@
           <span>AIRPORT</span>
           <strong>{{ airport.gates }} Gates</strong>
           <p>활주로 {{ airport.runways }}개 · 지상차량 {{ airport.groundVehicles }}대</p>
-          <button @click="airport.gates += 10">게이트 +10</button>
+          <button disabled>읽기 전용</button>
         </article>
 
         <article class="manage-card">
           <span>TRANSPORT LINE</span>
           <strong>{{ transportLines }} Lines</strong>
-          <p>교통 메뉴에 표시되는 이동 라인 수입니다.</p>
-          <button @click="transportLines++">라인 추가</button>
+          <p>교통 메뉴에 표시되는 공용 이동 라인 수입니다.</p>
+          <button disabled>읽기 전용</button>
         </article>
 
         <article class="manage-card">
           <span>PRIVATE FLIGHT</span>
           <strong>{{ privateFlights }} Flights</strong>
-          <p>항공관제에 투입될 사용자 전용 항공편성입니다.</p>
-          <button @click="addPrivateFlight">편성 추가</button>
+          <p>항공관제에 반영되는 공용 기준 편성입니다.</p>
+          <button disabled>읽기 전용</button>
         </article>
       </div>
     </section>
@@ -202,31 +205,73 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onValue, ref as dbRef } from 'firebase/database'
+import { database } from '../firebase'
 
-const SAVE_KEY = 'airport-observer-local-save-v1'
-const FLIGHT_SPAWN_INTERVAL_MS = 30 * 60 * 1000
+const KST_TIME_ZONE = 'Asia/Seoul'
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000
+const MINUTE_MS = 60 * 1000
+
+const DEFAULT_AIRPORT_WORLD = {
+  meta: {
+    worldId: 'main-airport',
+    startedAt: Date.parse('2026-05-28T00:00:00+09:00'),
+    seed: 20260528,
+    timeZone: 'Asia/Seoul',
+    timeMode: 'readonly-standard-time',
+  },
+  facility: {
+    transportLines: 4,
+    privateFlights: 1,
+    airport: {
+      gates: 300,
+      runways: 10,
+      groundVehicles: 180,
+    },
+  },
+  towerMessage: {
+    channel: 'ATC',
+    text: '공용 읽기 전용 관제 시스템 운행중.',
+  },
+  scheduleRule: {
+    spawnIntervalMinutes: 30,
+    scheduledWindowMinutes: 60,
+    approachMinutes: 30,
+    calculationWindowHours: 12,
+  },
+  phaseRule: {
+    landingMinutes: 1,
+    taxiToGateMinutes: 5,
+    gateApproachMinutes: 1,
+    disembarkMinMinutes: 30,
+    disembarkMaxMinutes: 60,
+    crewDisembarkMinutes: 5,
+    cleaningMinMinutes: 30,
+    cleaningMaxMinutes: 60,
+    crewBoardingMinutes: 5,
+    boardingMinMinutes: 30,
+    boardingMaxMinutes: 60,
+    pushbackMinutes: 3,
+    taxiToRunwayMinutes: 5,
+    lineUpMinutes: 1,
+    takeoffMinutes: 1,
+    departureDisplayMinutes: 2,
+  },
+}
 
 const activeTab = ref('operation')
 const activeOperationMenu = ref('staff')
 const activeTransport = ref('rail')
 const worldTime = ref('')
-
-const towerMessage = ref({
-  channel: 'ATC',
-  text: '공항관제 자동 시스템 대기중.',
-})
-
-const transportLines = ref(4)
-const privateFlights = ref(1)
+const worldStatusText = ref('Firebase 연결중')
+const airportWorld = ref(null)
+const serverTimeOffset = ref(0)
 const activeFlights = ref([])
 
 let timeTimer = null
-let flightTimer = null
-let spawnTimer = null
-let autoSaveTimer = null
-let flightId = 0
-let lastFlightSpawnAt = 0
+let unsubscribeWorld = null
+let unsubscribeServerOffset = null
 
 const tabs = [
   { id: 'operation', label: '운영' },
@@ -236,35 +281,97 @@ const tabs = [
 ]
 
 const operationMenus = [
-  { id: 'staff', label: '직원 배치', title: 'Staff Assignment', desc: '자동 커버 범위', badge: 'CORE' },
-  { id: 'upgrade', label: '업글', title: 'Operation Upgrade', desc: '처리 능력 향상', badge: 'LEVEL' },
-  { id: 'research', label: '연구', title: 'Research Lab', desc: '새 운영 방식', badge: 'UNLOCK' },
+  {
+    id: 'staff',
+    label: '직원 배치',
+    title: 'Staff Assignment',
+    desc: '공용 기준 상태',
+    badge: 'READ',
+  },
+  {
+    id: 'upgrade',
+    label: '업글',
+    title: 'Operation Upgrade',
+    desc: '읽기 전용 설정',
+    badge: 'LOCKED',
+  },
+  {
+    id: 'research',
+    label: '연구',
+    title: 'Research Lab',
+    desc: '개발환경 수정 전용',
+    badge: 'CONFIG',
+  },
 ]
 
-const departments = reactive([
-  { id: 'airport', label: '공항 관제', staff: 0, effect: '착륙/이륙/게이트 자동 처리 범위 증가' },
-  { id: 'ground', label: '지상 운영', staff: 0, effect: '지상차량 이동, 게이트 회전율 안정화' },
-  { id: 'rail', label: '철도 운영', staff: 0, effect: '플랫폼 갱신과 라인 흐름 안정화' },
-  { id: 'system', label: '시스템', staff: 0, effect: '자동 처리 간격과 로그 안정화' },
-])
+const departments = [
+  {
+    id: 'airport',
+    label: '공항 관제',
+    staff: 0,
+    effect: '착륙/이륙/게이트 자동 처리 흐름을 표준시간 기준으로 표시합니다.',
+  },
+  {
+    id: 'ground',
+    label: '지상 운영',
+    staff: 0,
+    effect: '지상이동, 게이트 접근, 택싱 흐름을 계산해 표시합니다.',
+  },
+  {
+    id: 'rail',
+    label: '철도 운영',
+    staff: 0,
+    effect: '교통 라인은 관람형 이동 흐름으로 표시됩니다.',
+  },
+  {
+    id: 'system',
+    label: '시스템',
+    staff: 0,
+    effect: 'Firebase 읽기 전용 기준 데이터와 서버 시간 보정을 사용합니다.',
+  },
+]
 
-const upgrades = reactive([
-  { id: 'auto', label: '자동 처리', level: 1, effect: '관제 자동 처리 속도 증가' },
-  { id: 'gate', label: '게이트 회전', level: 1, effect: '게이트 점유 지연 감소' },
-  { id: 'ground', label: '지상차량 운용', level: 1, effect: '지원 차량 사전 이동 효율 증가' },
-])
+const upgrades = [
+  {
+    id: 'auto',
+    label: '자동 처리',
+    level: 1,
+    effect: '표준시간 기준으로 항공기 위치와 단계를 자동 계산합니다.',
+  },
+  {
+    id: 'gate',
+    label: '게이트 회전',
+    level: 1,
+    effect: '하차, 청소, 보딩 시간을 seed 기반으로 고정 계산합니다.',
+  },
+  {
+    id: 'ground',
+    label: '지상차량 운용',
+    level: 1,
+    effect: '게이트 이동과 활주로 이동 시간이 공용 규칙으로 적용됩니다.',
+  },
+]
 
-const researches = reactive([
-  { id: 'predict', label: '예측 운영', done: false, effect: '항공기 도착 전 지상차량 사전 이동' },
-  { id: 'density', label: '밀도 제어', done: false, effect: '교통 흐름 표시량 조정' },
-  { id: 'radar', label: '관제 패널', done: false, effect: '항공관제 패널 강화' },
-])
-
-const airport = reactive({
-  gates: 300,
-  runways: 10,
-  groundVehicles: 180,
-})
+const researches = [
+  {
+    id: 'predict',
+    label: '예측 운영',
+    done: false,
+    effect: '현재 시간 기준으로 필요한 항공기 흐름만 표시합니다.',
+  },
+  {
+    id: 'density',
+    label: '밀도 제어',
+    done: false,
+    effect: '시간대별 항공기 등장 수를 반영합니다.',
+  },
+  {
+    id: 'radar',
+    label: '관제 패널',
+    done: false,
+    effect: '도착 예정, 도착, 접근, 착륙, 지상, 게이트, 출발 구역을 분리 표시합니다.',
+  },
+]
 
 const transportModes = [
   { id: 'rail', label: '철도' },
@@ -333,152 +440,81 @@ const currentOperation = computed(() => {
 
 const currentTransport = computed(() => transportData[activeTransport.value])
 
-function saveGame(showMessage = false) {
-  try {
-    const saveData = {
-      activeTab: activeTab.value,
-      activeOperationMenu: activeOperationMenu.value,
-      activeTransport: activeTransport.value,
-      towerMessage: towerMessage.value,
-      transportLines: transportLines.value,
-      privateFlights: privateFlights.value,
-      activeFlights: activeFlights.value,
-      flightId,
-      lastFlightSpawnAt,
-      departments: departments.map((item) => ({
-        id: item.id,
-        staff: item.staff,
-      })),
-      upgrades: upgrades.map((item) => ({
-        id: item.id,
-        level: item.level,
-      })),
-      researches: researches.map((item) => ({
-        id: item.id,
-        done: item.done,
-      })),
-      airport: {
-        gates: airport.gates,
-        runways: airport.runways,
-        groundVehicles: airport.groundVehicles,
-      },
-      savedAt: Date.now(),
+const worldConfig = computed(() => {
+  return deepMerge(DEFAULT_AIRPORT_WORLD, airportWorld.value || {})
+})
+
+const airport = computed(() => {
+  return worldConfig.value.facility.airport
+})
+
+const transportLines = computed(() => {
+  return worldConfig.value.facility.transportLines
+})
+
+const privateFlights = computed(() => {
+  return worldConfig.value.facility.privateFlights
+})
+
+const towerMessage = computed(() => {
+  const priorityFlight =
+    activeFlights.value.find((flight) => flight.zone === 'landing') ||
+    activeFlights.value.find((flight) => flight.status === 'CLEARED FOR TAKEOFF') ||
+    activeFlights.value.find((flight) => flight.zone === 'tower') ||
+    activeFlights.value.find((flight) => flight.zone === 'approach') ||
+    activeFlights.value.find((flight) => flight.zone === 'scheduled') ||
+    activeFlights.value.find((flight) => flight.zone === 'gate')
+
+  if (priorityFlight) {
+    return {
+      channel: priorityFlight.channel,
+      text: `${priorityFlight.code} ${priorityFlight.status} · ${priorityFlight.detail}`,
     }
-
-    localStorage.setItem(SAVE_KEY, JSON.stringify(saveData))
-
-    if (showMessage) {
-      updateTowerMessage('SAVE', '현재 진행 상황이 로컬에 저장되었습니다.')
-    }
-
-    return true
-  } catch (error) {
-    console.error('로컬 저장 실패:', error)
-
-    if (showMessage) {
-      updateTowerMessage('SAVE ERROR', '로컬 저장에 실패했습니다.')
-    }
-
-    return false
   }
+
+  return worldConfig.value.towerMessage
+})
+
+function deepMerge(base, override) {
+  const output = { ...base }
+
+  Object.keys(override || {}).forEach((key) => {
+    const baseValue = base?.[key]
+    const overrideValue = override[key]
+
+    if (
+      baseValue &&
+      overrideValue &&
+      typeof baseValue === 'object' &&
+      typeof overrideValue === 'object' &&
+      !Array.isArray(baseValue) &&
+      !Array.isArray(overrideValue)
+    ) {
+      output[key] = deepMerge(baseValue, overrideValue)
+      return
+    }
+
+    output[key] = overrideValue
+  })
+
+  return output
 }
 
-function loadGame(showMessage = false) {
-  try {
-    const rawSave = localStorage.getItem(SAVE_KEY)
-
-    if (!rawSave) {
-      return false
-    }
-
-    const saveData = JSON.parse(rawSave)
-
-    activeTab.value = saveData.activeTab || 'operation'
-    activeOperationMenu.value = saveData.activeOperationMenu || 'staff'
-    activeTransport.value = saveData.activeTransport || 'rail'
-
-    towerMessage.value = saveData.towerMessage || {
-      channel: 'ATC',
-      text: '공항관제 자동 시스템 대기중.',
-    }
-
-    transportLines.value = Number.isFinite(saveData.transportLines) ? saveData.transportLines : 4
-    privateFlights.value = Number.isFinite(saveData.privateFlights) ? saveData.privateFlights : 1
-
-    activeFlights.value = Array.isArray(saveData.activeFlights)
-      ? saveData.activeFlights.filter((flight) => !flight.fadeout)
-      : []
-
-    flightId = Number.isFinite(saveData.flightId) ? saveData.flightId : activeFlights.value.length
-    lastFlightSpawnAt = Number.isFinite(saveData.lastFlightSpawnAt) ? saveData.lastFlightSpawnAt : 0
-
-    if (Array.isArray(saveData.departments)) {
-      saveData.departments.forEach((savedItem) => {
-        const target = departments.find((item) => item.id === savedItem.id)
-
-        if (target && Number.isFinite(savedItem.staff)) {
-          target.staff = savedItem.staff
-        }
-      })
-    }
-
-    if (Array.isArray(saveData.upgrades)) {
-      saveData.upgrades.forEach((savedItem) => {
-        const target = upgrades.find((item) => item.id === savedItem.id)
-
-        if (target && Number.isFinite(savedItem.level)) {
-          target.level = savedItem.level
-        }
-      })
-    }
-
-    if (Array.isArray(saveData.researches)) {
-      saveData.researches.forEach((savedItem) => {
-        const target = researches.find((item) => item.id === savedItem.id)
-
-        if (target && typeof savedItem.done === 'boolean') {
-          target.done = savedItem.done
-        }
-      })
-    }
-
-    if (saveData.airport) {
-      airport.gates = Number.isFinite(saveData.airport.gates) ? saveData.airport.gates : airport.gates
-      airport.runways = Number.isFinite(saveData.airport.runways) ? saveData.airport.runways : airport.runways
-      airport.groundVehicles = Number.isFinite(saveData.airport.groundVehicles)
-        ? saveData.airport.groundVehicles
-        : airport.groundVehicles
-    }
-
-    if (showMessage) {
-      updateTowerMessage('LOAD', '로컬 저장 데이터를 불러왔습니다.')
-    }
-
-    return true
-  } catch (error) {
-    console.error('로컬 불러오기 실패:', error)
-
-    if (showMessage) {
-      updateTowerMessage('LOAD ERROR', '로컬 저장 데이터를 불러오지 못했습니다.')
-    }
-
-    return false
-  }
-}
-
-function resetSave() {
-  localStorage.removeItem(SAVE_KEY)
-  lastFlightSpawnAt = 0
-  updateTowerMessage('RESET', '로컬 저장 데이터가 삭제되었습니다.')
+function getStandardNow() {
+  return Date.now() + serverTimeOffset.value
 }
 
 function updateTime() {
-  const now = new Date()
+  const now = new Date(getStandardNow())
 
   worldTime.value = now.toLocaleTimeString('ko-KR', {
+    timeZone: KST_TIME_ZONE,
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
   })
+
+  worldStatusText.value = airportWorld.value ? '공용 기준 운행중' : '기본값 운행중'
 }
 
 function formatRemain(totalSeconds) {
@@ -492,156 +528,456 @@ function formatRemain(totalSeconds) {
 }
 
 function toSeconds(minutes) {
-  return minutes * 60
+  return Math.floor(Number(minutes || 0) * 60)
 }
 
-function randomSeconds(minMinutes, maxMinutes) {
-  const min = toSeconds(minMinutes)
-  const max = toSeconds(maxMinutes)
-
-  return Math.floor(min + Math.random() * (max - min + 1))
+function toMs(minutes) {
+  return Number(minutes || 0) * MINUTE_MS
 }
 
-function makeFlightCode() {
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-  const prefix =
-    letters[Math.floor(Math.random() * letters.length)] +
-    letters[Math.floor(Math.random() * letters.length)]
-  const number = String(Math.floor(100 + Math.random() * 900))
+function getKstParts(ms) {
+  const date = new Date(ms + KST_OFFSET_MS)
 
-  return `${prefix}${number}`
+  return {
+    day: date.getUTCDay(),
+    hour: date.getUTCHours(),
+  }
 }
 
-function updateTowerMessage(channel, text) {
-  towerMessage.value = { channel, text }
-}
-
-/**
- * 항공기 등장 규칙 - 인천공항 관람형 압축 버전
- * - 00~04시: 1기
- * - 04~06시: 2기
- * - 주중 06~10시: 3기
- * - 주중 10~16시: 2기
- * - 주중 16~19시: 3기
- * - 주중 19~22시: 2기
- * - 22~24시: 1기
- * - 주말: 기본 2기, 피크 시간 3기
- *
- * 단, 항공기 추가는 30분마다 1대씩만 진행
- * 새로 등장한 항공기의 접근시간은 30분
- */
-function isWeekday(date = new Date()) {
-  const day = date.getDay()
+function isWeekdayByMs(ms) {
+  const { day } = getKstParts(ms)
 
   return day >= 1 && day <= 5
 }
 
-function getAtcFlightLimit(date = new Date()) {
-  const hour = date.getHours()
-  const weekday = isWeekday(date)
+function getAtcFlightLimit(ms) {
+  const { hour } = getKstParts(ms)
+  const weekday = isWeekdayByMs(ms)
 
-  if (hour >= 0 && hour < 4) {
+  if (hour >= 0 && hour < 6) {
     return 1
   }
 
-  if (hour >= 4 && hour < 6) {
-    return 2
-  }
-
-  if (weekday && hour >= 6 && hour < 10) {
+  if (weekday && hour >= 8 && hour < 10) {
     return 3
   }
 
-  if (weekday && hour >= 10 && hour < 16) {
-    return 2
-  }
-
-  if (weekday && hour >= 16 && hour < 19) {
-    return 3
-  }
-
-  if (weekday && hour >= 19 && hour < 22) {
-    return 2
-  }
-
-  if (hour >= 22 && hour < 24) {
-    return 1
-  }
-
-  if (!weekday && ((hour >= 6 && hour < 10) || (hour >= 16 && hour < 19))) {
+  if (weekday && hour >= 16 && hour < 18) {
     return 3
   }
 
   return 2
 }
 
-function getActiveAtcFlightCount() {
-  return activeFlights.value.filter((flight) => !flight.fadeout).length
-}
+function hashNumber(...parts) {
+  const source = parts.join(':')
+  let hash = 2166136261
 
-function spawnScheduledFlight(force = false) {
-  const now = Date.now()
-  const limit = getAtcFlightLimit(new Date())
-  const activeCount = getActiveAtcFlightCount()
-
-  if (activeCount >= limit) {
-    return
+  for (let index = 0; index < source.length; index++) {
+    hash ^= source.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
   }
 
-  const canSpawn =
-    force ||
-    !lastFlightSpawnAt ||
-    now - lastFlightSpawnAt >= FLIGHT_SPAWN_INTERVAL_MS
+  return hash >>> 0
+}
 
-  if (!canSpawn) {
-    return
+function seededRandom(...parts) {
+  return hashNumber(...parts) / 4294967295
+}
+
+function seededRangeSeconds(minMinutes, maxMinutes, ...parts) {
+  const min = toSeconds(minMinutes)
+  const max = toSeconds(maxMinutes)
+  const value = seededRandom(...parts)
+
+  return Math.floor(min + value * (max - min + 1))
+}
+
+function makeFlightCode(flightIndex) {
+  const seed = worldConfig.value.meta.seed
+  const prefixes = ['KE', 'OZ', '7C', 'TW', 'LJ', 'BX', 'ZE', 'RS', 'YP', 'RF']
+  const prefix = prefixes[hashNumber(seed, flightIndex, 'prefix') % prefixes.length]
+  const number = 100 + (hashNumber(seed, flightIndex, 'number') % 900)
+
+  return `${prefix}${number}`
+}
+
+function secondsUntil(targetAt, now) {
+  return Math.max(0, Math.ceil((targetAt - now) / 1000))
+}
+
+function makeTimeline(flightIndex, spawnAt, runwayState) {
+  const config = worldConfig.value
+  const rule = config.phaseRule
+  const seed = config.meta.seed
+  const approachMinutes = Number(config.scheduleRule.approachMinutes || 30)
+
+  const arrivalEndAt = spawnAt + toMs(15)
+  const approachEndAt = spawnAt + toMs(20)
+  const landingRequestAt = spawnAt + toMs(Math.max(1, approachMinutes - 2))
+
+  const landingStartAt = Math.max(landingRequestAt, runwayState.landingAvailableAt)
+  const landingEndAt = landingStartAt + toMs(rule.landingMinutes)
+
+  runwayState.landingAvailableAt = landingEndAt
+
+  const taxiToGateStartAt = landingEndAt
+  const gateApproachDelayMinutes = Math.max(
+    0,
+    Number(rule.taxiToGateMinutes || 5) - Number(rule.gateApproachMinutes || 1),
+  )
+  const gateApproachStartAt = taxiToGateStartAt + toMs(gateApproachDelayMinutes)
+  const gateArrivalAt = taxiToGateStartAt + toMs(rule.taxiToGateMinutes)
+
+  const disembarkSeconds = seededRangeSeconds(
+    rule.disembarkMinMinutes,
+    rule.disembarkMaxMinutes,
+    seed,
+    flightIndex,
+    'disembark',
+  )
+
+  const cleaningSeconds = seededRangeSeconds(
+    rule.cleaningMinMinutes,
+    rule.cleaningMaxMinutes,
+    seed,
+    flightIndex,
+    'cleaning',
+  )
+
+  const boardingSeconds = seededRangeSeconds(
+    rule.boardingMinMinutes,
+    rule.boardingMaxMinutes,
+    seed,
+    flightIndex,
+    'boarding',
+  )
+
+  const disembarkEndAt = gateArrivalAt + disembarkSeconds * 1000
+  const crewDisembarkEndAt = disembarkEndAt + toMs(rule.crewDisembarkMinutes)
+  const cleaningEndAt = crewDisembarkEndAt + cleaningSeconds * 1000
+  const crewBoardingEndAt = cleaningEndAt + toMs(rule.crewBoardingMinutes)
+  const boardingEndAt = crewBoardingEndAt + boardingSeconds * 1000
+  const pushbackEndAt = boardingEndAt + toMs(rule.pushbackMinutes)
+  const taxiToRunwayEndAt = pushbackEndAt + toMs(rule.taxiToRunwayMinutes)
+
+  const lineUpStartAt = Math.max(taxiToRunwayEndAt, runwayState.takeoffAvailableAt)
+  const clearedForTakeoffAt = lineUpStartAt + toMs(rule.lineUpMinutes)
+  const airborneAt = clearedForTakeoffAt + toMs(rule.takeoffMinutes)
+  const exitAt = airborneAt + toMs(rule.departureDisplayMinutes)
+
+  runwayState.takeoffAvailableAt = airborneAt
+
+  return {
+    id: `flight_${flightIndex}`,
+    index: flightIndex,
+    code: makeFlightCode(flightIndex),
+    spawnAt,
+    arrivalEndAt,
+    approachEndAt,
+    landingRequestAt,
+    landingStartAt,
+    landingEndAt,
+    taxiToGateStartAt,
+    gateApproachStartAt,
+    gateArrivalAt,
+    disembarkEndAt,
+    crewDisembarkEndAt,
+    cleaningEndAt,
+    crewBoardingEndAt,
+    boardingEndAt,
+    pushbackEndAt,
+    taxiToRunwayEndAt,
+    lineUpStartAt,
+    clearedForTakeoffAt,
+    airborneAt,
+    exitAt,
   }
-
-  lastFlightSpawnAt = now
-  createFlight(30)
-  updateTowerMessage('ARRIVAL', `시간대 관제 ${limit}기 유지 · 30분 접근 항공기 1대 추가`)
-  saveGame()
 }
 
-function isLandingBusy() {
-  return activeFlights.value.some((flight) => flight.zone === 'landing')
-}
-
-function isTakeoffBusy() {
-  return activeFlights.value.some((flight) => {
-    return (
-      flight.zone === 'tower' &&
-      flight.flow === 'departure' &&
-      ['LINE UP AND WAIT', 'CLEARED FOR TAKEOFF'].includes(flight.status)
-    )
-  })
-}
-
-function isRunwayBusy() {
-  return isLandingBusy() || isTakeoffBusy()
-}
-
-function createFlight(startMinutes = 30) {
-  const remainingSeconds = toSeconds(startMinutes)
-
-  const flight = {
-    id: flightId++,
-    code: makeFlightCode(),
+function makeFlightView(timeline, now) {
+  const base = {
+    id: timeline.id,
+    code: timeline.code,
     flow: 'arrival',
     zone: 'arrival',
-    remainingSeconds,
-    status: 'ARRIVAL FLOW ACTIVE',
-    detail: '접근시간 30분 · 도착 흐름 활성화',
-    disembarkSeconds: 0,
-    cleaningSeconds: 0,
-    boardingSeconds: 0,
+    remainingSeconds: 0,
+    status: '',
+    detail: '',
     altitude: 0,
     speed: 0,
     goodDay: false,
     fadeout: false,
+    channel: 'ATC',
   }
 
-  activeFlights.value.push(flight)
+  if (now < timeline.spawnAt) {
+    return {
+      ...base,
+      zone: 'scheduled',
+      status: 'SCHEDULED ARRIVAL',
+      detail: '도착 예정 · 표준시간 기준 다음 도착편',
+      remainingSeconds: secondsUntil(timeline.spawnAt, now),
+      channel: 'SCHEDULED',
+    }
+  }
+
+  if (now > timeline.exitAt) {
+    return null
+  }
+
+  if (now < timeline.arrivalEndAt) {
+    return {
+      ...base,
+      zone: 'arrival',
+      status: 'ARRIVAL FLOW ACTIVE',
+      detail: '접근시간 30분 · 도착 흐름 활성화',
+      remainingSeconds: secondsUntil(timeline.arrivalEndAt, now),
+      channel: 'ARRIVAL',
+    }
+  }
+
+  if (now < timeline.approachEndAt) {
+    return {
+      ...base,
+      zone: 'approach',
+      status: 'CONTACT APPROACH',
+      detail: '접근 관제 연결',
+      remainingSeconds: secondsUntil(timeline.approachEndAt, now),
+      channel: 'APPROACH',
+    }
+  }
+
+  if (now < timeline.landingStartAt) {
+    const holding = now >= timeline.landingRequestAt
+
+    return {
+      ...base,
+      zone: 'tower',
+      status: holding ? 'RUNWAY HOLD' : 'CLEARED FOR LANDING',
+      detail: holding ? '활주로 사용중 · 착륙 순번 대기' : '최종 접근',
+      remainingSeconds: secondsUntil(timeline.landingStartAt, now),
+      channel: 'TOWER',
+    }
+  }
+
+  if (now < timeline.landingEndAt) {
+    return {
+      ...base,
+      zone: 'landing',
+      status: 'RUNWAY DECELERATION',
+      detail: '착륙 · 활주로 감속',
+      remainingSeconds: secondsUntil(timeline.landingEndAt, now),
+      channel: 'TOWER',
+    }
+  }
+
+  if (now < timeline.gateApproachStartAt) {
+    return {
+      ...base,
+      zone: 'ground',
+      status: 'TAXI TO GATE',
+      detail: '지상이동 5분 · 게이트 이동',
+      remainingSeconds: secondsUntil(timeline.gateApproachStartAt, now),
+      channel: 'GROUND',
+    }
+  }
+
+  if (now < timeline.gateArrivalAt) {
+    return {
+      ...base,
+      zone: 'gate',
+      status: 'APPROACHING GATE',
+      detail: '게이트 도착 1분 전 · 램프 이동',
+      remainingSeconds: secondsUntil(timeline.gateArrivalAt, now),
+      channel: 'RAMP',
+    }
+  }
+
+  if (now < timeline.disembarkEndAt) {
+    return {
+      ...base,
+      zone: 'gate',
+      status: 'PASSENGER DISEMBARKING',
+      detail: '게이트 도착 · 승객 하차 30~60분',
+      remainingSeconds: secondsUntil(timeline.disembarkEndAt, now),
+      channel: 'GATE',
+    }
+  }
+
+  if (now < timeline.crewDisembarkEndAt) {
+    return {
+      ...base,
+      zone: 'gate',
+      status: 'CREW DISEMBARKING',
+      detail: '승무원 하차 5분',
+      remainingSeconds: secondsUntil(timeline.crewDisembarkEndAt, now),
+      channel: 'GATE',
+    }
+  }
+
+  if (now < timeline.cleaningEndAt) {
+    return {
+      ...base,
+      zone: 'gate',
+      status: 'AIRCRAFT CLEANING',
+      detail: '청소 30~60분',
+      remainingSeconds: secondsUntil(timeline.cleaningEndAt, now),
+      channel: 'GATE',
+    }
+  }
+
+  if (now < timeline.crewBoardingEndAt) {
+    return {
+      ...base,
+      flow: 'departure',
+      zone: 'gate',
+      status: 'CREW BOARDING',
+      detail: '다음 출발편 승무원 승차 5분',
+      remainingSeconds: secondsUntil(timeline.crewBoardingEndAt, now),
+      channel: 'GATE',
+    }
+  }
+
+  if (now < timeline.boardingEndAt) {
+    return {
+      ...base,
+      flow: 'departure',
+      zone: 'gate',
+      status: 'PASSENGER BOARDING',
+      detail: '보딩 30~60분',
+      remainingSeconds: secondsUntil(timeline.boardingEndAt, now),
+      channel: 'GATE',
+    }
+  }
+
+  if (now < timeline.pushbackEndAt) {
+    return {
+      ...base,
+      flow: 'departure',
+      zone: 'gate',
+      status: 'PUSHBACK AND ENGINE START',
+      detail: '푸시백 3분 · 엔진스타트',
+      remainingSeconds: secondsUntil(timeline.pushbackEndAt, now),
+      channel: 'RAMP',
+    }
+  }
+
+  if (now < timeline.taxiToRunwayEndAt) {
+    return {
+      ...base,
+      flow: 'departure',
+      zone: 'ground',
+      status: 'TAXI TO RWY',
+      detail: '택싱 5분 · 활주로 이동',
+      remainingSeconds: secondsUntil(timeline.taxiToRunwayEndAt, now),
+      channel: 'GROUND',
+    }
+  }
+
+  if (now < timeline.lineUpStartAt) {
+    return {
+      ...base,
+      flow: 'departure',
+      zone: 'tower',
+      status: 'HOLD SHORT RWY',
+      detail: '활주로 앞 대기',
+      remainingSeconds: secondsUntil(timeline.lineUpStartAt, now),
+      channel: 'TOWER',
+    }
+  }
+
+  if (now < timeline.clearedForTakeoffAt) {
+    return {
+      ...base,
+      flow: 'departure',
+      zone: 'tower',
+      status: 'LINE UP AND WAIT',
+      detail: '활주로 진입 · 1대씩 이륙 처리',
+      remainingSeconds: secondsUntil(timeline.clearedForTakeoffAt, now),
+      channel: 'TOWER',
+    }
+  }
+
+  if (now < timeline.airborneAt) {
+    return {
+      ...base,
+      flow: 'departure',
+      zone: 'tower',
+      status: 'CLEARED FOR TAKEOFF',
+      detail: '이륙 활주중',
+      remainingSeconds: secondsUntil(timeline.airborneAt, now),
+      channel: 'TOWER',
+    }
+  }
+
+  const airborneElapsedSeconds = Math.floor((now - timeline.airborneAt) / 1000)
+  const altitude = Math.min(13000, 1000 + airborneElapsedSeconds * 250)
+  const speed = Math.min(480, 180 + airborneElapsedSeconds * 8)
+  const leavingSoon = now > timeline.exitAt - 2500
+
+  return {
+    ...base,
+    flow: 'departure',
+    zone: 'departure',
+    status: altitude >= 6000 ? 'GOOD DAY' : 'AIRBORNE',
+    detail: altitude >= 6000 ? 'CONTROL TRANSFERRED' : '출발 상승중',
+    remainingSeconds: secondsUntil(timeline.exitAt, now),
+    altitude,
+    speed,
+    goodDay: altitude >= 6000,
+    fadeout: leavingSoon,
+    channel: 'DEPARTURE',
+  }
+}
+
+function rebuildAirportByStandardTime() {
+  const now = getStandardNow()
+  const config = worldConfig.value
+  const startedAt = Number(config.meta.startedAt) || DEFAULT_AIRPORT_WORLD.meta.startedAt
+  const spawnIntervalMs = toMs(config.scheduleRule.spawnIntervalMinutes || 30)
+  const scheduledWindowMs = toMs(
+    config.scheduleRule.scheduledWindowMinutes ||
+      config.scheduleRule.spawnIntervalMinutes ||
+      60,
+  )
+  const windowHours = Number(config.scheduleRule.calculationWindowHours || 12)
+  const windowStartAt = Math.max(startedAt, now - windowHours * 60 * 60 * 1000)
+
+  if (now + scheduledWindowMs < startedAt) {
+    activeFlights.value = []
+    return
+  }
+
+  const firstSlot = Math.max(0, Math.floor((windowStartAt - startedAt) / spawnIntervalMs))
+  const lastSlot = Math.max(0, Math.floor((now + scheduledWindowMs - startedAt) / spawnIntervalMs))
+
+  const runwayState = {
+    landingAvailableAt: windowStartAt,
+    takeoffAvailableAt: windowStartAt,
+  }
+
+  const timelines = []
+
+  for (let slot = firstSlot; slot <= lastSlot; slot++) {
+    const slotBaseAt = startedAt + slot * spawnIntervalMs
+    const flightCount = getAtcFlightLimit(slotBaseAt)
+
+    for (let count = 0; count < flightCount; count++) {
+      const flightIndex = slot * 10 + count
+      const spacedSpawnAt = slotBaseAt + count * toMs(4)
+
+      if (spacedSpawnAt > now + scheduledWindowMs) {
+        continue
+      }
+
+      timelines.push(makeTimeline(flightIndex, spacedSpawnAt, runwayState))
+    }
+  }
+
+  activeFlights.value = timelines
+    .map((timeline) => makeFlightView(timeline, now))
+    .filter(Boolean)
 }
 
 function flightsByZone(zoneId) {
@@ -656,322 +992,51 @@ function flightsByZone(zoneId) {
     })
 }
 
-function assignStaff(id) {
-  const target = departments.find((item) => item.id === id)
+function subscribeAirportWorld() {
+  const worldRef = dbRef(database, 'airportWorld')
 
-  if (target) {
-    target.staff++
-    updateTowerMessage('STAFF', `${target.label} 직원 배치. 자동 커버 범위가 증가합니다.`)
-    saveGame()
-  }
+  unsubscribeWorld = onValue(worldRef, (snapshot) => {
+    airportWorld.value = snapshot.val()
+    rebuildAirportByStandardTime()
+  })
 }
 
-function addPrivateFlight() {
-  privateFlights.value++
+function subscribeServerTimeOffset() {
+  const offsetRef = dbRef(database, '.info/serverTimeOffset')
 
-  createFlight(30)
-  lastFlightSpawnAt = Date.now()
-
-  updateTowerMessage('FACILITY', '사용자 전용 항공편성이 30분 접근 항공기로 추가되었습니다.')
-  saveGame()
+  unsubscribeServerOffset = onValue(offsetRef, (snapshot) => {
+    serverTimeOffset.value = snapshot.val() || 0
+    updateTime()
+    rebuildAirportByStandardTime()
+  })
 }
 
-function progressDeparture(flight) {
-  flight.altitude += 250
-  flight.speed = Math.min(480, flight.speed + 8)
-
-  if (flight.altitude >= 6000 && !flight.goodDay) {
-    flight.goodDay = true
-    flight.status = 'GOOD DAY'
-    flight.detail = 'CONTROL TRANSFERRED'
-    updateTowerMessage('DEPARTURE', `${flight.code} GOOD DAY`)
-    return
-  }
-
-  if (flight.altitude >= 13000 && !flight.fadeout) {
-    flight.fadeout = true
-    flight.status = 'LEAVING TERMINAL AIRSPACE'
-    flight.detail = '공항 관제권 이탈'
-    updateTowerMessage('DEPARTURE', `${flight.code} LEAVING TERMINAL AIRSPACE`)
-
-    setTimeout(() => {
-      activeFlights.value = activeFlights.value.filter((item) => item.id !== flight.id)
-    }, 2500)
-  }
-}
-
-function processFlight(flight) {
-  if (flight.zone === 'departure') {
-    progressDeparture(flight)
-    return
-  }
-
-  if (flight.remainingSeconds > 0) {
-    flight.remainingSeconds--
-  }
-
-  if (flight.zone === 'arrival' && flight.remainingSeconds <= toSeconds(15)) {
-    flight.zone = 'approach'
-    flight.status = 'CONTACT APPROACH'
-    flight.detail = '접근 관제 연결'
-    updateTowerMessage('APPROACH', `${flight.code} CONTACT APPROACH`)
-    return
-  }
-
-  if (flight.zone === 'approach' && flight.remainingSeconds <= toSeconds(10)) {
-    flight.zone = 'tower'
-    flight.status = 'CLEARED FOR LANDING'
-    flight.detail = '최종 접근'
-    updateTowerMessage('TOWER', `${flight.code} CLEARED FOR LANDING`)
-    return
-  }
-
-  if (
-    flight.zone === 'tower' &&
-    flight.flow === 'arrival' &&
-    flight.remainingSeconds <= toSeconds(2)
-  ) {
-    if (isRunwayBusy()) {
-      flight.status = 'RUNWAY HOLD'
-      flight.detail = '활주로 사용중 · 착륙 순번 대기'
-      return
-    }
-
-    flight.zone = 'landing'
-    flight.remainingSeconds = toSeconds(1)
-    flight.status = 'RUNWAY DECELERATION'
-    flight.detail = '착륙 · 활주로 감속'
-    updateTowerMessage('TOWER', `${flight.code} RUNWAY DECELERATION`)
-    return
-  }
-
-  if (flight.zone === 'landing' && flight.remainingSeconds <= 0) {
-    flight.zone = 'ground'
-    flight.remainingSeconds = toSeconds(5)
-    flight.status = 'TAXI TO GATE'
-    flight.detail = '지상이동 5분 · 게이트 이동'
-    updateTowerMessage('GROUND', `${flight.code} CONTACT GROUND`)
-    return
-  }
-
-  if (
-    flight.zone === 'ground' &&
-    flight.flow === 'arrival' &&
-    flight.status === 'TAXI TO GATE' &&
-    flight.remainingSeconds <= toSeconds(1)
-  ) {
-    flight.zone = 'gate'
-    flight.status = 'APPROACHING GATE'
-    flight.detail = '게이트 도착 1분 전 · 램T프 이동'
-    updateTowerMessage('RAMP', `${flight.code} APPROACHING GATE`)
-    return
-  }
-
-  if (
-    flight.zone === 'gate' &&
-    flight.flow === 'arrival' &&
-    flight.status === 'APPROACHING GATE' &&
-    flight.remainingSeconds <= 0
-  ) {
-    flight.disembarkSeconds = randomSeconds(30, 60)
-    flight.remainingSeconds = flight.disembarkSeconds
-    flight.status = 'PASSENGER DISEMBARKING'
-    flight.detail = '게이트 도착 · 승객 하차 30~60분'
-    updateTowerMessage('GATE', `${flight.code} GATE ARRIVAL · PASSENGER DISEMBARKING`)
-    return
-  }
-
-  if (
-    flight.zone === 'gate' &&
-    flight.status === 'PASSENGER DISEMBARKING' &&
-    flight.remainingSeconds <= 0
-  ) {
-    flight.remainingSeconds = toSeconds(5)
-    flight.status = 'CREW DISEMBARKING'
-    flight.detail = '승무원 하차 5분'
-    updateTowerMessage('GATE', `${flight.code} CREW DISEMBARKING`)
-    return
-  }
-
-  if (
-    flight.zone === 'gate' &&
-    flight.status === 'CREW DISEMBARKING' &&
-    flight.remainingSeconds <= 0
-  ) {
-    flight.cleaningSeconds = randomSeconds(30, 60)
-    flight.remainingSeconds = flight.cleaningSeconds
-    flight.status = 'AIRCRAFT CLEANING'
-    flight.detail = '청소 30~60분'
-    updateTowerMessage('GATE', `${flight.code} AIRCRAFT CLEANING`)
-    return
-  }
-
-  if (
-    flight.zone === 'gate' &&
-    flight.status === 'AIRCRAFT CLEANING' &&
-    flight.remainingSeconds <= 0
-  ) {
-    flight.code = makeFlightCode()
-    flight.remainingSeconds = toSeconds(5)
-    flight.status = 'CREW BOARDING'
-    flight.detail = '다음 출발편 승무원 승차 5분'
-    updateTowerMessage('GATE', `${flight.code} CREW BOARDING`)
-    return
-  }
-
-  if (
-    flight.zone === 'gate' &&
-    flight.status === 'CREW BOARDING' &&
-    flight.remainingSeconds <= 0
-  ) {
-    flight.boardingSeconds = randomSeconds(30, 60)
-    flight.remainingSeconds = flight.boardingSeconds
-    flight.status = 'PASSENGER BOARDING'
-    flight.detail = '보딩 30~60분'
-    updateTowerMessage('GATE', `${flight.code} BOARDING READY`)
-    return
-  }
-
-  if (
-    flight.zone === 'gate' &&
-    flight.status === 'PASSENGER BOARDING' &&
-    flight.remainingSeconds <= 0
-  ) {
-    flight.remainingSeconds = toSeconds(3)
-    flight.status = 'PUSHBACK AND ENGINE START'
-    flight.detail = '푸시백 3분 · 엔진스타트'
-    updateTowerMessage('RAMP', `${flight.code} PUSHBACK · ENGINE START`)
-    return
-  }
-
-  if (
-    flight.zone === 'gate' &&
-    flight.status === 'PUSHBACK AND ENGINE START' &&
-    flight.remainingSeconds <= 0
-  ) {
-    flight.zone = 'ground'
-    flight.flow = 'departure'
-    flight.remainingSeconds = toSeconds(5)
-    flight.status = 'TAXI TO RWY'
-    flight.detail = '택싱 5분 · 활주로 이동'
-    updateTowerMessage('GROUND', `${flight.code} REQUEST TAXI`)
-    return
-  }
-
-  if (
-    flight.zone === 'ground' &&
-    flight.flow === 'departure' &&
-    flight.status === 'TAXI TO RWY' &&
-    flight.remainingSeconds <= toSeconds(1)
-  ) {
-    flight.status = 'CONTACTING TOWER'
-    flight.detail = '활주로 접근 · 타워 연결중'
-    updateTowerMessage('GROUND', `${flight.code} CONTACTING TOWER`)
-    return
-  }
-
-  if (
-    flight.zone === 'ground' &&
-    flight.flow === 'departure' &&
-    flight.remainingSeconds <= 0
-  ) {
-    flight.zone = 'tower'
-    flight.remainingSeconds = 0
-    flight.status = 'HOLD SHORT RWY'
-    flight.detail = '활주로 앞 대기'
-    updateTowerMessage('TOWER', `${flight.code} HOLD SHORT RWY`)
-    return
-  }
-
-  if (
-    flight.zone === 'tower' &&
-    flight.flow === 'departure' &&
-    flight.status === 'LINE UP AND WAIT' &&
-    flight.remainingSeconds <= 0
-  ) {
-    flight.remainingSeconds = toSeconds(1)
-    flight.status = 'CLEARED FOR TAKEOFF'
-    flight.detail = '이륙 활주중'
-    updateTowerMessage('TOWER', `${flight.code} CLEARED FOR TAKEOFF`)
-    return
-  }
-
-  if (
-    flight.zone === 'tower' &&
-    flight.flow === 'departure' &&
-    flight.status === 'CLEARED FOR TAKEOFF' &&
-    flight.remainingSeconds <= 0
-  ) {
-    flight.zone = 'departure'
-    flight.altitude = 1000
-    flight.speed = 180
-    flight.status = 'AIRBORNE'
-    flight.detail = '출발 상승중'
-    updateTowerMessage('DEPARTURE', `${flight.code} AIRBORNE`)
-  }
-}
-
-function processTakeoffQueue() {
-  if (isRunwayBusy()) {
-    return
-  }
-
-  const holdingFlights = activeFlights.value
-    .filter((flight) => {
-      return (
-        flight.zone === 'tower' &&
-        flight.flow === 'departure' &&
-        flight.status === 'HOLD SHORT RWY'
-      )
-    })
-    .sort((a, b) => a.id - b.id)
-
-  const nextFlight = holdingFlights[0]
-
-  if (!nextFlight) {
-    return
-  }
-
-  nextFlight.remainingSeconds = toSeconds(1)
-  nextFlight.status = 'LINE UP AND WAIT'
-  nextFlight.detail = '활주로 진입 · 1대씩 이륙 처리'
-  updateTowerMessage('TOWER', `${nextFlight.code} LINE UP AND WAIT`)
+function runClockTick() {
+  updateTime()
+  rebuildAirportByStandardTime()
 }
 
 onMounted(() => {
-  updateTime()
+  subscribeAirportWorld()
+  subscribeServerTimeOffset()
 
-  const hasSaveData = loadGame()
+  runClockTick()
 
-  if (!hasSaveData) {
-    spawnScheduledFlight(true)
-  } else {
-    spawnScheduledFlight()
-  }
-
-  timeTimer = setInterval(updateTime, 1000)
-
-  flightTimer = setInterval(() => {
-    activeFlights.value.forEach(processFlight)
-    processTakeoffQueue()
+  timeTimer = setInterval(() => {
+    runClockTick()
   }, 1000)
-
-  spawnTimer = setInterval(() => {
-    spawnScheduledFlight()
-  }, 60000)
-
-  autoSaveTimer = setInterval(() => {
-    saveGame()
-  }, 5000)
 })
 
 onUnmounted(() => {
-  saveGame()
+  if (typeof unsubscribeWorld === 'function') {
+    unsubscribeWorld()
+  }
+
+  if (typeof unsubscribeServerOffset === 'function') {
+    unsubscribeServerOffset()
+  }
 
   clearInterval(timeTimer)
-  clearInterval(flightTimer)
-  clearInterval(spawnTimer)
-  clearInterval(autoSaveTimer)
 })
 </script>
 
@@ -1107,7 +1172,9 @@ button.active {
 
 button:disabled {
   cursor: default;
-  opacity: 0.45;
+  color: #9eb8c8;
+  background: rgba(255, 255, 255, 0.045);
+  opacity: 0.55;
 }
 
 .operation-layout {
