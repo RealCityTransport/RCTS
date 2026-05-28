@@ -81,6 +81,10 @@ const menuCards = computed(() => {
   })
 })
 
+function toPlainData(value) {
+  return JSON.parse(JSON.stringify(value))
+}
+
 function openDatabase() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
@@ -93,8 +97,13 @@ function openDatabase() {
       }
     }
 
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      resolve(request.result)
+    }
+
+    request.onerror = () => {
+      reject(request.error)
+    }
   })
 }
 
@@ -103,7 +112,7 @@ async function writeStateToIndexedDB() {
 
   const savedAtMs = Date.now()
 
-  const payload = {
+  const payload = toPlainData({
     company: company.value,
     staffList: staffList.value,
     menusUnlocked: menusUnlocked.value,
@@ -112,15 +121,25 @@ async function writeStateToIndexedDB() {
     recruitment: recruitment.value,
     systemSecretaryStaffId: systemSecretaryStaffId.value,
     lastSavedAtMs: savedAtMs,
-  }
+  })
 
   await new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite')
     const store = transaction.objectStore(STORE_NAME)
-    const request = store.put(payload, SAVE_KEY)
 
-    request.onsuccess = () => resolve()
-    request.onerror = () => reject(request.error)
+    transaction.oncomplete = () => {
+      resolve()
+    }
+
+    transaction.onerror = () => {
+      reject(transaction.error)
+    }
+
+    transaction.onabort = () => {
+      reject(transaction.error)
+    }
+
+    store.put(payload, SAVE_KEY)
   })
 
   db.close()
@@ -143,8 +162,13 @@ async function loadStateFromIndexedDB() {
     const store = transaction.objectStore(STORE_NAME)
     const request = store.get(SAVE_KEY)
 
-    request.onsuccess = () => resolve(request.result ?? null)
-    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      resolve(request.result ?? null)
+    }
+
+    request.onerror = () => {
+      reject(request.error)
+    }
   })
 
   db.close()
