@@ -27,26 +27,17 @@ const {
   registerAdditionalStaff,
 } = useRctsStore()
 
-const localPageStartedAt = Date.now()
-const localNow = ref(Date.now())
+const localTick = ref(0)
 
 let localTimer = null
 let storyTimer = null
 
-const currentRuntimeSeconds = computed(() => {
-  if (worldClock?.runtimeSeconds?.value !== undefined) {
-    return worldClock.runtimeSeconds.value
-  }
-
-  return Math.floor((localNow.value - localPageStartedAt) / 1000)
-})
-
-const nowMs = computed(() => {
-  return worldClock?.now?.value ?? localNow.value
+const currentTick = computed(() => {
+  return worldClock?.tick?.value ?? localTick.value
 })
 
 const companyName = ref('')
-const companyCreatedAtRuntimeSeconds = ref(null)
+const companyCreatedAtTick = ref(null)
 
 const visitorGender = ref('')
 const visitorName = ref('')
@@ -72,29 +63,29 @@ const pendingCandidate = computed(() => {
 })
 
 const recruitmentRunning = computed(() => {
-  return Boolean(recruitment.value.candidateStartedAtMs)
+  return recruitment.value.candidateStartedAtTick !== null
 })
 
 const remainingRecruitmentText = computed(() => {
-  return formatSeconds(getRecruitmentRemainingSeconds(nowMs.value))
+  return formatSeconds(getRecruitmentRemainingSeconds(currentTick.value))
 })
 
 const canCreateCompany = computed(() => {
   return companyName.value.trim().length > 0 && !company.value
 })
 
-const secondsAfterCompanyCreated = computed(() => {
-  if (!company.value || companyCreatedAtRuntimeSeconds.value === null) {
+const ticksAfterCompanyCreated = computed(() => {
+  if (!company.value || companyCreatedAtTick.value === null) {
     return 0
   }
 
-  return currentRuntimeSeconds.value - companyCreatedAtRuntimeSeconds.value
+  return currentTick.value - companyCreatedAtTick.value
 })
 
 const canStartFirstVisitorEvent = computed(() => {
   return (
     company.value &&
-    secondsAfterCompanyCreated.value >= 60 &&
+    ticksAfterCompanyCreated.value >= 60 &&
     !storyStarted.value &&
     !hasRegisteredStaff.value
   )
@@ -139,7 +130,7 @@ function createCompany() {
   if (!canCreateCompany.value) return
 
   storeCreateCompany(companyName.value)
-  companyCreatedAtRuntimeSeconds.value = currentRuntimeSeconds.value
+  companyCreatedAtTick.value = currentTick.value
 }
 
 function getRandomGender() {
@@ -190,9 +181,9 @@ function completeFirstStaffRegistration() {
 
 function startHomeRecruitment() {
   if (staffMenuOpen.value) return
-  if (!canOpenRecruitment()) return
+  if (!canOpenRecruitment(currentTick.value)) return
 
-  openRecruitment(nowMs.value)
+  openRecruitment(currentTick.value)
 }
 
 function hireCandidateFromHome() {
@@ -213,7 +204,7 @@ function updateHomeRecruitment() {
   if (!hasRegisteredStaff.value) return
   if (staffMenuOpen.value) return
 
-  updateRecruitment(nowMs.value)
+  updateRecruitment(currentTick.value)
 }
 
 watch(canStartFirstVisitorEvent, (canStart) => {
@@ -222,13 +213,13 @@ watch(canStartFirstVisitorEvent, (canStart) => {
   }
 })
 
-watch(nowMs, () => {
+watch(currentTick, () => {
   updateHomeRecruitment()
 })
 
 onMounted(() => {
   localTimer = window.setInterval(() => {
-    localNow.value = Date.now()
+    localTick.value += 1
   }, 1000)
 
   updateHomeRecruitment()
@@ -454,7 +445,7 @@ onUnmounted(() => {
             <button
               class="primary-button"
               type="button"
-              :disabled="!canOpenRecruitment()"
+              :disabled="!canOpenRecruitment(currentTick)"
               @click="startHomeRecruitment"
             >
               채용 개방

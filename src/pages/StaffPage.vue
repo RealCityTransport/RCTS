@@ -27,15 +27,15 @@ const {
   registerAdditionalStaff,
 } = useRctsStore()
 
-const localNow = ref(Date.now())
+const localTick = ref(0)
 let localTimer = null
 
 const activeTab = ref('recruit')
 const candidateName = ref('')
 const selectedDepartment = ref('')
 
-const nowMs = computed(() => {
-  return worldClock?.now?.value ?? localNow.value
+const currentTick = computed(() => {
+  return worldClock?.tick?.value ?? localTick.value
 })
 
 const staffHead = computed(() => {
@@ -51,23 +51,11 @@ const pendingCandidate = computed(() => {
 })
 
 const recruitmentRunning = computed(() => {
-  return Boolean(recruitment.value.candidateStartedAtMs)
-})
-
-const targetStaffNumberText = computed(() => {
-  if (recruitment.value.targetStaffNumber) {
-    return `${recruitment.value.targetStaffNumber}번째 직원`
-  }
-
-  if (pendingCandidate.value?.targetStaffNumber) {
-    return `${pendingCandidate.value.targetStaffNumber}번째 직원`
-  }
-
-  return ''
+  return recruitment.value.candidateStartedAtTick !== null
 })
 
 const remainingRecruitmentText = computed(() => {
-  return formatSeconds(getRecruitmentRemainingSeconds(nowMs.value))
+  return formatSeconds(getRecruitmentRemainingSeconds(currentTick.value))
 })
 
 const canHireCandidate = computed(() => {
@@ -102,9 +90,9 @@ function selectDepartment(departmentId) {
 }
 
 function startRecruitment() {
-  if (!canOpenRecruitment()) return
+  if (!canOpenRecruitment(currentTick.value)) return
 
-  openRecruitment(nowMs.value)
+  openRecruitment(currentTick.value)
 }
 
 function hireCandidate() {
@@ -124,16 +112,16 @@ function updateRecruitmentState() {
   if (!company.value) return
   if (!isMenuOpen('staff')) return
 
-  updateRecruitment(nowMs.value)
+  updateRecruitment(currentTick.value)
 }
 
-watch(nowMs, () => {
+watch(currentTick, () => {
   updateRecruitmentState()
 })
 
 onMounted(() => {
   localTimer = window.setInterval(() => {
-    localNow.value = Date.now()
+    localTick.value += 1
   }, 1000)
 
   updateRecruitmentState()
@@ -195,7 +183,7 @@ onUnmounted(() => {
           class="candidate-card"
         >
           <div class="candidate-header">
-            <span>{{ targetStaffNumberText }}</span>
+            <span>지원자 도착</span>
             <strong>신규 지원자</strong>
           </div>
 
@@ -247,7 +235,7 @@ onUnmounted(() => {
           v-else-if="recruitmentRunning"
           class="waiting-card"
         >
-          <strong>{{ targetStaffNumberText }} 대기 중</strong>
+          <strong>지원자 대기 중</strong>
 
           <span v-if="isTimeDisplayUnlocked">
             {{ remainingRecruitmentText }}
@@ -274,7 +262,7 @@ onUnmounted(() => {
           <button
             class="primary-button"
             type="button"
-            :disabled="!canOpenRecruitment()"
+            :disabled="!canOpenRecruitment(currentTick)"
             @click="startRecruitment"
           >
             채용 개방

@@ -6,14 +6,20 @@ import { useRctsStore } from './stores/rctsStore'
 
 const { isTimeDisplayUnlocked, initRctsStore } = useRctsStore()
 
+const SYNC_TICK_INTERVAL = 3600
+
 const worldStartedAt = ref(Date.now())
-const worldNow = ref(Date.now())
 const worldTick = ref(0)
+const lastSyncedTick = ref(0)
 
 let worldClockTimer = null
 
+const worldNow = computed(() => {
+  return worldStartedAt.value + worldTick.value * 1000
+})
+
 const worldRuntimeSeconds = computed(() => {
-  return Math.floor((worldNow.value - worldStartedAt.value) / 1000)
+  return worldTick.value
 })
 
 const seoulDateText = computed(() => {
@@ -45,18 +51,33 @@ const seoulTimeText = computed(() => {
   return `${hour}:${minute}`
 })
 
-function syncWorldClock() {
-  worldNow.value = Date.now()
-  worldTick.value = worldRuntimeSeconds.value
+function syncWorldClockToRealTime() {
+  const realElapsedSeconds = Math.floor((Date.now() - worldStartedAt.value) / 1000)
+
+  if (realElapsedSeconds > worldTick.value) {
+    worldTick.value = realElapsedSeconds
+  }
+
+  lastSyncedTick.value = worldTick.value
+}
+
+function increaseWorldTick() {
+  worldTick.value += 1
+
+  const ticksAfterLastSync = worldTick.value - lastSyncedTick.value
+
+  if (ticksAfterLastSync >= SYNC_TICK_INTERVAL) {
+    syncWorldClockToRealTime()
+  }
 }
 
 function startWorldClock() {
   if (worldClockTimer) return
 
-  syncWorldClock()
+  syncWorldClockToRealTime()
 
   worldClockTimer = window.setInterval(() => {
-    syncWorldClock()
+    increaseWorldTick()
   }, 1000)
 }
 

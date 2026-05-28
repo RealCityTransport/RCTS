@@ -26,11 +26,11 @@ const {
   isDataSaveUnlocked,
 } = useRctsStore()
 
-const localNow = ref(Date.now())
+const localTick = ref(0)
 let localTimer = null
 
-const nowMs = computed(() => {
-  return worldClock?.now?.value ?? localNow.value
+const currentTick = computed(() => {
+  return worldClock?.tick?.value ?? localTick.value
 })
 
 const systemHead = computed(() => {
@@ -58,11 +58,11 @@ const dataResearch = computed(() => {
 })
 
 const timeResearchRemainingText = computed(() => {
-  return formatSeconds(getResearchRemainingSeconds('timeBasic', nowMs.value))
+  return formatSeconds(getResearchRemainingSeconds('timeBasic', currentTick.value))
 })
 
 const dataResearchRemainingText = computed(() => {
-  return formatSeconds(getResearchRemainingSeconds('dataBasic', nowMs.value))
+  return formatSeconds(getResearchRemainingSeconds('dataBasic', currentTick.value))
 })
 
 const canStartTimeResearch = computed(() => {
@@ -74,15 +74,15 @@ const canStartDataResearch = computed(() => {
 })
 
 function startResearch(researchId) {
-  startSystemResearch(researchId)
+  startSystemResearch(researchId, currentTick.value)
 }
 
 function updateResearchCompletion() {
-  if (isResearchFinished('timeBasic', nowMs.value)) {
+  if (isResearchFinished('timeBasic', currentTick.value)) {
     completeSystemResearch('timeBasic')
   }
 
-  if (isResearchFinished('dataBasic', nowMs.value)) {
+  if (isResearchFinished('dataBasic', currentTick.value)) {
     completeSystemResearch('dataBasic')
   }
 }
@@ -91,13 +91,13 @@ function selectSystemSecretary(staffId) {
   assignSystemSecretary(staffId)
 }
 
-watch(nowMs, () => {
+watch(currentTick, () => {
   updateResearchCompletion()
 })
 
 onMounted(() => {
   localTimer = window.setInterval(() => {
-    localNow.value = Date.now()
+    localTick.value += 1
   }, 1000)
 
   updateResearchCompletion()
@@ -185,7 +185,7 @@ onUnmounted(() => {
           <div>
             <strong>{{ timeResearch.name }}</strong>
             <span v-if="timeResearch.completed">완료</span>
-            <span v-else-if="timeResearch.startedAtMs">진행 중</span>
+            <span v-else-if="timeResearch.startedAtTick !== null">진행 중</span>
             <span v-else>대기 중</span>
           </div>
 
@@ -194,7 +194,7 @@ onUnmounted(() => {
           </p>
 
           <button
-            v-if="!timeResearch.startedAtMs && !timeResearch.completed"
+            v-if="timeResearch.startedAtTick === null && !timeResearch.completed"
             class="primary-button"
             type="button"
             :disabled="!canStartTimeResearch"
@@ -204,7 +204,7 @@ onUnmounted(() => {
           </button>
 
           <div
-            v-else-if="timeResearch.startedAtMs && !timeResearch.completed"
+            v-else-if="timeResearch.startedAtTick !== null && !timeResearch.completed"
             class="countdown"
           >
             {{ timeResearchRemainingText }}
@@ -222,7 +222,7 @@ onUnmounted(() => {
           <div>
             <strong>{{ dataResearch.name }}</strong>
             <span v-if="dataResearch.completed">완료</span>
-            <span v-else-if="dataResearch.startedAtMs">진행 중</span>
+            <span v-else-if="dataResearch.startedAtTick !== null">진행 중</span>
             <span v-else>대기 중</span>
           </div>
 
@@ -231,7 +231,7 @@ onUnmounted(() => {
           </p>
 
           <button
-            v-if="!dataResearch.startedAtMs && !dataResearch.completed"
+            v-if="dataResearch.startedAtTick === null && !dataResearch.completed"
             class="primary-button"
             type="button"
             :disabled="!canStartDataResearch"
@@ -241,7 +241,7 @@ onUnmounted(() => {
           </button>
 
           <div
-            v-else-if="dataResearch.startedAtMs && !dataResearch.completed"
+            v-else-if="dataResearch.startedAtTick !== null && !dataResearch.completed"
             class="countdown"
           >
             {{ dataResearchRemainingText }}

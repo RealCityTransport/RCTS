@@ -40,21 +40,21 @@ const systemResearches = ref({
     id: 'timeBasic',
     name: '시간 기초 연구',
     durationSeconds: 180,
-    startedAtMs: null,
+    startedAtTick: null,
     completed: false,
   },
   dataBasic: {
     id: 'dataBasic',
     name: '데이터 기초 연구',
     durationSeconds: 180,
-    startedAtMs: null,
+    startedAtTick: null,
     completed: false,
   },
 })
 
 const recruitment = ref({
   maxCurrentStaff: 4,
-  candidateStartedAtMs: null,
+  candidateStartedAtTick: null,
   targetStaffNumber: null,
   pendingCandidate: null,
 })
@@ -148,8 +148,18 @@ async function loadStateFromIndexedDB() {
 
   if (savedState.systemResearches) {
     systemResearches.value = {
-      ...systemResearches.value,
-      ...savedState.systemResearches,
+      timeBasic: {
+        ...systemResearches.value.timeBasic,
+        ...savedState.systemResearches.timeBasic,
+        startedAtTick:
+          savedState.systemResearches.timeBasic?.startedAtTick ?? null,
+      },
+      dataBasic: {
+        ...systemResearches.value.dataBasic,
+        ...savedState.systemResearches.dataBasic,
+        startedAtTick:
+          savedState.systemResearches.dataBasic?.startedAtTick ?? null,
+      },
     }
   }
 
@@ -158,10 +168,12 @@ async function loadStateFromIndexedDB() {
       ...recruitment.value,
       ...savedState.recruitment,
       maxCurrentStaff: 4,
+      candidateStartedAtTick:
+        savedState.recruitment.candidateStartedAtTick ?? null,
     }
   }
 
-  normalizeRecruitmentState()
+  normalizeRecruitmentState(0)
 }
 
 async function initRctsStore() {
@@ -179,10 +191,10 @@ function persistIfSavingUnlocked() {
   saveStateToIndexedDB()
 }
 
-function normalizeRecruitmentState() {
+function normalizeRecruitmentState(currentTick) {
   if (staffList.value.length >= recruitment.value.maxCurrentStaff) {
     recruitment.value.pendingCandidate = null
-    recruitment.value.candidateStartedAtMs = null
+    recruitment.value.candidateStartedAtTick = null
     recruitment.value.targetStaffNumber = null
     return
   }
@@ -194,7 +206,7 @@ function normalizeRecruitmentState() {
   ) {
     recruitment.value.pendingCandidate = null
     recruitment.value.targetStaffNumber = 4
-    recruitment.value.candidateStartedAtMs = Date.now()
+    recruitment.value.candidateStartedAtTick = currentTick
   }
 }
 
@@ -252,7 +264,7 @@ function registerAdditionalStaff({ name, gender, departmentId }) {
   staffList.value = [...staffList.value, newStaff]
 
   recruitment.value.pendingCandidate = null
-  recruitment.value.candidateStartedAtMs = null
+  recruitment.value.candidateStartedAtTick = null
   recruitment.value.targetStaffNumber = null
 
   persistIfSavingUnlocked()
@@ -321,7 +333,7 @@ function getResearch(researchId) {
 function canStartResearch(researchId) {
   const research = getResearch(researchId)
 
-  if (!research || research.completed || research.startedAtMs) {
+  if (!research || research.completed || research.startedAtTick !== null) {
     return false
   }
 
@@ -332,32 +344,32 @@ function canStartResearch(researchId) {
   return true
 }
 
-function startSystemResearch(researchId) {
+function startSystemResearch(researchId, currentTick) {
   if (!canStartResearch(researchId)) return
 
-  systemResearches.value[researchId].startedAtMs = Date.now()
+  systemResearches.value[researchId].startedAtTick = currentTick
   persistIfSavingUnlocked()
 }
 
-function getResearchRemainingSeconds(researchId, nowMs) {
+function getResearchRemainingSeconds(researchId, currentTick) {
   const research = getResearch(researchId)
 
-  if (!research || !research.startedAtMs || research.completed) {
+  if (!research || research.startedAtTick === null || research.completed) {
     return 0
   }
 
-  const elapsedSeconds = Math.floor((nowMs - research.startedAtMs) / 1000)
+  const elapsedSeconds = currentTick - research.startedAtTick
   return Math.max(0, research.durationSeconds - elapsedSeconds)
 }
 
-function isResearchFinished(researchId, nowMs) {
+function isResearchFinished(researchId, currentTick) {
   const research = getResearch(researchId)
 
-  if (!research || !research.startedAtMs || research.completed) {
+  if (!research || research.startedAtTick === null || research.completed) {
     return false
   }
 
-  return getResearchRemainingSeconds(researchId, nowMs) <= 0
+  return getResearchRemainingSeconds(researchId, currentTick) <= 0
 }
 
 function completeSystemResearch(researchId) {
@@ -396,34 +408,34 @@ function getRecruitmentDelaySeconds(targetStaffNumber) {
   return 3600
 }
 
-function canOpenRecruitment() {
-  normalizeRecruitmentState()
+function canOpenRecruitment(currentTick = 0) {
+  normalizeRecruitmentState(currentTick)
 
   if (staffList.value.length >= recruitment.value.maxCurrentStaff) return false
   if (recruitment.value.pendingCandidate) return false
-  if (recruitment.value.candidateStartedAtMs) return false
+  if (recruitment.value.candidateStartedAtTick !== null) return false
 
   return true
 }
 
-function openRecruitment(nowMs = Date.now()) {
-  if (!canOpenRecruitment()) return
+function openRecruitment(currentTick) {
+  if (!canOpenRecruitment(currentTick)) return
 
   recruitment.value.targetStaffNumber = staffList.value.length + 1
-  recruitment.value.candidateStartedAtMs = nowMs
+  recruitment.value.candidateStartedAtTick = currentTick
 
   persistIfSavingUnlocked()
 }
 
-function updateRecruitment(nowMs) {
-  normalizeRecruitmentState()
+function updateRecruitment(currentTick) {
+  normalizeRecruitmentState(currentTick)
 
   if (recruitment.value.pendingCandidate) return
-  if (!recruitment.value.candidateStartedAtMs) return
+  if (recruitment.value.candidateStartedAtTick === null) return
   if (!recruitment.value.targetStaffNumber) return
 
   const delaySeconds = getRecruitmentDelaySeconds(recruitment.value.targetStaffNumber)
-  const elapsedSeconds = Math.floor((nowMs - recruitment.value.candidateStartedAtMs) / 1000)
+  const elapsedSeconds = currentTick - recruitment.value.candidateStartedAtTick
 
   if (elapsedSeconds < delaySeconds) return
 
@@ -433,18 +445,19 @@ function updateRecruitment(nowMs) {
     targetStaffNumber: recruitment.value.targetStaffNumber,
   }
 
-  recruitment.value.candidateStartedAtMs = null
+  recruitment.value.candidateStartedAtTick = null
   recruitment.value.targetStaffNumber = null
 
   persistIfSavingUnlocked()
 }
 
-function getRecruitmentRemainingSeconds(nowMs) {
+function getRecruitmentRemainingSeconds(currentTick) {
   if (recruitment.value.pendingCandidate) return 0
-  if (!recruitment.value.candidateStartedAtMs || !recruitment.value.targetStaffNumber) return 0
+  if (recruitment.value.candidateStartedAtTick === null) return 0
+  if (!recruitment.value.targetStaffNumber) return 0
 
   const delaySeconds = getRecruitmentDelaySeconds(recruitment.value.targetStaffNumber)
-  const elapsedSeconds = Math.floor((nowMs - recruitment.value.candidateStartedAtMs) / 1000)
+  const elapsedSeconds = currentTick - recruitment.value.candidateStartedAtTick
 
   return Math.max(0, delaySeconds - elapsedSeconds)
 }
