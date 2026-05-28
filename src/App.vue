@@ -2,16 +2,9 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, provide, readonly, ref } from 'vue'
+import { useRctsStore } from './stores/rctsStore'
 
-/**
- * RCTS GLOBAL RUNTIME CLOCK
- * - 앱 실행 시 자동 시작
- * - 1초 = 1틱
- * - 실제 현재 시간 기준
- * - 서울 시간 기준 표시
- * - 초는 내부에서 흐르지만 화면 표시는 YYYY.MM.DD / HH:MM까지만 사용
- * - 저장 기능이 없으므로 새로고침 시 초기화
- */
+const { isTimeDisplayUnlocked, initRctsStore } = useRctsStore()
 
 const worldStartedAt = ref(Date.now())
 const worldNow = ref(Date.now())
@@ -84,6 +77,7 @@ provide('worldClock', {
 })
 
 onMounted(() => {
+  initRctsStore()
   startWorldClock()
 })
 
@@ -101,6 +95,14 @@ onUnmounted(() => {
           <strong>RCTS</strong>
         </div>
       </RouterLink>
+
+      <div
+        v-if="isTimeDisplayUnlocked"
+        class="header-clock"
+      >
+        <span>{{ seoulDateText }}</span>
+        <strong>{{ seoulTimeText }}</strong>
+      </div>
     </header>
 
     <RouterView />
@@ -122,8 +124,18 @@ onUnmounted(() => {
   background: #0f172a;
 }
 
+:global(html),
+:global(body) {
+  scrollbar-width: none;
+}
+
 :global(body) {
   overflow-x: hidden;
+  overflow-y: auto;
+}
+
+:global(body::-webkit-scrollbar) {
+  display: none;
 }
 
 .app {
@@ -146,7 +158,9 @@ onUnmounted(() => {
 
 .app-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
@@ -177,9 +191,40 @@ onUnmounted(() => {
   letter-spacing: 0.04em;
 }
 
+.header-clock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(96, 165, 250, 0.32);
+  border-radius: 16px;
+  background: rgba(96, 165, 250, 0.1);
+}
+
+.header-clock span {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.header-clock strong {
+  color: #f8fafc;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
 @media (max-width: 720px) {
   .app {
     padding: 16px;
+  }
+
+  .app-header {
+    display: grid;
+  }
+
+  .header-clock {
+    justify-content: center;
   }
 }
 </style>
