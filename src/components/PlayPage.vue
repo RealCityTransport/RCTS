@@ -205,6 +205,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 
 const SAVE_KEY = 'airport-observer-local-save-v1'
+const FLIGHT_SPAWN_INTERVAL_MS = 30 * 60 * 1000
 
 const activeTab = ref('operation')
 const activeOperationMenu = ref('staff')
@@ -225,6 +226,7 @@ let flightTimer = null
 let spawnTimer = null
 let autoSaveTimer = null
 let flightId = 0
+let lastFlightSpawnAt = 0
 
 const tabs = [
   { id: 'operation', label: '운영' },
@@ -342,6 +344,7 @@ function saveGame(showMessage = false) {
       privateFlights: privateFlights.value,
       activeFlights: activeFlights.value,
       flightId,
+      lastFlightSpawnAt,
       departments: departments.map((item) => ({
         id: item.id,
         staff: item.staff,
@@ -401,8 +404,13 @@ function loadGame(showMessage = false) {
 
     transportLines.value = Number.isFinite(saveData.transportLines) ? saveData.transportLines : 4
     privateFlights.value = Number.isFinite(saveData.privateFlights) ? saveData.privateFlights : 1
-    activeFlights.value = Array.isArray(saveData.activeFlights) ? saveData.activeFlights : []
+
+    activeFlights.value = Array.isArray(saveData.activeFlights)
+      ? saveData.activeFlights.filter((flight) => !flight.fadeout)
+      : []
+
     flightId = Number.isFinite(saveData.flightId) ? saveData.flightId : activeFlights.value.length
+    lastFlightSpawnAt = Number.isFinite(saveData.lastFlightSpawnAt) ? saveData.lastFlightSpawnAt : 0
 
     if (Array.isArray(saveData.departments)) {
       saveData.departments.forEach((savedItem) => {
@@ -460,6 +468,7 @@ function loadGame(showMessage = false) {
 
 function resetSave() {
   localStorage.removeItem(SAVE_KEY)
+  lastFlightSpawnAt = 0
   updateTowerMessage('RESET', '로컬 저장 데이터가 삭제되었습니다.')
 }
 
@@ -507,6 +516,93 @@ function updateTowerMessage(channel, text) {
   towerMessage.value = { channel, text }
 }
 
+/**
+ * 항공기 등장 규칙 - 인천공항 관람형 압축 버전
+ * - 00~04시: 1기
+ * - 04~06시: 2기
+ * - 주중 06~10시: 3기
+ * - 주중 10~16시: 2기
+ * - 주중 16~19시: 3기
+ * - 주중 19~22시: 2기
+ * - 22~24시: 1기
+ * - 주말: 기본 2기, 피크 시간 3기
+ *
+ * 단, 항공기 추가는 30분마다 1대씩만 진행
+ * 새로 등장한 항공기의 접근시간은 30분
+ */
+function isWeekday(date = new Date()) {
+  const day = date.getDay()
+
+  return day >= 1 && day <= 5
+}
+
+function getAtcFlightLimit(date = new Date()) {
+  const hour = date.getHours()
+  const weekday = isWeekday(date)
+
+  if (hour >= 0 && hour < 4) {
+    return 1
+  }
+
+  if (hour >= 4 && hour < 6) {
+    return 2
+  }
+
+  if (weekday && hour >= 6 && hour < 10) {
+    return 3
+  }
+
+  if (weekday && hour >= 10 && hour < 16) {
+    return 2
+  }
+
+  if (weekday && hour >= 16 && hour < 19) {
+    return 3
+  }
+
+  if (weekday && hour >= 19 && hour < 22) {
+    return 2
+  }
+
+  if (hour >= 22 && hour < 24) {
+    return 1
+  }
+
+  if (!weekday && ((hour >= 6 && hour < 10) || (hour >= 16 && hour < 19))) {
+    return 3
+  }
+
+  return 2
+}
+
+function getActiveAtcFlightCount() {
+  return activeFlights.value.filter((flight) => !flight.fadeout).length
+}
+
+function spawnScheduledFlight(force = false) {
+  const now = Date.now()
+  const limit = getAtcFlightLimit(new Date())
+  const activeCount = getActiveAtcFlightCount()
+
+  if (activeCount >= limit) {
+    return
+  }
+
+  const canSpawn =
+    force ||
+    !lastFlightSpawnAt ||
+    now - lastFlightSpawnAt >= FLIGHT_SPAWN_INTERVAL_MS
+
+  if (!canSpawn) {
+    return
+  }
+
+  lastFlightSpawnAt = now
+  createFlight(30)
+  updateTowerMessage('ARRIVAL', `시간대 관제 ${limit}기 유지 · 30분 접근 항공기 1대 추가`)
+  saveGame()
+}
+
 function isLandingBusy() {
   return activeFlights.value.some((flight) => flight.zone === 'landing')
 }
@@ -521,41 +617,28 @@ function isTakeoffBusy() {
   })
 }
 
-function createFlight(startMinutes = 60) {
+function isRunwayBusy() {
+  return isLandingBusy() || isTakeoffBusy()
+}
+
+function createFlight(startMinutes = 30) {
   const remainingSeconds = toSeconds(startMinutes)
 
   const flight = {
     id: flightId++,
     code: makeFlightCode(),
     flow: 'arrival',
-    zone: 'scheduled',
+    zone: 'arrival',
     remainingSeconds,
-    status: 'FLIGHT PLAN REGISTERED',
-    detail: 'ETA 등록',
+    status: 'ARRIVAL FLOW ACTIVE',
+    detail: '접근시간 30분 · 도착 흐름 활성화',
     disembarkSeconds: 0,
     cleaningSeconds: 0,
+    boardingSeconds: 0,
     altitude: 0,
     speed: 0,
     goodDay: false,
     fadeout: false,
-  }
-
-  if (startMinutes <= 30 && startMinutes > 15) {
-    flight.zone = 'arrival'
-    flight.status = 'ARRIVAL FLOW ACTIVE'
-    flight.detail = '도착 흐름 활성화'
-  }
-
-  if (startMinutes <= 15 && startMinutes > 10) {
-    flight.zone = 'approach'
-    flight.status = 'CONTACT APPROACH'
-    flight.detail = '접근 관제 연결'
-  }
-
-  if (startMinutes <= 10 && startMinutes > 2) {
-    flight.zone = 'tower'
-    flight.status = 'CLEARED FOR LANDING'
-    flight.detail = '최종 접근'
   }
 
   activeFlights.value.push(flight)
@@ -585,8 +668,11 @@ function assignStaff(id) {
 
 function addPrivateFlight() {
   privateFlights.value++
-  createFlight(60)
-  updateTowerMessage('FACILITY', '사용자 전용 항공편성이 도착 예정 목록에 추가되었습니다.')
+
+  createFlight(30)
+  lastFlightSpawnAt = Date.now()
+
+  updateTowerMessage('FACILITY', '사용자 전용 항공편성이 30분 접근 항공기로 추가되었습니다.')
   saveGame()
 }
 
@@ -624,14 +710,6 @@ function processFlight(flight) {
     flight.remainingSeconds--
   }
 
-  if (flight.zone === 'scheduled' && flight.remainingSeconds <= toSeconds(30)) {
-    flight.zone = 'arrival'
-    flight.status = 'ARRIVAL FLOW ACTIVE'
-    flight.detail = '도착 흐름 활성화'
-    updateTowerMessage('ARRIVAL', `${flight.code} ARRIVAL FLOW ACTIVE`)
-    return
-  }
-
   if (flight.zone === 'arrival' && flight.remainingSeconds <= toSeconds(15)) {
     flight.zone = 'approach'
     flight.status = 'CONTACT APPROACH'
@@ -653,25 +731,25 @@ function processFlight(flight) {
     flight.flow === 'arrival' &&
     flight.remainingSeconds <= toSeconds(2)
   ) {
-    if (isLandingBusy()) {
-      flight.status = 'LANDING SEQUENCE HOLD'
-      flight.detail = '착륙 순번 대기'
+    if (isRunwayBusy()) {
+      flight.status = 'RUNWAY HOLD'
+      flight.detail = '활주로 사용중 · 착륙 순번 대기'
       return
     }
 
     flight.zone = 'landing'
     flight.remainingSeconds = toSeconds(1)
     flight.status = 'RUNWAY DECELERATION'
-    flight.detail = '활주로 감속'
+    flight.detail = '착륙 · 활주로 감속'
     updateTowerMessage('TOWER', `${flight.code} RUNWAY DECELERATION`)
     return
   }
 
   if (flight.zone === 'landing' && flight.remainingSeconds <= 0) {
     flight.zone = 'ground'
-    flight.remainingSeconds = toSeconds(10)
+    flight.remainingSeconds = toSeconds(5)
     flight.status = 'TAXI TO GATE'
-    flight.detail = '활주로에서 게이트 이동'
+    flight.detail = '지상이동 5분 · 게이트 이동'
     updateTowerMessage('GROUND', `${flight.code} CONTACT GROUND`)
     return
   }
@@ -680,27 +758,26 @@ function processFlight(flight) {
     flight.zone === 'ground' &&
     flight.flow === 'arrival' &&
     flight.status === 'TAXI TO GATE' &&
-    flight.remainingSeconds <= toSeconds(2)
+    flight.remainingSeconds <= toSeconds(1)
   ) {
     flight.zone = 'gate'
-    flight.remainingSeconds = toSeconds(2)
     flight.status = 'APPROACHING GATE'
-    flight.detail = '게이트 접근중'
+    flight.detail = '게이트 도착 1분 전 · 램T프 이동'
     updateTowerMessage('RAMP', `${flight.code} APPROACHING GATE`)
     return
   }
 
   if (
     flight.zone === 'gate' &&
+    flight.flow === 'arrival' &&
     flight.status === 'APPROACHING GATE' &&
     flight.remainingSeconds <= 0
   ) {
-    flight.disembarkSeconds = randomSeconds(60, 180)
-    flight.cleaningSeconds = Math.max(toSeconds(20), Math.floor(flight.disembarkSeconds / 3))
+    flight.disembarkSeconds = randomSeconds(30, 60)
     flight.remainingSeconds = flight.disembarkSeconds
     flight.status = 'PASSENGER DISEMBARKING'
-    flight.detail = 'ENGINE CUT OFF · JET BRIDGE CONNECTED'
-    updateTowerMessage('GATE', `${flight.code} ENGINE CUT OFF · JET BRIDGE CONNECTED`)
+    flight.detail = '게이트 도착 · 승객 하차 30~60분'
+    updateTowerMessage('GATE', `${flight.code} GATE ARRIVAL · PASSENGER DISEMBARKING`)
     return
   }
 
@@ -709,23 +786,23 @@ function processFlight(flight) {
     flight.status === 'PASSENGER DISEMBARKING' &&
     flight.remainingSeconds <= 0
   ) {
-    flight.remainingSeconds = toSeconds(10)
-    flight.status = 'CREW CHECK'
-    flight.detail = '승무원 체크'
-    updateTowerMessage('GATE', `${flight.code} CREW CHECK`)
+    flight.remainingSeconds = toSeconds(5)
+    flight.status = 'CREW DISEMBARKING'
+    flight.detail = '승무원 하차 5분'
+    updateTowerMessage('GATE', `${flight.code} CREW DISEMBARKING`)
     return
   }
 
   if (
     flight.zone === 'gate' &&
-    flight.status === 'CREW CHECK' &&
+    flight.status === 'CREW DISEMBARKING' &&
     flight.remainingSeconds <= 0
   ) {
-    flight.code = 'MT'
+    flight.cleaningSeconds = randomSeconds(30, 60)
     flight.remainingSeconds = flight.cleaningSeconds
     flight.status = 'AIRCRAFT CLEANING'
-    flight.detail = '빈 항공기 청소 진행'
-    updateTowerMessage('GATE', 'MT AIRCRAFT CLEANING')
+    flight.detail = '청소 30~60분'
+    updateTowerMessage('GATE', `${flight.code} AIRCRAFT CLEANING`)
     return
   }
 
@@ -735,9 +812,9 @@ function processFlight(flight) {
     flight.remainingSeconds <= 0
   ) {
     flight.code = makeFlightCode()
-    flight.remainingSeconds = toSeconds(10)
+    flight.remainingSeconds = toSeconds(5)
     flight.status = 'CREW BOARDING'
-    flight.detail = '다음 출발편 승무원 탑승'
+    flight.detail = '다음 출발편 승무원 승차 5분'
     updateTowerMessage('GATE', `${flight.code} CREW BOARDING`)
     return
   }
@@ -747,9 +824,10 @@ function processFlight(flight) {
     flight.status === 'CREW BOARDING' &&
     flight.remainingSeconds <= 0
   ) {
-    flight.remainingSeconds = randomSeconds(60, 180)
+    flight.boardingSeconds = randomSeconds(30, 60)
+    flight.remainingSeconds = flight.boardingSeconds
     flight.status = 'PASSENGER BOARDING'
-    flight.detail = 'BOARDING READY · 승객 보딩중'
+    flight.detail = '보딩 30~60분'
     updateTowerMessage('GATE', `${flight.code} BOARDING READY`)
     return
   }
@@ -759,35 +837,23 @@ function processFlight(flight) {
     flight.status === 'PASSENGER BOARDING' &&
     flight.remainingSeconds <= 0
   ) {
-    flight.remainingSeconds = toSeconds(1)
-    flight.status = 'READY FOR PUSHBACK'
-    flight.detail = 'DOOR CLOSED · PUSHBACK REQUEST'
-    updateTowerMessage('GATE', `${flight.code} READY FOR PUSHBACK`)
+    flight.remainingSeconds = toSeconds(3)
+    flight.status = 'PUSHBACK AND ENGINE START'
+    flight.detail = '푸시백 3분 · 엔진스타트'
+    updateTowerMessage('RAMP', `${flight.code} PUSHBACK · ENGINE START`)
     return
   }
 
   if (
     flight.zone === 'gate' &&
-    flight.status === 'READY FOR PUSHBACK' &&
-    flight.remainingSeconds <= 0
-  ) {
-    flight.remainingSeconds = toSeconds(10)
-    flight.status = 'PUSHBACK ACTIVE'
-    flight.detail = '푸시백 진행중'
-    updateTowerMessage('RAMP', `${flight.code} PUSHBACK ACTIVE`)
-    return
-  }
-
-  if (
-    flight.zone === 'gate' &&
-    flight.status === 'PUSHBACK ACTIVE' &&
+    flight.status === 'PUSHBACK AND ENGINE START' &&
     flight.remainingSeconds <= 0
   ) {
     flight.zone = 'ground'
     flight.flow = 'departure'
-    flight.remainingSeconds = toSeconds(10)
+    flight.remainingSeconds = toSeconds(5)
     flight.status = 'TAXI TO RWY'
-    flight.detail = 'REQUEST TAXI · 활주로 이동'
+    flight.detail = '택싱 5분 · 활주로 이동'
     updateTowerMessage('GROUND', `${flight.code} REQUEST TAXI`)
     return
   }
@@ -796,10 +862,10 @@ function processFlight(flight) {
     flight.zone === 'ground' &&
     flight.flow === 'departure' &&
     flight.status === 'TAXI TO RWY' &&
-    flight.remainingSeconds <= toSeconds(10)
+    flight.remainingSeconds <= toSeconds(1)
   ) {
     flight.status = 'CONTACTING TOWER'
-    flight.detail = '타워 연결중'
+    flight.detail = '활주로 접근 · 타워 연결중'
     updateTowerMessage('GROUND', `${flight.code} CONTACTING TOWER`)
     return
   }
@@ -821,9 +887,9 @@ function processFlight(flight) {
     flight.zone === 'tower' &&
     flight.flow === 'departure' &&
     flight.status === 'LINE UP AND WAIT' &&
-    flight.remainingSeconds <= toSeconds(2)
+    flight.remainingSeconds <= 0
   ) {
-    flight.remainingSeconds = toSeconds(2)
+    flight.remainingSeconds = toSeconds(1)
     flight.status = 'CLEARED FOR TAKEOFF'
     flight.detail = '이륙 활주중'
     updateTowerMessage('TOWER', `${flight.code} CLEARED FOR TAKEOFF`)
@@ -846,7 +912,7 @@ function processFlight(flight) {
 }
 
 function processTakeoffQueue() {
-  if (isLandingBusy() || isTakeoffBusy()) {
+  if (isRunwayBusy()) {
     return
   }
 
@@ -866,9 +932,9 @@ function processTakeoffQueue() {
     return
   }
 
-  nextFlight.remainingSeconds = toSeconds(4)
+  nextFlight.remainingSeconds = toSeconds(1)
   nextFlight.status = 'LINE UP AND WAIT'
-  nextFlight.detail = '활주로 진입'
+  nextFlight.detail = '활주로 진입 · 1대씩 이륙 처리'
   updateTowerMessage('TOWER', `${nextFlight.code} LINE UP AND WAIT`)
 }
 
@@ -878,10 +944,9 @@ onMounted(() => {
   const hasSaveData = loadGame()
 
   if (!hasSaveData) {
-    createFlight(60)
-    createFlight(42)
-    createFlight(22)
-    createFlight(12)
+    spawnScheduledFlight(true)
+  } else {
+    spawnScheduledFlight()
   }
 
   timeTimer = setInterval(updateTime, 1000)
@@ -892,20 +957,8 @@ onMounted(() => {
   }, 1000)
 
   spawnTimer = setInterval(() => {
-    const wave = Math.random()
-
-    if (wave > 0.82) {
-      createFlight(60)
-      createFlight(58)
-      createFlight(55)
-      updateTowerMessage('ARRIVAL', 'ARRIVAL WAVE DETECTED')
-      return
-    }
-
-    if (wave > 0.45) {
-      createFlight(60)
-    }
-  }, 20000)
+    spawnScheduledFlight()
+  }, 60000)
 
   autoSaveTimer = setInterval(() => {
     saveGame()
