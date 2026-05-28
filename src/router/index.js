@@ -1,27 +1,24 @@
 // src/router/index.js
+
 import { createRouter, createWebHashHistory } from 'vue-router'
 
-import PlayPage from '@/components/PlayPage.vue'
+import HomePage from '../pages/HomePage.vue'
+
+const routes = [
+  {
+    path: '/',
+    name: 'home',
+    component: HomePage,
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/',
+  },
+]
 
 const router = createRouter({
   history: createWebHashHistory(),
-
-  routes: [
-    {
-      path: '/',
-      name: 'Home',
-      component: PlayPage,
-    },
-
-    {
-      path: '/:pathMatch(.*)*',
-      redirect: '/',
-    },
-  ],
-
-  scrollBehavior() {
-    return { top: 0 }
-  },
+  routes,
 })
 
 export default router
