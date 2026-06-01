@@ -1,4 +1,27 @@
 // src/modules/standardTime.js
+// RCTS FILE CONTEXT
+// 파일 역할:
+// - RCTS 전체의 기준이 되는 표준시간 모듈.
+// - Asia/Seoul 기준 현재 시간을 계산하고, 내부 tick을 1초마다 증가시킨다.
+// - 1 tick = 1 second 규칙을 유지한다.
+//
+// 현재 연결:
+// - App.vue에서 사이트 시작 시 standardTime.start()로 실행된다.
+// - HeaderTop.vue에서 standardTime.state를 읽어 표준시간을 표시한다.
+// - DashboardPage.vue 등 다른 모듈도 필요하면 이 state를 읽을 수 있다.
+//
+// 현재 규칙:
+// - 화면 표시는 YYYY.MM.DD / HH:MM / HH:MM:SS 형태를 제공한다.
+// - 내부적으로는 1초마다 tick 증가.
+// - 1시간마다 실제 시간과 재동기화하여 오차를 보정한다.
+//
+// 주의:
+// - 게임 월드 시간과 표준시간은 나중에 분리될 수 있다.
+// - 현재 모듈은 “사이트 기준 시간”이지, 반드시 “게임 월드 시간”은 아니다.
+//
+// 다음 작업 방향:
+// - 저장/불러오기 모듈과 연결해 마지막 저장 시각, 접속 시각, 오프라인 보정 여부 판단에 사용할 수 있다.
+
 import { reactive, readonly } from 'vue'
 
 const SEOUL_TIME_ZONE = 'Asia/Seoul'

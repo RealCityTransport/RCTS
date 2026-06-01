@@ -1,167 +1,153 @@
-<!-- src/components/main/CompanyPage.vue -->
+<!--
+RCTS FILE CONTEXT
+파일 역할:
+- 회사 메뉴의 껍데기/조립 페이지.
+- 회사명과 설명이 들어가는 BaseMainPage를 유지한다.
+- 회사 내부 2차 메뉴 상태만 관리한다.
+- 실제 연구/설정 내용은 별도 컴포넌트로 분리되어 있다.
+
+현재 연결:
+- Home.vue에서 activeMenu === 'company'일 때 표시된다.
+- company props를 받는다.
+- completedResearch props를 받는다.
+- activeResearch props를 받는다.
+- currentTick props를 받는다.
+- storageInfo, storageMessage, storageBusy props를 받는다.
+- CompanySubMenu.vue를 통해 연구/설정 2차 메뉴를 표시한다.
+- CompanyResearchPanel.vue에서 연구 목록과 진행 상태를 표시한다.
+- CompanySettingsPanel.vue에서 회사 설정 및 데이터 저장 영역을 표시한다.
+
+현재 규칙:
+- 연구는 기본 접근 가능.
+- 설정은 settings-basic 연구 완료 전까지 잠김.
+- save-local-basic 연구 완료 후 설정 > 데이터 > 수동 저장 기능이 열린다.
+- 설정이 잠긴 상태에서 settings 탭으로 갈 수 없다.
+- 연구 시작 이벤트와 저장 관련 이벤트는 Home.vue로 다시 전달한다.
+
+주의:
+- CompanyPage.vue에는 연구 카드나 설정 폼의 세부 UI를 직접 넣지 않는다.
+- 이 파일은 회사 메뉴 전체 틀과 2차 메뉴 전환만 담당한다.
+
+다음 작업 방향:
+- 회사 내부 2차 메뉴가 많아지면 companyTabs 데이터를 별도 파일로 분리할 수 있다.
+-->
+
 <template>
   <BaseMainPage
     eyebrow="COMPANY"
     :title="companyName"
-    description="이곳은 현재 운영 중인 회사 정보를 확인하는 메뉴입니다. 이후 회사 설정, 운영 성향, 보유 자산, 운영 기록 등이 이 화면에 연결됩니다."
-    badge="회사 정보"
+    description="이곳은 회사 정보, 기본 연구, 회사 설정을 관리하는 중심 메뉴입니다."
+    badge="회사 메뉴"
   >
-    <section class="company-grid">
-      <article class="info-card">
-        <h3>회사 기본 정보</h3>
+    <section class="company-page-shell">
+      <CompanySubMenu
+        :active-tab="activeTab"
+        :is-settings-unlocked="isSettingsUnlocked"
+        @select-tab="selectTab"
+      />
 
-        <dl>
-          <div>
-            <dt>회사명</dt>
-            <dd>{{ companyName }}</dd>
-          </div>
+      <CompanyResearchPanel
+        v-if="activeTab === 'research'"
+        :completed-research="completedResearch"
+        :active-research="activeResearch"
+        :current-tick="currentTick"
+        @start-research="emit('start-research', $event)"
+      />
 
-          <div>
-            <dt>회사 상태</dt>
-            <dd>운영 준비중</dd>
-          </div>
-
-          <div>
-            <dt>생성 시각</dt>
-            <dd>{{ createdAtText }}</dd>
-          </div>
-        </dl>
-      </article>
-
-      <article class="info-card">
-        <h3>운영 요약</h3>
-
-        <dl>
-          <div>
-            <dt>운영 단계</dt>
-            <dd>초기 단계</dd>
-          </div>
-
-          <div>
-            <dt>등록 노선</dt>
-            <dd>0개</dd>
-          </div>
-
-          <div>
-            <dt>보유 차량</dt>
-            <dd>0대</dd>
-          </div>
-        </dl>
-      </article>
-
-      <article class="info-card">
-        <h3>개방 상태</h3>
-
-        <dl>
-          <div>
-            <dt>대시보드</dt>
-            <dd>개방됨</dd>
-          </div>
-
-          <div>
-            <dt>회사 메뉴</dt>
-            <dd>개방됨</dd>
-          </div>
-
-          <div>
-            <dt>추가 기능</dt>
-            <dd>연구 필요</dd>
-          </div>
-        </dl>
-      </article>
+      <CompanySettingsPanel
+        v-else-if="activeTab === 'settings'"
+        :company="company"
+        :completed-research="completedResearch"
+        :is-settings-unlocked="isSettingsUnlocked"
+        :storage-info="storageInfo"
+        :storage-message="storageMessage"
+        :storage-busy="storageBusy"
+        @save-world="emit('save-world')"
+        @load-world="emit('load-world')"
+        @delete-world="emit('delete-world')"
+      />
     </section>
   </BaseMainPage>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import BaseMainPage from './BaseMainPage.vue'
+import CompanySubMenu from './company/CompanySubMenu.vue'
+import CompanyResearchPanel from './company/CompanyResearchPanel.vue'
+import CompanySettingsPanel from './company/CompanySettingsPanel.vue'
 
 const props = defineProps({
   company: {
     type: Object,
     default: null,
   },
+  completedResearch: {
+    type: Array,
+    default: () => [],
+  },
+  activeResearch: {
+    type: Object,
+    default: null,
+  },
+  currentTick: {
+    type: Number,
+    default: 0,
+  },
+  storageInfo: {
+    type: Object,
+    default: () => ({
+      hasSavedData: false,
+      savedAt: null,
+      version: null,
+    }),
+  },
+  storageMessage: {
+    type: String,
+    default: '',
+  },
+  storageBusy: {
+    type: Boolean,
+    default: false,
+  },
 })
+
+const emit = defineEmits([
+  'start-research',
+  'save-world',
+  'load-world',
+  'delete-world',
+])
+
+const activeTab = ref('research')
 
 const companyName = computed(() => {
   return props.company?.name || '회사 정보 없음'
 })
 
-const createdAtText = computed(() => {
-  if (!props.company?.createdAt) {
-    return '-'
+const isSettingsUnlocked = computed(() => {
+  return props.completedResearch.includes('settings-basic')
+})
+
+watch(isSettingsUnlocked, (value) => {
+  if (!value && activeTab.value === 'settings') {
+    activeTab.value = 'research'
+  }
+})
+
+function selectTab(tabId) {
+  if (tabId === 'settings' && !isSettingsUnlocked.value) {
+    return
   }
 
-  const date = new Date(props.company.createdAt)
-
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hour = String(date.getHours()).padStart(2, '0')
-  const minute = String(date.getMinutes()).padStart(2, '0')
-
-  return `${year}년 ${month}월 ${day}일 ${hour}:${minute}`
-})
+  activeTab.value = tabId
+}
 </script>
 
 <style scoped>
-.company-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-}
-
-.info-card {
-  border: 1px solid #dbe3ef;
-  border-radius: 12px;
-  background: #f8fafc;
-  overflow: hidden;
-}
-
-.info-card h3 {
-  margin: 0;
-  padding: 12px 14px;
-  color: #111827;
-  font-size: 16px;
-  border-bottom: 1px solid #dbe3ef;
-  background: white;
-}
-
-.info-card dl {
-  margin: 0;
-  padding: 16px;
-}
-
-.info-card dl div {
+.company-page-shell {
   display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 0;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.info-card dl div:last-child {
-  border-bottom: 0;
-}
-
-.info-card dt {
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.info-card dd {
-  margin: 0;
-  color: #111827;
-  font-size: 14px;
-  font-weight: 900;
-  text-align: right;
-}
-
-@media (max-width: 820px) {
-  .company-grid {
-    grid-template-columns: 1fr;
-  }
+  flex-direction: column;
+  gap: 16px;
 }
 </style>

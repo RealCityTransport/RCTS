@@ -1,4 +1,33 @@
 <!-- src/components/main/BaseMainPage.vue -->
+<!--
+RCTS FILE CONTEXT
+파일 역할:
+- 메인 컨텐츠 페이지의 공통 포맷을 담당하는 베이스 컴포넌트.
+- Dashboard, Company, Research, ComingSoon 같은 페이지가 이 컴포넌트를 감싸서 사용한다.
+
+현재 제공:
+- eyebrow: 상단 작은 라벨.
+- title: 페이지 제목.
+- description: 페이지 설명.
+- badge: 우측 상태 배지.
+- tone: default / dark / soft 톤.
+- default slot: 실제 페이지 본문.
+- actions slot: 우측 액션 영역.
+
+현재 연결:
+- DashboardPage.vue
+- CompanyPage.vue
+- ResearchPage.vue
+- ComingSoonPage.vue
+
+주의:
+- 새 메인 페이지를 만들 때는 가능하면 BaseMainPage.vue를 사용한다.
+- 이렇게 해야 메인 컨텐츠의 제목/설명/본문 포맷이 통일된다.
+
+다음 작업 방향:
+- 페이지별 공통 액션 버튼, 탭, 필터, 상태 표시줄을 slot으로 확장할 수 있다.
+-->
+
 <template>
   <section class="base-main-page">
     <section class="main-panel" :class="`tone-${tone}`">

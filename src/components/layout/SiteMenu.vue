@@ -1,4 +1,29 @@
 <!-- src/components/layout/SiteMenu.vue -->
+<!--
+RCTS FILE CONTEXT
+파일 역할:
+- 좌측 사이트 메뉴의 출력 스타일을 통일하는 컴포넌트.
+- 메뉴 데이터 자체는 data/siteMenus.js에서 관리한다.
+- 이 컴포넌트는 메뉴를 버튼으로 보여주고, 선택 이벤트만 부모로 전달한다.
+
+현재 연결:
+- Home.vue에서 <SiteMenu />로 사용한다.
+- Home.vue가 menuItems와 activeMenu를 props로 전달한다.
+- 메뉴 클릭 시 select-menu 이벤트를 emit한다.
+
+현재 규칙:
+- activeMenu와 menu.id가 같으면 active 스타일.
+- menu.locked가 true면 잠김 스타일 + disabled 처리.
+- 모바일에서는 메뉴가 2열 그리드로 표시된다.
+
+주의:
+- 이 컴포넌트 안에서 회사 여부나 연구 완료 여부를 직접 판단하지 않는다.
+- 잠김 여부는 Home.vue에서 계산해서 menu.locked로 넘긴다.
+
+다음 작업 방향:
+- 메뉴 그룹, 하위 메뉴, 알림 배지, 연구 필요 툴팁 등을 추가할 수 있다.
+-->
+
 <template>
   <nav class="site-menu">
     <button

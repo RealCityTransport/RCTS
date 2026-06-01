@@ -1,4 +1,29 @@
 <!-- src/components/header/HeaderTop.vue -->
+<!--
+RCTS FILE CONTEXT
+파일 역할:
+- 헤더 상단 영역을 담당한다.
+- 좌측에는 RCTS 로고와 부제를 표시한다.
+- 우측 끝에는 표준시간을 디지털 느낌으로 표시한다.
+
+현재 연결:
+- Header.vue에서 호출된다.
+- src/modules/standardTime.js 의 state를 직접 읽어서 시간을 표시한다.
+
+현재 표시:
+- 날짜: YYYY년 MM월 DD일
+- 시간: HH:MM
+- 초는 표시하지 않지만, 내부 tick은 1초마다 계속 흐른다.
+
+주의:
+- 초안 레이아웃 v0.1, 전체 남은 시간, 설정/메뉴 버튼은 제거된 상태.
+- 중앙 영역은 비워두었다.
+- 부제는 현재 임시값이며, 나중에 사용자가 정한 회사명/월드명으로 교체 예정.
+
+다음 작업 방향:
+- 회사 생성 후 company.name을 HeaderTop에 전달하거나 전역 월드 상태에서 읽도록 연결한다.
+-->
+
 <template>
   <section class="topbar">
     <section class="brand">
