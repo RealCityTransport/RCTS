@@ -1,86 +1,51 @@
 /*
-  파일 주소:
-  src/router/index.js
+  파일명: src/router/index.js
 
-  적용 내용:
-  - RCTS 페이지 라우팅 관리
-  - 헤더 메뉴 클릭 시 각 View.vue 페이지가 RouterView에 로드되도록 설정
-  - GitHub Pages 배포 안정성을 위해 createWebHashHistory 사용
+  역할:
+  - Vue Router 설정 파일입니다.
+  - App.vue의 3개 메뉴와 실제 페이지 컴포넌트를 연결합니다.
 
-  연결된 파일:
-  - src/main.js
-  - src/App.vue
-  - src/components/layout/RctsHeader.vue
-  - src/views/Home.vue
-  - src/views/BusView.vue
-  - src/views/RailView.vue
-  - src/views/AirView.vue
-  - src/views/ShipView.vue
-  - src/views/SpaceView.vue
-  - src/views/ResearchView.vue
-  - src/views/SettingsView.vue
+  경로:
+  /operations : 운영 슬롯
+  /vehicles   : 차량 구입
+  /research   : 연구
 
-  수정 시 주의:
-  - 새 메뉴 페이지가 생기면 routes 배열과 RctsHeader.vue의 navItems를 같이 수정
+  참고:
+  - GitHub Pages 배포를 고려해 createWebHashHistory()를 사용합니다.
+  - / 접속 시 /operations로 자동 이동합니다.
 */
 
 import { createRouter, createWebHashHistory } from 'vue-router'
 
-import HomeView from '../views/Home.vue'
-import BusView from '../views/BusView.vue'
-import RailView from '../views/RailView.vue'
-import AirView from '../views/AirView.vue'
-import ShipView from '../views/ShipView.vue'
-import SpaceView from '../views/SpaceView.vue'
+import OperationsView from '../views/OperationsView.vue'
+import VehiclesView from '../views/VehiclesView.vue'
 import ResearchView from '../views/ResearchView.vue'
-import SettingsView from '../views/SettingsView.vue'
 
 const routes = [
   {
     path: '/',
-    name: 'home',
-    component: HomeView
+    redirect: '/operations',
   },
   {
-    path: '/bus',
-    name: 'bus',
-    component: BusView
+    path: '/operations',
+    name: 'operations',
+    component: OperationsView,
   },
   {
-    path: '/rail',
-    name: 'rail',
-    component: RailView
-  },
-  {
-    path: '/air',
-    name: 'air',
-    component: AirView
-  },
-  {
-    path: '/ship',
-    name: 'ship',
-    component: ShipView
-  },
-  {
-    path: '/space',
-    name: 'space',
-    component: SpaceView
+    path: '/vehicles',
+    name: 'vehicles',
+    component: VehiclesView,
   },
   {
     path: '/research',
     name: 'research',
-    component: ResearchView
+    component: ResearchView,
   },
-  {
-    path: '/settings',
-    name: 'settings',
-    component: SettingsView
-  }
 ]
 
 const router = createRouter({
   history: createWebHashHistory(),
-  routes
+  routes,
 })
 
 export default router

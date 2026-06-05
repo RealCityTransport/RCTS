@@ -1,622 +1,256 @@
 /*
-  파일 주소:
-  src/modules/save.js
+  파일명: src/modules/save.js
 
-  적용 내용:
-  - RCTS 로컬 저장 모듈
-  - IndexedDB 기반 저장/불러오기/삭제/내보내기/가져오기 기능 제공
-  - 실제 저장 대상은 gameState.js의 createGameSnapshot()
-  - 불러오기 시 applyGameSnapshot()으로 실제 게임 상태를 복원
-  - 자동저장 기능 제공
-  - gameState 변경 시 debounce 후 자동저장
-  - 기존 DB에 saves object store가 없는 경우 자동 복구
+  역할:
+  - RCTS v2 저장 모듈입니다.
+  - IndexedDB 기반으로 게임 데이터를 저장합니다.
+  - 저장 / 불러오기 / 내보내기 / 가져오기 / 삭제 기능을 담당합니다.
 
-  연결된 파일:
-  - src/App.vue
-  - src/modules/gameState.js
-  - src/views/SettingsView.vue
+  지원 기능:
+  1. saveGame(gameState)
+  2. loadGame()
+  3. hasSave()
+  4. deleteSave()
+  5. exportSave()
+  6. importSave(file)
+  7. downloadSaveFile(gameState)
 
-  향후 연결 예정:
-  - src/modules/finance.js
-  - src/modules/operations.js
-  - src/modules/settlement.js
-
-  수정 시 주의:
-  - 저장 대상은 gameState.js의 실제 상태
-  - 자동저장은 항상 켜지는 기본 정책
-  - 세이브 구조 변경 시 SAVE_SCHEMA_VERSION과 validateSaveRecord()를 같이 수정
+  저장 방식:
+  - IndexedDB
+  - DB 이름: RCTS_V2_DB
+  - Store 이름: saves
+  - 기본 저장 키: main
 */
 
-import { reactive, watch } from 'vue'
-import {
-  GAME_VERSION,
-  SAVE_SCHEMA_VERSION,
-  applyGameSnapshot,
-  createGameSnapshot,
-  gameState
-} from './gameState'
-
-const DB_NAME = 'rcts-local-save-db'
-const DB_VERSION = 2
+const DB_NAME = 'RCTS_V2_DB'
+const DB_VERSION = 1
 const STORE_NAME = 'saves'
-const PRIMARY_SAVE_ID = 'primary-save'
-
-let dbPromise = null
-let initPromise = null
-let autoSaveStopHandle = null
-let autoSaveTimer = null
-let isWriting = false
-let pendingSaveAfterWrite = false
-
-export const saveState = reactive({
-  isReady: false,
-  isLoading: false,
-  hasSave: false,
-
-  autoSaveEnabled: false,
-  lastAutoSavedAt: null,
-
-  storageName: 'Local Save',
-  schemaVersion: SAVE_SCHEMA_VERSION,
-  gameVersion: GAME_VERSION,
-
-  lastSavedAt: null,
-  lastLoadedAt: null,
-  lastCheckedAt: null,
-
-  message: '저장 준비 중',
-  error: ''
-})
-
-export function initSaveModule() {
-  if (initPromise) {
-    return initPromise
-  }
-
-  initPromise = initializeSaveModuleInternal()
-  return initPromise
-}
-
-export function startAutoSave() {
-  if (autoSaveStopHandle) {
-    saveState.autoSaveEnabled = true
-    return
-  }
-
-  saveState.autoSaveEnabled = true
-
-  autoSaveStopHandle = watch(
-    gameState,
-    () => {
-      queueAutoSave()
-    },
-    {
-      deep: true,
-      flush: 'post'
-    }
-  )
-
-  window.addEventListener('beforeunload', handleBeforeUnload)
-}
-
-export function stopAutoSave() {
-  if (autoSaveStopHandle) {
-    autoSaveStopHandle()
-    autoSaveStopHandle = null
-  }
-
-  if (autoSaveTimer) {
-    window.clearTimeout(autoSaveTimer)
-    autoSaveTimer = null
-  }
-
-  window.removeEventListener('beforeunload', handleBeforeUnload)
-  saveState.autoSaveEnabled = false
-}
-
-export async function saveGame() {
-  return performSave({
-    silent: false,
-    reason: 'manual'
-  })
-}
-
-export async function loadGame() {
-  await ensureReady()
-
-  saveState.isLoading = true
-  saveState.error = ''
-  saveState.message = '불러오는 중'
-
-  try {
-    const saveRecord = await readRawSave()
-
-    if (!saveRecord) {
-      saveState.hasSave = false
-      saveState.message = '불러올 저장 데이터가 없습니다.'
-      return null
-    }
-
-    validateSaveRecord(saveRecord)
-
-    applyGameSnapshot(saveRecord.payload)
-
-    const now = Date.now()
-
-    saveState.hasSave = true
-    saveState.lastLoadedAt = now
-    saveState.lastCheckedAt = now
-    saveState.message = '불러오기 완료'
-    saveState.error = ''
-
-    return saveRecord.payload
-  } catch (error) {
-    saveState.error = getErrorMessage(error)
-    saveState.message = '불러오기 실패'
-    throw error
-  } finally {
-    saveState.isLoading = false
-  }
-}
-
-export async function clearSave() {
-  await ensureReady()
-
-  saveState.isLoading = true
-  saveState.error = ''
-  saveState.message = '삭제 중'
-
-  try {
-    const db = await getDatabase()
-
-    await new Promise((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, 'readwrite')
-      const store = transaction.objectStore(STORE_NAME)
-      const request = store.delete(PRIMARY_SAVE_ID)
-
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(request.error)
-      transaction.onerror = () => reject(transaction.error)
-    })
-
-    saveState.hasSave = false
-    saveState.lastSavedAt = null
-    saveState.lastLoadedAt = null
-    saveState.lastAutoSavedAt = null
-    saveState.lastCheckedAt = Date.now()
-    saveState.message = '저장 데이터 삭제 완료'
-    saveState.error = ''
-  } catch (error) {
-    saveState.error = getErrorMessage(error)
-    saveState.message = '삭제 실패'
-    throw error
-  } finally {
-    saveState.isLoading = false
-  }
-}
-
-export async function exportSaveFile() {
-  await ensureReady()
-
-  saveState.isLoading = true
-  saveState.error = ''
-  saveState.message = '백업 파일 생성 중'
-
-  try {
-    let saveRecord = await readRawSave()
-
-    if (!saveRecord) {
-      saveRecord = await performSave({
-        silent: true,
-        reason: 'export'
-      })
-    }
-
-    validateSaveRecord(saveRecord)
-
-    const jsonText = JSON.stringify(saveRecord, null, 2)
-    const blob = new Blob([jsonText], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-
-    const dateText = new Date().toISOString().slice(0, 10)
-    const link = document.createElement('a')
-
-    link.href = url
-    link.download = `rcts-save-${dateText}.json`
-    link.click()
-
-    URL.revokeObjectURL(url)
-
-    saveState.message = '백업 파일 생성 완료'
-    saveState.error = ''
-  } catch (error) {
-    saveState.error = getErrorMessage(error)
-    saveState.message = '백업 파일 생성 실패'
-    throw error
-  } finally {
-    saveState.isLoading = false
-  }
-}
-
-export async function importSaveFile(file) {
-  await ensureReady()
-
-  if (!file) {
-    return null
-  }
-
-  saveState.isLoading = true
-  saveState.error = ''
-  saveState.message = '백업 파일 가져오는 중'
-
-  try {
-    const text = await file.text()
-    const importedData = JSON.parse(text)
-    const normalizedSave = normalizeImportedSave(importedData)
-    const safeSaveRecord = toIndexedDbSafeObject(normalizedSave)
-
-    validateSaveRecord(safeSaveRecord)
-
-    await writeRawSave(safeSaveRecord)
-    applyGameSnapshot(safeSaveRecord.payload)
-
-    const now = Date.now()
-
-    saveState.hasSave = true
-    saveState.lastSavedAt = safeSaveRecord.updatedAt ?? safeSaveRecord.savedAt ?? now
-    saveState.lastLoadedAt = now
-    saveState.lastCheckedAt = now
-    saveState.message = '백업 파일 적용 완료'
-    saveState.error = ''
-
-    return safeSaveRecord.payload
-  } catch (error) {
-    saveState.error = getErrorMessage(error)
-    saveState.message = '백업 파일 가져오기 실패'
-    throw error
-  } finally {
-    saveState.isLoading = false
-  }
-}
-
-export async function getSaveSummary() {
-  await ensureReady()
-
-  const saveRecord = await readRawSave()
-
-  if (!saveRecord) {
-    return null
-  }
-
-  validateSaveRecord(saveRecord)
-
-  return {
-    schemaVersion: saveRecord.schemaVersion,
-    gameVersion: saveRecord.gameVersion,
-    createdAt: saveRecord.createdAt,
-    savedAt: saveRecord.savedAt,
-    updatedAt: saveRecord.updatedAt,
-    companyName: saveRecord.payload?.world?.companyName ?? 'Unknown',
-    funds: saveRecord.payload?.finance?.funds ?? 0,
-    vehicleCount: saveRecord.payload?.vehicles?.length ?? 0,
-    operationCount: saveRecord.payload?.operationSlots?.length ?? 0
-  }
-}
-
-function queueAutoSave() {
-  if (!saveState.autoSaveEnabled) {
-    return
-  }
-
-  if (autoSaveTimer) {
-    window.clearTimeout(autoSaveTimer)
-  }
-
-  const delay = Number(gameState.settings?.autosaveDelayMs ?? 1500)
-
-  autoSaveTimer = window.setTimeout(() => {
-    autoSaveTimer = null
-
-    void performSave({
-      silent: true,
-      reason: 'auto'
-    })
-  }, delay)
-}
-
-async function performSave({ silent, reason }) {
-  await ensureReady()
-
-  if (isWriting) {
-    pendingSaveAfterWrite = true
-    return null
-  }
-
-  isWriting = true
-
-  if (!silent) {
-    saveState.isLoading = true
-    saveState.error = ''
-    saveState.message = '저장 중'
-  }
-
-  try {
-    const now = Date.now()
-    const previousSave = await readRawSave()
-    const snapshot = createGameSnapshot()
-
-    const saveRecord = {
-      id: PRIMARY_SAVE_ID,
-      schemaVersion: SAVE_SCHEMA_VERSION,
-      gameVersion: GAME_VERSION,
-      createdAt: previousSave?.createdAt ?? now,
-      savedAt: now,
-      updatedAt: now,
-      payload: snapshot
-    }
-
-    const safeSaveRecord = toIndexedDbSafeObject(saveRecord)
-
-    validateSaveRecord(safeSaveRecord)
-
-    await writeRawSave(safeSaveRecord)
-
-    saveState.hasSave = true
-    saveState.lastSavedAt = now
-    saveState.lastCheckedAt = now
-    saveState.error = ''
-
-    if (reason === 'auto') {
-      saveState.lastAutoSavedAt = now
-      saveState.message = '자동 저장 완료'
-    } else if (!silent) {
-      saveState.message = '저장 완료'
-    }
-
-    return safeSaveRecord
-  } catch (error) {
-    saveState.error = getErrorMessage(error)
-    saveState.message = silent ? '자동 저장 실패' : '저장 실패'
-    throw error
-  } finally {
-    isWriting = false
-
-    if (!silent) {
-      saveState.isLoading = false
-    }
-
-    if (pendingSaveAfterWrite) {
-      pendingSaveAfterWrite = false
-      queueAutoSave()
-    }
-  }
-}
-
-async function initializeSaveModuleInternal() {
-  saveState.isLoading = true
-  saveState.error = ''
-  saveState.message = '저장 준비 중'
-
-  try {
-    await getDatabase()
-
-    const existingSave = await readRawSave()
-
-    saveState.hasSave = Boolean(existingSave)
-    saveState.lastSavedAt = existingSave?.updatedAt ?? existingSave?.savedAt ?? null
-    saveState.lastCheckedAt = Date.now()
-    saveState.isReady = true
-    saveState.message = existingSave ? '저장 데이터 있음' : '저장 가능'
-  } catch (error) {
-    saveState.isReady = false
-    saveState.error = getErrorMessage(error)
-    saveState.message = '저장 준비 실패'
-
-    initPromise = null
-    throw error
-  } finally {
-    saveState.isLoading = false
-  }
-}
-
-async function ensureReady() {
-  await initSaveModule()
-
-  if (!saveState.isReady) {
-    throw new Error('저장 기능이 준비되지 않았습니다.')
-  }
-}
-
-function handleBeforeUnload() {
-  if (!saveState.autoSaveEnabled) {
-    return
-  }
-
-  void performSave({
-    silent: true,
-    reason: 'auto'
-  })
-}
-
-function getDatabase() {
-  if (dbPromise) {
-    return dbPromise
-  }
-
-  dbPromise = openDatabaseWithStore(DB_VERSION)
-
-  return dbPromise
-}
-
-function openDatabaseWithStore(version) {
+const SAVE_KEY = 'main'
+
+/*
+  IndexedDB 열기
+*/
+const openDatabase = () => {
   return new Promise((resolve, reject) => {
-    if (!window.indexedDB) {
-      reject(new Error('이 브라우저는 저장 기능을 지원하지 않습니다.'))
-      return
+    const request = indexedDB.open(DB_NAME, DB_VERSION)
+
+    request.onerror = () => {
+      reject(new Error('IndexedDB를 열 수 없습니다.'))
     }
 
-    const request = window.indexedDB.open(DB_NAME, version)
+    request.onsuccess = () => {
+      resolve(request.result)
+    }
 
     request.onupgradeneeded = () => {
       const db = request.result
 
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' })
+        db.createObjectStore(STORE_NAME, {
+          keyPath: 'id',
+        })
       }
+    }
+  })
+}
+
+/*
+  저장 데이터 정리
+
+  - 저장 시점 갱신
+  - JSON 변환 가능한 순수 객체로 복사
+*/
+const normalizeSaveData = (gameState) => {
+  return {
+    id: SAVE_KEY,
+    savedAt: Date.now(),
+    data: JSON.parse(JSON.stringify(gameState)),
+  }
+}
+
+/*
+  게임 저장
+*/
+export const saveGame = async (gameState) => {
+  const db = await openDatabase()
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite')
+    const store = transaction.objectStore(STORE_NAME)
+
+    const saveData = normalizeSaveData(gameState)
+
+    const request = store.put(saveData)
+
+    request.onerror = () => {
+      reject(new Error('게임 저장에 실패했습니다.'))
     }
 
     request.onsuccess = () => {
-      const db = request.result
+      resolve(saveData)
+    }
 
-      if (db.objectStoreNames.contains(STORE_NAME)) {
-        resolve(db)
+    transaction.oncomplete = () => {
+      db.close()
+    }
+  })
+}
+
+/*
+  게임 불러오기
+
+  반환:
+  - 저장 데이터가 있으면 gameState 객체
+  - 없으면 null
+*/
+export const loadGame = async () => {
+  const db = await openDatabase()
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readonly')
+    const store = transaction.objectStore(STORE_NAME)
+
+    const request = store.get(SAVE_KEY)
+
+    request.onerror = () => {
+      reject(new Error('게임 불러오기에 실패했습니다.'))
+    }
+
+    request.onsuccess = () => {
+      const result = request.result
+
+      if (!result) {
+        resolve(null)
         return
       }
 
-      const nextVersion = db.version + 1
+      resolve(result.data)
+    }
 
+    transaction.oncomplete = () => {
       db.close()
-      dbPromise = null
-
-      openDatabaseWithStore(nextVersion)
-        .then(resolve)
-        .catch(reject)
-    }
-
-    request.onerror = () => {
-      reject(request.error)
-    }
-
-    request.onblocked = () => {
-      reject(new Error('다른 RCTS 탭을 닫고 다시 시도하세요.'))
     }
   })
 }
 
-async function readRawSave() {
-  const db = await getDatabase()
-
-  return new Promise((resolve, reject) => {
-    if (!db.objectStoreNames.contains(STORE_NAME)) {
-      reject(new Error('저장 공간을 찾을 수 없습니다.'))
-      return
-    }
-
-    const transaction = db.transaction(STORE_NAME, 'readonly')
-    const store = transaction.objectStore(STORE_NAME)
-    const request = store.get(PRIMARY_SAVE_ID)
-
-    request.onsuccess = () => {
-      resolve(request.result ?? null)
-    }
-
-    request.onerror = () => {
-      reject(request.error)
-    }
-
-    transaction.onerror = () => {
-      reject(transaction.error)
-    }
-  })
+/*
+  저장 데이터 존재 여부 확인
+*/
+export const hasSave = async () => {
+  const saved = await loadGame()
+  return saved !== null
 }
 
-async function writeRawSave(saveRecord) {
-  const db = await getDatabase()
+/*
+  저장 삭제
+*/
+export const deleteSave = async () => {
+  const db = await openDatabase()
 
   return new Promise((resolve, reject) => {
-    if (!db.objectStoreNames.contains(STORE_NAME)) {
-      reject(new Error('저장 공간을 찾을 수 없습니다.'))
-      return
-    }
-
     const transaction = db.transaction(STORE_NAME, 'readwrite')
     const store = transaction.objectStore(STORE_NAME)
-    const request = store.put(saveRecord)
 
-    request.onsuccess = () => {
-      resolve()
-    }
+    const request = store.delete(SAVE_KEY)
 
     request.onerror = () => {
-      reject(request.error)
+      reject(new Error('저장 데이터 삭제에 실패했습니다.'))
     }
 
-    transaction.onerror = () => {
-      reject(transaction.error)
+    request.onsuccess = () => {
+      resolve(true)
+    }
+
+    transaction.oncomplete = () => {
+      db.close()
     }
   })
 }
 
-function normalizeImportedSave(importedData) {
-  if (importedData?.id === PRIMARY_SAVE_ID && importedData?.payload) {
-    return importedData
-  }
+/*
+  저장 데이터 내보내기용 객체 생성
+*/
+export const exportSave = async () => {
+  const gameState = await loadGame()
 
-  const now = Date.now()
+  if (!gameState) {
+    throw new Error('내보낼 저장 데이터가 없습니다.')
+  }
 
   return {
-    id: PRIMARY_SAVE_ID,
-    schemaVersion: importedData?.schemaVersion ?? SAVE_SCHEMA_VERSION,
-    gameVersion: importedData?.gameVersion ?? GAME_VERSION,
-    createdAt: importedData?.createdAt ?? now,
-    savedAt: importedData?.savedAt ?? now,
-    updatedAt: now,
-    payload: importedData?.payload ?? importedData
+    exportedAt: Date.now(),
+    app: 'RCTS v2',
+    type: 'rcts-save',
+    data: gameState,
   }
 }
 
-function validateSaveRecord(saveRecord) {
-  if (!saveRecord || typeof saveRecord !== 'object') {
-    throw new Error('세이브 데이터 형식이 올바르지 않습니다.')
+/*
+  저장 파일 다운로드
+
+  사용 예:
+  await downloadSaveFile(gameState)
+*/
+export const downloadSaveFile = async (gameState) => {
+  const exportData = {
+    exportedAt: Date.now(),
+    app: 'RCTS v2',
+    type: 'rcts-save',
+    data: gameState,
   }
 
-  if (saveRecord.id !== PRIMARY_SAVE_ID) {
-    throw new Error('RCTS 저장 데이터가 아닙니다.')
-  }
+  const json = JSON.stringify(exportData, null, 2)
+  const blob = new Blob([json], {
+    type: 'application/json',
+  })
 
-  if (typeof saveRecord.schemaVersion !== 'number') {
-    throw new Error('저장 데이터 버전이 없습니다.')
-  }
+  const date = new Date()
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mi = String(date.getMinutes()).padStart(2, '0')
 
-  if (!saveRecord.payload || typeof saveRecord.payload !== 'object') {
-    throw new Error('저장 데이터 본문이 없습니다.')
-  }
+  const fileName = `rcts-v2-save-${yyyy}${mm}${dd}-${hh}${mi}.json`
 
-  if (!saveRecord.payload.world) {
-    throw new Error('월드 데이터가 없습니다.')
-  }
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
 
-  if (!saveRecord.payload.finance) {
-    throw new Error('재정 데이터가 없습니다.')
-  }
+  anchor.href = url
+  anchor.download = fileName
+  anchor.click()
 
-  if (!Array.isArray(saveRecord.payload.vehicles)) {
-    throw new Error('차량 데이터가 올바르지 않습니다.')
-  }
+  URL.revokeObjectURL(url)
 
-  if (!Array.isArray(saveRecord.payload.operationSlots)) {
-    throw new Error('운행 슬롯 데이터가 올바르지 않습니다.')
-  }
-
-  const funds = saveRecord.payload.finance.funds
-
-  if (typeof funds !== 'number' || Number.isNaN(funds) || funds < 0) {
-    throw new Error('자금 데이터가 올바르지 않습니다.')
-  }
+  return fileName
 }
 
-function toIndexedDbSafeObject(value) {
-  try {
-    return JSON.parse(JSON.stringify(value))
-  } catch {
-    throw new Error('저장할 수 없는 데이터가 포함되어 있습니다.')
-  }
-}
+/*
+  저장 파일 불러오기
 
-function getErrorMessage(error) {
-  if (error instanceof Error) {
-    return error.message
+  file:
+  - input type="file"에서 받은 File 객체
+
+  반환:
+  - 검증된 gameState 객체
+*/
+export const importSave = async (file) => {
+  if (!file) {
+    throw new Error('불러올 파일이 없습니다.')
   }
 
-  return String(error)
+  const text = await file.text()
+  const parsed = JSON.parse(text)
+
+  if (parsed.type !== 'rcts-save') {
+    throw new Error('RCTS 저장 파일이 아닙니다.')
+  }
+
+  if (!parsed.data) {
+    throw new Error('저장 데이터가 비어 있습니다.')
+  }
+
+  await saveGame(parsed.data)
+
+  return parsed.data
 }
