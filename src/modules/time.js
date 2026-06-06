@@ -2,685 +2,201 @@
   파일명: src/modules/time.js
 
   역할:
-  - RCTS v2 시간 모듈입니다.
-  - 1초 = 1틱 구조를 안정적으로 관리합니다.
-  - setInterval의 오차를 줄이기 위해 performance.now() 기반 누적 계산을 사용합니다.
-
-  기본 규칙:
-  - 사이트 접속 중에만 시간이 흐릅니다.
-  - 사이트가 닫히면 타이머는 정지합니다.
-  - 다시 접속하면 저장된 남은 시간부터 이어서 진행합니다.
-  - 오프라인 진행은 연구로 해금되기 전까지 반영하지 않습니다.
-
-  특수 운행:
-  - parcel_count 모드는 1틱 = 1건 처리입니다.
-  - bus_stops / bus_metro 모드는 정류장 정차/이동 단계로 진행됩니다.
-  - route 슬롯은 여러 차량이 배차간격에 따라 순차 출발합니다.
+  - 테라리아 표준시간 모듈입니다.
+  - 현재는 브라우저 현재 시간을 표준시간으로 사용합니다.
+  - 1초마다 현재 시간을 갱신하지만 화면 표시는 날짜/요일/시/분 중심입니다.
 */
 
-const DEFAULT_TICK_MS = 1000
+import { computed, ref } from 'vue'
 
-const msToSeconds = (ms) => {
-  return Math.floor(ms / 1000)
+const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토']
+
+const currentStandardTime = ref(new Date())
+let clockTimer = null
+
+const pad2 = (value) => String(value).padStart(2, '0')
+
+export const getWeekdayLabel = (date) => {
+  return WEEKDAY_LABELS[date.getDay()] ?? '-'
 }
 
-export const getOfflineMaxSecondsByLevel = (level) => {
-  const table = {
-    0: 0,
-    1: 60 * 60,
-    2: 3 * 60 * 60,
-    3: 8 * 60 * 60,
-    4: 24 * 60 * 60,
-    5: 72 * 60 * 60,
+export const formatDateTime = (value) => {
+  const date = value instanceof Date ? value : new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return '-'
   }
 
-  return table[level] ?? 0
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} (${getWeekdayLabel(date)}) ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
 }
 
-const isOfflineProgressUnlocked = (gameState) => {
-  return Boolean(
-    gameState?.time?.offlineProgressUnlocked ||
-      gameState?.unlocks?.offlineProgress,
-  )
+export const formatTimeOnly = (value) => {
+  const date = value instanceof Date ? value : new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return '-'
+  }
+
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
 }
 
-export const calculateOfflineProgress = (gameState) => {
-  const timeState = gameState?.time
+export const standardNow = computed(() => currentStandardTime.value)
 
-  if (!timeState) {
-    return {
-      rawOfflineSeconds: 0,
-      appliedOfflineSeconds: 0,
-    }
+export const standardTimeText = computed(() => {
+  return formatDateTime(currentStandardTime.value)
+})
+
+export const startStandardTimeClock = () => {
+  if (clockTimer) {
+    return
   }
 
-  if (!isOfflineProgressUnlocked(gameState)) {
-    return {
-      rawOfflineSeconds: 0,
-      appliedOfflineSeconds: 0,
-    }
+  currentStandardTime.value = new Date()
+
+  clockTimer = window.setInterval(() => {
+    currentStandardTime.value = new Date()
+  }, 1000)
+}
+
+export const stopStandardTimeClock = () => {
+  if (!clockTimer) {
+    return
   }
 
-  const lastSavedAt = timeState.lastSavedAt ?? Date.now()
-  const now = Date.now()
+  window.clearInterval(clockTimer)
+  clockTimer = null
+}
 
-  const rawOfflineSeconds = Math.max(0, msToSeconds(now - lastSavedAt))
-
-  const offlineProgressLevel =
-    typeof timeState.offlineProgressLevel === 'number'
-      ? timeState.offlineProgressLevel
-      : 4
-
-  const maxSeconds = getOfflineMaxSecondsByLevel(offlineProgressLevel)
-  const appliedOfflineSeconds = Math.min(rawOfflineSeconds, maxSeconds)
-
+export const getStandardTimeSnapshot = () => {
   return {
-    rawOfflineSeconds,
-    appliedOfflineSeconds,
+    iso: currentStandardTime.value.toISOString(),
+    year: currentStandardTime.value.getFullYear(),
+    month: currentStandardTime.value.getMonth() + 1,
+    day: currentStandardTime.value.getDate(),
+    weekday: getWeekdayLabel(currentStandardTime.value),
+    hour: currentStandardTime.value.getHours(),
+    minute: currentStandardTime.value.getMinutes(),
   }
 }
 
-const isBusDurationMode = (durationMode) => {
-  return durationMode === 'bus_stops' || durationMode === 'bus_metro'
-}
+export const getKoreanAgeFromBirthYear = (birthYear, baseDate = currentStandardTime.value) => {
+  const parsedBirthYear = Number(birthYear)
 
-const getPositiveNumber = (value, fallback) => {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return value
-  }
-
-  return fallback
-}
-
-export const buildBusPhases = (slot) => {
-  if (!slot || !isBusDurationMode(slot.durationMode)) return []
-
-  const dwellSeconds = getPositiveNumber(slot.stopDwellSeconds, 30)
-
-  if (slot.durationMode === 'bus_metro') {
-    const startStops = Math.max(0, slot.startStops ?? 5)
-    const endStops = Math.max(0, slot.endStops ?? 5)
-    const accessMoveSeconds = getPositiveNumber(slot.accessMoveSeconds, 90)
-    const expressMoveSeconds = getPositiveNumber(slot.expressMoveSeconds, 60 * 60)
-
-    const phases = []
-
-    for (let index = 1; index <= startStops; index += 1) {
-      phases.push({
-        type: 'start_stop',
-        label: `출발지 ${index}/${startStops} 정류장 정차`,
-        durationSeconds: dwellSeconds,
-        currentStopIndex: index,
-        totalStops: startStops,
-        area: 'start',
-      })
-
-      if (index < startStops) {
-        phases.push({
-          type: 'start_move',
-          label: `출발지 ${index}번 → ${index + 1}번 이동`,
-          durationSeconds: accessMoveSeconds,
-          fromStopIndex: index,
-          toStopIndex: index + 1,
-          area: 'start',
-        })
-      }
-    }
-
-    phases.push({
-      type: 'express_move',
-      label: '광역 이동 중',
-      durationSeconds: expressMoveSeconds,
-      area: 'express',
-    })
-
-    for (let index = 1; index <= endStops; index += 1) {
-      phases.push({
-        type: 'end_stop',
-        label: `종착지 ${index}/${endStops} 정류장 정차`,
-        durationSeconds: dwellSeconds,
-        currentStopIndex: index,
-        totalStops: endStops,
-        area: 'end',
-      })
-
-      if (index < endStops) {
-        phases.push({
-          type: 'end_move',
-          label: `종착지 ${index}번 → ${index + 1}번 이동`,
-          durationSeconds: accessMoveSeconds,
-          fromStopIndex: index,
-          toStopIndex: index + 1,
-          area: 'end',
-        })
-      }
-    }
-
-    return phases
-  }
-
-  const totalStops = Math.max(1, slot.stopCount ?? 20)
-  const totalDurationSeconds = getPositiveNumber(
-    slot.originalDurationSeconds ?? slot.durationSeconds,
-    60 * 60,
-  )
-
-  const totalDwellSeconds = dwellSeconds * totalStops
-  const moveCount = Math.max(1, totalStops - 1)
-  const moveSeconds = Math.max(
-    1,
-    Math.floor((Math.max(totalDurationSeconds, totalDwellSeconds + moveCount) - totalDwellSeconds) / moveCount),
-  )
-
-  const phases = []
-
-  for (let index = 1; index <= totalStops; index += 1) {
-    phases.push({
-      type: 'stop',
-      label: `${index}/${totalStops} 정류장 정차`,
-      durationSeconds: dwellSeconds,
-      currentStopIndex: index,
-      totalStops,
-    })
-
-    if (index < totalStops) {
-      phases.push({
-        type: 'move',
-        label: `${index}번 → ${index + 1}번 정류장 이동`,
-        durationSeconds: moveSeconds,
-        fromStopIndex: index,
-        toStopIndex: index + 1,
-        totalStops,
-      })
-    }
-  }
-
-  return phases
-}
-
-export const createInitialBusProgress = (slot) => {
-  const phases = buildBusPhases(slot)
-  const firstPhase = phases[0]
-
-  if (!firstPhase) {
-    return null
-  }
-
-  return {
-    phaseIndex: 0,
-    phaseType: firstPhase.type,
-    label: firstPhase.label,
-    phaseDurationSeconds: firstPhase.durationSeconds,
-    phaseRemainingSeconds: firstPhase.durationSeconds,
-    currentStopIndex: firstPhase.currentStopIndex ?? null,
-    totalStops: firstPhase.totalStops ?? null,
-    area: firstPhase.area ?? null,
-  }
-}
-
-const normalizeBusProgress = (slot, progress) => {
-  const phases = buildBusPhases(slot)
-
-  if (phases.length === 0) return null
-
-  const phaseIndex = Math.max(
-    0,
-    Math.min(progress?.phaseIndex ?? 0, phases.length - 1),
-  )
-
-  const phase = phases[phaseIndex]
-
-  return {
-    phaseIndex,
-    phaseType: phase.type,
-    label: phase.label,
-    phaseDurationSeconds: phase.durationSeconds,
-    phaseRemainingSeconds:
-      typeof progress?.phaseRemainingSeconds === 'number'
-        ? Math.max(0, progress.phaseRemainingSeconds)
-        : phase.durationSeconds,
-    currentStopIndex: phase.currentStopIndex ?? null,
-    totalStops: phase.totalStops ?? null,
-    area: phase.area ?? null,
-  }
-}
-
-const advanceBusProgress = ({ slot, progress, remainingSeconds, tickSeconds }) => {
-  const phases = buildBusPhases(slot)
-
-  if (phases.length === 0) {
-    const nextRemainingSeconds = Math.max(0, remainingSeconds - tickSeconds)
-
-    return {
-      completed: nextRemainingSeconds <= 0,
-      remainingSeconds: nextRemainingSeconds,
-      busProgress: progress ?? null,
-    }
-  }
-
-  let nextProgress = normalizeBusProgress(slot, progress)
-  let secondsToApply = Math.max(0, tickSeconds)
-  let completed = false
-
-  while (secondsToApply > 0 && nextProgress && !completed) {
-    const phaseRemainingSeconds = Math.max(0, nextProgress.phaseRemainingSeconds)
-
-    if (phaseRemainingSeconds > secondsToApply) {
-      nextProgress.phaseRemainingSeconds = phaseRemainingSeconds - secondsToApply
-      secondsToApply = 0
-      break
-    }
-
-    secondsToApply -= phaseRemainingSeconds
-
-    const nextPhaseIndex = nextProgress.phaseIndex + 1
-
-    if (nextPhaseIndex >= phases.length) {
-      completed = true
-      nextProgress = {
-        ...nextProgress,
-        phaseRemainingSeconds: 0,
-      }
-      break
-    }
-
-    const nextPhase = phases[nextPhaseIndex]
-
-    nextProgress = {
-      phaseIndex: nextPhaseIndex,
-      phaseType: nextPhase.type,
-      label: nextPhase.label,
-      phaseDurationSeconds: nextPhase.durationSeconds,
-      phaseRemainingSeconds: nextPhase.durationSeconds,
-      currentStopIndex: nextPhase.currentStopIndex ?? null,
-      totalStops: nextPhase.totalStops ?? null,
-      area: nextPhase.area ?? null,
-    }
-  }
-
-  const nextRemainingSeconds = completed
-    ? 0
-    : Math.max(0, remainingSeconds - tickSeconds)
-
-  return {
-    completed: completed || nextRemainingSeconds <= 0,
-    remainingSeconds: nextRemainingSeconds,
-    busProgress: nextProgress,
-  }
-}
-
-/*
-  택배 건수형 슬롯 처리
-
-  규칙:
-  - 1틱 = 1건
-  - tickSeconds가 10이면 최대 10건 처리
-  - 처리된 건수만큼 settlementAmount 누적
-  - remainingParcels가 0이 되면 completed
-*/
-const applyTickToParcelCountSlot = (slot, tickSeconds = 1) => {
-  const remainingParcels = Math.max(0, slot.remainingParcels ?? 0)
-  const perParcelAmount = slot.perParcelAmount ?? 2500
-
-  if (remainingParcels <= 0) {
-    return {
-      ...slot,
-      remainingSeconds: 0,
-      remainingParcels: 0,
-      status: 'completed',
-      completedAt: Date.now(),
-    }
-  }
-
-  const processedThisTick = Math.min(remainingParcels, Math.max(1, tickSeconds))
-  const nextRemainingParcels = Math.max(0, remainingParcels - processedThisTick)
-  const nextProcessedParcels = (slot.processedParcels ?? 0) + processedThisTick
-  const nextSettlementAmount =
-    (slot.settlementAmount ?? 0) + processedThisTick * perParcelAmount
-
-  if (nextRemainingParcels <= 0) {
-    return {
-      ...slot,
-      remainingSeconds: 0,
-      remainingParcels: 0,
-      processedParcels: nextProcessedParcels,
-      settlementAmount: nextSettlementAmount,
-      status: 'completed',
-      completedAt: Date.now(),
-    }
-  }
-
-  return {
-    ...slot,
-    remainingSeconds: nextRemainingParcels,
-    remainingParcels: nextRemainingParcels,
-    processedParcels: nextProcessedParcels,
-    settlementAmount: nextSettlementAmount,
-  }
-}
-
-const applyTickToBusSingleSlot = (slot, tickSeconds = 1) => {
-  const result = advanceBusProgress({
-    slot,
-    progress: slot.busProgress,
-    remainingSeconds: slot.remainingSeconds ?? slot.durationSeconds ?? 0,
-    tickSeconds,
-  })
-
-  if (result.completed) {
-    return {
-      ...slot,
-      remainingSeconds: 0,
-      busProgress: result.busProgress,
-      status: 'completed',
-      completedAt: Date.now(),
-    }
-  }
-
-  return {
-    ...slot,
-    remainingSeconds: result.remainingSeconds,
-    busProgress: result.busProgress,
-  }
-}
-
-const applyTickToRouteVehicleRun = (slot, run, tickSeconds = 1) => {
-  if (run.status === 'completed') {
-    return run
-  }
-
-  if (run.status === 'waiting_departure') {
-    const nextDepartureInSeconds = Math.max(
-      0,
-      (run.nextDepartureInSeconds ?? 0) - tickSeconds,
-    )
-
-    if (nextDepartureInSeconds > 0) {
-      return {
-        ...run,
-        nextDepartureInSeconds,
-      }
-    }
-
-    const overflowSeconds = Math.max(0, tickSeconds - (run.nextDepartureInSeconds ?? 0))
-    const initialProgress = createInitialBusProgress(slot)
-
-    const startedRun = {
-      ...run,
-      status: 'running',
-      nextDepartureInSeconds: 0,
-      startedAt: Date.now(),
-      busProgress: initialProgress,
-    }
-
-    if (overflowSeconds <= 0) {
-      return startedRun
-    }
-
-    return applyTickToRouteVehicleRun(slot, startedRun, overflowSeconds)
-  }
-
-  if (run.status === 'running') {
-    const result = advanceBusProgress({
-      slot,
-      progress: run.busProgress,
-      remainingSeconds: run.remainingSeconds ?? run.durationSeconds ?? slot.durationSeconds ?? 0,
-      tickSeconds,
-    })
-
-    if (result.completed) {
-      return {
-        ...run,
-        status: 'completed',
-        remainingSeconds: 0,
-        busProgress: result.busProgress,
-        completedAt: Date.now(),
-      }
-    }
-
-    return {
-      ...run,
-      remainingSeconds: result.remainingSeconds,
-      busProgress: result.busProgress,
-    }
-  }
-
-  return run
-}
-
-const applyTickToRouteSlot = (slot, tickSeconds = 1) => {
-  const runs = Array.isArray(slot.routeVehicleRuns) ? slot.routeVehicleRuns : []
-
-  if (runs.length === 0) {
-    const nextRemainingSeconds = Math.max(0, (slot.remainingSeconds ?? 0) - tickSeconds)
-
-    if (nextRemainingSeconds <= 0) {
-      return {
-        ...slot,
-        remainingSeconds: 0,
-        status: 'completed',
-        routeStatus: 'completed',
-        completedAt: Date.now(),
-      }
-    }
-
-    return {
-      ...slot,
-      remainingSeconds: nextRemainingSeconds,
-    }
-  }
-
-  const nextRuns = runs.map((run) => applyTickToRouteVehicleRun(slot, run, tickSeconds))
-  const allCompleted = nextRuns.every((run) => run.status === 'completed')
-
-  if (allCompleted) {
-    return {
-      ...slot,
-      routeVehicleRuns: nextRuns,
-      remainingSeconds: 0,
-      status: 'completed',
-      routeStatus: 'completed',
-      completedAt: Date.now(),
-    }
-  }
-
-  const remainingCandidates = nextRuns.map((run) => {
-    if (run.status === 'waiting_departure') {
-      return (run.nextDepartureInSeconds ?? 0) + (run.remainingSeconds ?? 0)
-    }
-
-    if (run.status === 'running') {
-      return run.remainingSeconds ?? 0
-    }
-
+  if (!Number.isFinite(parsedBirthYear)) {
     return 0
-  })
-
-  return {
-    ...slot,
-    routeVehicleRuns: nextRuns,
-    remainingSeconds: Math.max(0, ...remainingCandidates),
   }
+
+  return Math.max(0, baseDate.getFullYear() - parsedBirthYear + 1)
 }
 
-export const applyTickToOperationSlots = (gameState, tickSeconds = 1) => {
-  if (!Array.isArray(gameState.operationSlots)) {
-    return gameState
+export const getBirthDateText = (person) => {
+  if (!person?.birthYear || !person?.birthMonth || !person?.birthDay) {
+    return '-'
   }
 
-  gameState.operationSlots = gameState.operationSlots.map((slot) => {
-    if (slot.status !== 'running') {
-      return slot
-    }
-
-    if (slot.slotType === 'route') {
-      return applyTickToRouteSlot(slot, tickSeconds)
-    }
-
-    if (slot.durationMode === 'parcel_count') {
-      return applyTickToParcelCountSlot(slot, tickSeconds)
-    }
-
-    if (isBusDurationMode(slot.durationMode)) {
-      return applyTickToBusSingleSlot(slot, tickSeconds)
-    }
-
-    if (typeof slot.remainingSeconds !== 'number') {
-      return slot
-    }
-
-    const nextRemainingSeconds = Math.max(0, slot.remainingSeconds - tickSeconds)
-
-    if (nextRemainingSeconds <= 0) {
-      return {
-        ...slot,
-        remainingSeconds: 0,
-        status: 'completed',
-        completedAt: Date.now(),
-      }
-    }
-
-    return {
-      ...slot,
-      remainingSeconds: nextRemainingSeconds,
-    }
-  })
-
-  return gameState
+  return `${person.birthYear}-${pad2(person.birthMonth)}-${pad2(person.birthDay)}`
 }
 
-export const applyTickToResearch = (gameState, tickSeconds = 1) => {
-  const runningResearch = gameState.research?.running
-
-  if (!runningResearch) {
-    return gameState
+export const getAnniversaryText = (person) => {
+  if (!person?.birthMonth || !person?.birthDay) {
+    return '-'
   }
 
-  if (typeof runningResearch.remainingSeconds !== 'number') {
-    return gameState
-  }
-
-  const nextRemainingSeconds = Math.max(
-    0,
-    runningResearch.remainingSeconds - tickSeconds,
-  )
-
-  if (nextRemainingSeconds <= 0) {
-    const completedResearch = {
-      ...runningResearch,
-      remainingSeconds: 0,
-      completedAt: Date.now(),
-    }
-
-    gameState.research.completed = [
-      ...(gameState.research.completed ?? []),
-      completedResearch,
-    ]
-
-    gameState.research.running = null
-
-    return gameState
-  }
-
-  gameState.research.running = {
-    ...runningResearch,
-    remainingSeconds: nextRemainingSeconds,
-  }
-
-  return gameState
+  return `${pad2(person.birthMonth)}월 ${pad2(person.birthDay)}일`
 }
 
-export const applyGameTick = (gameState, tickSeconds = 1) => {
-  if (!gameState.time) {
-    gameState.time = {}
+export const getNextScheduledDate = ({ weekday, startTime }) => {
+  const now = new Date(currentStandardTime.value)
+  const targetWeekday = Number(weekday)
+  const [hourText, minuteText] = String(startTime || '09:00').split(':')
+  const hour = Number(hourText)
+  const minute = Number(minuteText)
+
+  const date = new Date(now)
+  date.setSeconds(0, 0)
+  date.setHours(Number.isFinite(hour) ? hour : 9, Number.isFinite(minute) ? minute : 0, 0, 0)
+
+  const dayDiff = ((targetWeekday - now.getDay()) + 7) % 7
+  date.setDate(now.getDate() + dayDiff)
+
+  if (date.getTime() <= now.getTime()) {
+    date.setDate(date.getDate() + 7)
   }
 
-  gameState.time.totalTicks = (gameState.time.totalTicks ?? 0) + tickSeconds
-
-  applyTickToOperationSlots(gameState, tickSeconds)
-  applyTickToResearch(gameState, tickSeconds)
-
-  return gameState
+  return date
 }
 
-export const createGameClock = ({
-  getState,
-  setState,
-  onTick,
-  tickMs = DEFAULT_TICK_MS,
-} = {}) => {
-  let timerId = null
-  let lastFrameTime = 0
-  let accumulatedMs = 0
-  let running = false
+export const addMinutes = (value, minutes) => {
+  const date = value instanceof Date ? new Date(value) : new Date(value)
+  date.setMinutes(date.getMinutes() + Number(minutes || 0))
+  return date
+}
 
-  const loop = () => {
-    if (!running) {
-      return
-    }
+export const getProgressPercentByTime = ({ startAt, endAt }) => {
+  const now = currentStandardTime.value.getTime()
+  const start = new Date(startAt).getTime()
+  const end = new Date(endAt).getTime()
 
-    const now = performance.now()
-
-    if (!lastFrameTime) {
-      lastFrameTime = now
-    }
-
-    const deltaMs = now - lastFrameTime
-    lastFrameTime = now
-
-    accumulatedMs += deltaMs
-
-    while (accumulatedMs >= tickMs) {
-      accumulatedMs -= tickMs
-
-      const state = getState?.()
-
-      if (state) {
-        const nextState = applyGameTick(state, 1)
-
-        setState?.(nextState)
-        onTick?.(nextState)
-      }
-    }
-
-    timerId = requestAnimationFrame(loop)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return 0
   }
 
-  const start = () => {
-    if (running) {
-      return
-    }
-
-    running = true
-    lastFrameTime = performance.now()
-    accumulatedMs = 0
-
-    timerId = requestAnimationFrame(loop)
+  if (now <= start) {
+    return 0
   }
 
-  const stop = () => {
-    running = false
-
-    if (timerId) {
-      cancelAnimationFrame(timerId)
-      timerId = null
-    }
-
-    lastFrameTime = 0
-    accumulatedMs = 0
+  if (now >= end) {
+    return 100
   }
 
-  const reset = () => {
-    stop()
-    start()
+  return Math.floor(((now - start) / (end - start)) * 100)
+}
+
+export const getTaskStatusByTime = (task) => {
+  const now = currentStandardTime.value.getTime()
+  const start = new Date(task.startAt).getTime()
+  const end = new Date(task.endAt).getTime()
+
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return 'invalid'
   }
 
-  const isRunning = () => running
-
-  return {
-    start,
-    stop,
-    reset,
-    isRunning,
+  if (now < start) {
+    return 'reserved'
   }
+
+  if (now >= start && now < end) {
+    return 'running'
+  }
+
+  return 'completed'
+}
+
+export const getRemainingText = (targetValue) => {
+  const target = new Date(targetValue).getTime()
+  const now = currentStandardTime.value.getTime()
+  const diffMs = target - now
+
+  if (!Number.isFinite(target)) {
+    return '-'
+  }
+
+  if (diffMs <= 0) {
+    return '도달'
+  }
+
+  const totalMinutes = Math.ceil(diffMs / 60000)
+  const days = Math.floor(totalMinutes / 1440)
+  const hours = Math.floor((totalMinutes % 1440) / 60)
+  const minutes = totalMinutes % 60
+
+  if (days > 0) {
+    return `${days}일 ${hours}시간`
+  }
+
+  if (hours > 0) {
+    return `${hours}시간 ${minutes}분`
+  }
+
+  return `${minutes}분`
 }

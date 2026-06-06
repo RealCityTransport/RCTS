@@ -2,44 +2,47 @@
   파일명: src/router/index.js
 
   역할:
-  - Vue Router 설정 파일입니다.
-  - App.vue의 3개 메뉴와 실제 페이지 컴포넌트를 연결합니다.
-
-  경로:
-  /operations : 운영 슬롯
-  /vehicles   : 차량 구입
-  /research   : 연구
-
-  참고:
-  - GitHub Pages 배포를 고려해 createWebHashHistory()를 사용합니다.
-  - / 접속 시 /operations로 자동 이동합니다.
+  - 테라리아 표준시간 비서 스케줄러 라우터입니다.
+  - 기존 운영/차량/관리 구조를 제거하고 새 메뉴만 사용합니다.
 */
 
 import { createRouter, createWebHashHistory } from 'vue-router'
 
-import OperationsView from '../views/OperationsView.vue'
-import VehiclesView from '../views/VehiclesView.vue'
-import ResearchView from '../views/ResearchView.vue'
+import HeadquartersView from '../views/HeadquartersView.vue'
+import SecretaryOfficeView from '../views/SecretaryOfficeView.vue'
+import ScheduleView from '../views/ScheduleView.vue'
+import ProgressView from '../views/ProgressView.vue'
+import FamilyView from '../views/FamilyView.vue'
 
 const routes = [
   {
     path: '/',
-    redirect: '/operations',
+    redirect: '/headquarters',
   },
   {
-    path: '/operations',
-    name: 'operations',
-    component: OperationsView,
+    path: '/headquarters',
+    name: 'headquarters',
+    component: HeadquartersView,
   },
   {
-    path: '/vehicles',
-    name: 'vehicles',
-    component: VehiclesView,
+    path: '/secretary-office',
+    name: 'secretary-office',
+    component: SecretaryOfficeView,
   },
   {
-    path: '/research',
-    name: 'research',
-    component: ResearchView,
+    path: '/schedule',
+    name: 'schedule',
+    component: ScheduleView,
+  },
+  {
+    path: '/progress',
+    name: 'progress',
+    component: ProgressView,
+  },
+  {
+    path: '/family',
+    name: 'family',
+    component: FamilyView,
   },
 ]
 
