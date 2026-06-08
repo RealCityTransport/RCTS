@@ -1,307 +1,153 @@
-<!--
-  파일명: src/views/HeadquartersView.vue
-
-  역할:
-  - 테라리아 본부 화면입니다.
-  - 회사 생성, 회사 재생성, 비서 후보 확정, 전체 상태 요약을 담당합니다.
--->
-
 <template>
-  <section class="page">
-    <header class="page-title">
-      <div>
-        <p>HEADQUARTERS</p>
-        <h2>본부</h2>
-      </div>
-    </header>
+  <section class="page-stack">
+    <div v-if="!state.companyCreated" class="start-card panel">
+      <p class="eyebrow">RCTS Lite</p>
+      <h1>가상 운송회사를 시작합니다</h1>
+      <p class="muted">초기 자금은 중형버스 2대 구입이 가능한 수준으로 시작합니다.</p>
 
-    <article v-if="!terrariaState.initialized" class="panel setup-panel">
-      <header class="panel-head">
-        <div>
-          <p>COMPANY SETUP</p>
-          <h3>사장 프로필 생성</h3>
-        </div>
-      </header>
-
-      <div class="panel-inner">
-        <div class="mini-grid">
-          <label class="field">
-            <span>성</span>
-            <input v-model="playerDraft.surname" placeholder="예: 차" />
-          </label>
-
-          <label class="field">
-            <span>이름</span>
-            <input v-model="playerDraft.givenName" placeholder="예: 은우" />
-          </label>
-
-          <label class="field">
-            <span>성별</span>
-            <select v-model="playerDraft.gender">
-              <option value="male">남성</option>
-              <option value="female">여성</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>출생연도</span>
-            <input v-model.number="playerDraft.birthYear" type="number" min="1950" max="2026" />
-          </label>
-
-          <label class="field">
-            <span>생월</span>
-            <input v-model.number="playerDraft.birthMonth" type="number" min="1" max="12" />
-          </label>
-
-          <label class="field">
-            <span>생일</span>
-            <input v-model.number="playerDraft.birthDay" type="number" min="1" max="28" />
-          </label>
-        </div>
-
-
-        <button type="button" class="primary-button" @click="createCompany">
-          회사 설립 및 임무 시작
-        </button>
-      </div>
-    </article>
+      <form class="start-form" @submit.prevent="handleCreateCompany">
+        <label>
+          <span>회사명</span>
+          <input v-model="companyName" type="text" placeholder="예: 리얼시티 운송" />
+        </label>
+        <button type="submit">회사 생성</button>
+      </form>
+    </div>
 
     <template v-else>
-      <section class="grid">
-        <article class="panel" style="grid-column: span 12;">
-          <header class="panel-head">
-            <div>
-              <p>CEO PROFILE</p>
-              <h3>{{ terrariaState.player.fullName }} 사장</h3>
-            </div>
-            <div class="header-actions">
-              <span class="pill">{{ getGenderLabel(terrariaState.player.gender) }}</span>
-              <button type="button" class="danger-button" @click="restartCurrentCompany">
-                회사 새로 만들기
-              </button>
-            </div>
-          </header>
+      <section class="hero panel">
+        <div>
+          <p class="eyebrow">본부</p>
+          <h1>{{ state.companyName }}</h1>
+          <p class="muted">버스와 선박은 간단히, 철도는 노선 운행, 항공은 공항 건설부터 시작합니다.</p>
+        </div>
+        <button class="danger ghost" type="button" @click="resetCompany">회사 초기화</button>
+      </section>
 
-          <div class="panel-inner mini-grid">
-            <div class="stat-card">
-              <span>현재 나이</span>
-              <strong>{{ getAge(terrariaState.player) }}세</strong>
-            </div>
-
-            <div class="stat-card">
-              <span>비서 수</span>
-              <strong>{{ stateSummary.secretaries }}</strong>
-            </div>
-
-            <div class="stat-card">
-              <span>대기 임무</span>
-              <strong>{{ stateSummary.pendingReports }}</strong>
-            </div>
-
-            <div class="stat-card">
-              <span>진행 중</span>
-              <strong>{{ stateSummary.runningTasks }}</strong>
-            </div>
-
-            <div class="stat-card">
-              <span>총 수락 임무</span>
-              <strong>{{ stateSummary.totalAcceptedMissions }}</strong>
-            </div>
-
-          </div>
+      <section class="stats-grid">
+        <article class="panel stat-card">
+          <span>보유 자금</span>
+          <strong>{{ formatMoney(state.money) }}</strong>
         </article>
-
-        <article v-if="terrariaState.pendingSecretaryCandidates.length > 0" class="panel" style="grid-column: span 12;">
-          <header class="panel-head">
-            <div>
-              <p>SECRETARY CANDIDATE</p>
-              <h3>비서 후보 확인</h3>
-            </div>
-          </header>
-
-          <div class="panel-inner">
-
-            <section class="candidate-grid">
-              <article
-                v-for="candidate in terrariaState.pendingSecretaryCandidates"
-                :key="candidate.tempId"
-                class="candidate-card"
-              >
-                <div>
-                  <p class="candidate-label">{{ candidate.departmentName }} · {{ candidate.role }}</p>
-
-                  <label class="field candidate-name-field">
-                    <span>후보 이름</span>
-                    <input
-                      :value="candidate.editableFullName"
-                      @input="updateSecretaryCandidateName(candidate.tempId, $event.target.value)"
-                    />
-                  </label>
-
-                  <p>{{ getGenderLabel(candidate.gender) }} · {{ getAge(candidate) }}세</p>
-                </div>
-
-                <div class="button-row">
-                  <button type="button" class="ghost-button" @click="rerollSecretaryCandidateName(candidate.tempId)">
-                    이름만 다시 생성
-                  </button>
-
-                  <button type="button" class="primary-button" @click="confirmSecretaryCandidate(candidate.tempId)">
-                    이 이름으로 확정
-                  </button>
-                </div>
-              </article>
-            </section>
-          </div>
+        <article class="panel stat-card">
+          <span>보유 차량</span>
+          <strong>{{ state.ownedVehicles.length }}대</strong>
         </article>
+        <article class="panel stat-card">
+          <span>철도 노선</span>
+          <strong>{{ state.railRoutes.length }}개</strong>
+        </article>
+        <article class="panel stat-card">
+          <span>보유 공항</span>
+          <strong>{{ state.airports.length }}개</strong>
+        </article>
+        <article class="panel stat-card">
+          <span>진행 중 운행</span>
+          <strong>{{ runningOperations.length }}건</strong>
+        </article>
+        <article class="panel stat-card">
+          <span>정산 대기</span>
+          <strong>{{ settlementQueue.length }}건</strong>
+        </article>
+      </section>
 
-        <article class="panel" style="grid-column: span 12;">
-          <header class="panel-head">
+      <section class="grid-two">
+        <article class="panel">
+          <div class="section-title">
             <div>
-              <p>TODAY FLOW</p>
-              <h3>오늘의 흐름</h3>
+              <p class="eyebrow">곧 마무리</p>
+              <h2>운행 현황</h2>
             </div>
-          </header>
+          </div>
 
-          <div class="panel-inner list">
-            <div v-if="flowTasks.length <= 0" class="empty">
-              현재 진행 중이거나 예정된 업무가 없습니다. 임무 보고함에서 임무를 수락해 주세요.
-            </div>
-
-            <article v-for="task in flowTasks" :key="task.id" class="item-card">
-              <h4>{{ task.projectName }}</h4>
-              <p>{{ task.secretaryName }} · {{ task.departmentName }}</p>
-              <div class="progress-bar"><span :style="{ width: `${getProgressPercent(task)}%` }" /></div>
-              <div class="meta-row">
-                <span class="pill">{{ getTaskStatusLabel(task) }}</span>
-                <span class="pill">{{ getTaskDateText(task) }}</span>
+          <div v-if="runningOperations.length === 0" class="empty">진행 중인 운행이 없습니다.</div>
+          <div v-else class="mini-list">
+            <div v-for="operation in runningOperations.slice(0, 5)" :key="operation.id" class="mini-item">
+              <div>
+                <strong>{{ operation.title }}</strong>
+                <span>{{ operation.vehicleName }}</span>
               </div>
-            </article>
+              <b>{{ formatDuration((operation.endsAt - state.tickNow) / 1000) }}</b>
+            </div>
           </div>
         </article>
 
+        <article class="panel">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">정산</p>
+              <h2>대기 수익</h2>
+            </div>
+          </div>
+
+          <div v-if="settlementQueue.length === 0" class="empty">정산 대기 항목이 없습니다.</div>
+          <div v-else class="mini-list">
+            <div v-for="settlement in settlementQueue.slice(0, 5)" :key="settlement.id" class="mini-item">
+              <div>
+                <strong>{{ settlement.title }}</strong>
+                <span>{{ settlement.vehicleName }} · {{ settlement.passengers }}명</span>
+              </div>
+              <b>{{ formatMoney(settlement.revenue) }}</b>
+            </div>
+          </div>
+        </article>
       </section>
     </template>
   </section>
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
+import { rctsLiteManager } from '../stores/rctsLiteManager'
+import { formatDuration, formatMoney } from '../modules/time'
 
-import {
-  confirmSecretaryCandidate,
-  getAge,
-  getGenderLabel,
-  getProgressPercent,
-  getTaskDateText,
-  getTaskStatusLabel,
-  initializeCompany,
-  rerollSecretaryCandidateName,
-  restartCompany,
-  stateSummary,
-  terrariaState,
-  upcomingTasks,
-  updateSecretaryCandidateName,
-} from '../stores/terrariaManager'
+const state = rctsLiteManager.state
+const companyName = ref('')
 
-const router = useRouter()
+const runningOperations = computed(() => rctsLiteManager.getters.runningOperations.value)
+const settlementQueue = computed(() => rctsLiteManager.getters.settlementQueue.value)
 
-const playerDraft = reactive({
-  surname: '차',
-  givenName: '은우',
-  gender: 'male',
-  birthYear: 1995,
-  birthMonth: 1,
-  birthDay: 1,
-})
-
-const flowTasks = computed(() => {
-  return upcomingTasks.value
-    .filter((task) => task.completionRecorded !== true)
-    .slice(0, 8)
-})
-
-const createCompany = () => {
-  initializeCompany(playerDraft)
-  router.push('/secretary-office')
+const handleCreateCompany = () => {
+  rctsLiteManager.createCompany(companyName.value)
 }
 
-const restartCurrentCompany = () => {
-  const confirmed = window.confirm('현재 회사 데이터를 지우고 새 회사 생성 화면으로 돌아갈까요?')
-
-  if (!confirmed) {
-    return
+const resetCompany = () => {
+  if (window.confirm('현재 회사를 초기화하고 처음부터 다시 시작할까요?')) {
+    rctsLiteManager.resetCompany()
+    companyName.value = ''
   }
-
-  restartCompany()
-  router.push('/headquarters')
 }
 </script>
 
 <style scoped>
-.setup-panel {
-  max-width: 960px;
-  margin: 0 auto;
-}
-
-.setup-note,
-.guide-text {
-  margin: 1rem 0;
-  color: #94a3b8;
-  line-height: 1.6;
-}
-
-.candidate-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 0.85rem;
-}
-
-.candidate-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 1rem;
-  background: rgba(2, 6, 23, 0.26);
-}
-
-.candidate-label,
-.candidate-card p {
-  margin: 0;
-  color: #94a3b8;
-}
-
-.candidate-name-field {
-  margin: 0.8rem 0 0.35rem;
-}
-
-.candidate-name-field input {
-  font-size: 1.15rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-.candidate-hint {
-  margin-top: 0.45rem !important;
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
-@media (max-width: 860px) {
-  [style*='grid-column'] {
-    grid-column: auto !important;
-  }
-}
+.page-stack { display: grid; gap: 18px; }
+.panel { border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 24px; background: rgba(15, 23, 42, 0.78); box-shadow: 0 20px 55px rgba(0, 0, 0, 0.18); }
+.start-card { display: grid; gap: 16px; max-width: 720px; margin: 7vh auto 0; padding: 32px; }
+.eyebrow { margin: 0 0 6px; color: #38bdf8; font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+h1, h2 { margin: 0; letter-spacing: -0.03em; }
+h1 { font-size: clamp(30px, 5vw, 56px); }
+h2 { font-size: 20px; }
+.muted { margin: 8px 0 0; color: #94a3b8; line-height: 1.6; }
+.start-form { display: grid; gap: 12px; margin-top: 8px; }
+label { display: grid; gap: 8px; color: #cbd5e1; font-size: 13px; font-weight: 700; }
+input { width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid rgba(148, 163, 184, 0.22); border-radius: 14px; outline: none; color: #e5e7eb; background: rgba(2, 6, 23, 0.45); }
+button { min-height: 46px; padding: 0 18px; border: 0; border-radius: 14px; color: white; font-weight: 800; cursor: pointer; background: linear-gradient(135deg, #2563eb, #0891b2); }
+button.ghost { background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(148, 163, 184, 0.2); }
+button.danger { color: #fecaca; }
+.hero { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; padding: 26px; }
+.stats-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+.stat-card { display: grid; gap: 6px; padding: 20px; }
+.stat-card span { color: #94a3b8; font-size: 13px; }
+.stat-card strong { color: #e0f2fe; font-size: 26px; }
+.grid-two { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.grid-two > .panel { padding: 22px; }
+.section-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.empty { padding: 18px; border: 1px dashed rgba(148, 163, 184, 0.22); border-radius: 16px; color: #94a3b8; text-align: center; }
+.mini-list { display: grid; gap: 10px; }
+.mini-item { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 13px 14px; border-radius: 16px; background: rgba(30, 41, 59, 0.62); }
+.mini-item div { display: grid; gap: 3px; }
+.mini-item span { color: #94a3b8; font-size: 12px; }
+.mini-item b { color: #bfdbfe; white-space: nowrap; }
+@media (max-width: 980px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 760px) { .hero { flex-direction: column; } .stats-grid, .grid-two { grid-template-columns: 1fr; } .start-card { padding: 24px; margin-top: 2vh; } }
 </style>
