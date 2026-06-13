@@ -15,14 +15,9 @@
       <section v-if="offlineReport" class="offline-card">
         <div>
           <strong>오프라인 반영</strong>
-          <span>{{ offlineReport.elapsedText }} · 완료 {{ offlineReport.completedRuns }}회</span>
+          <span>{{ offlineReport.elapsedText }} · {{ offlineReport.completedRuns }}회 진행</span>
         </div>
         <button type="button" @click="offlineReport = null">닫기</button>
-      </section>
-
-      <section class="summary-card">
-        <strong>10회까지 수동 · 다음 슬롯 개방 후 기존 슬롯 자동운행</strong>
-        <span>수동 운행은 10회 목표까지만 표시됩니다. 자동 전환 후에는 누적 횟수만 표시됩니다.</span>
       </section>
 
       <section class="slot-list" aria-label="교통 운행 슬롯 목록">
@@ -33,8 +28,8 @@
           :class="{
             locked: !stage.unlocked,
             running: stage.status === 'running',
-            auto: stage.auto,
-            ready: canOpenNext(stage),
+            waiting: stage.status === 'waiting',
+            auto: isAutoStage(stage),
           }"
         >
           <div class="slot-title">
@@ -51,25 +46,6 @@
 
           <div class="slot-side">
             <span class="slot-state">{{ stageStateLabel(stage) }}</span>
-            <div class="slot-actions">
-              <button
-                v-if="canManualStart(stage)"
-                type="button"
-                class="primary-action"
-                @click="startManualRun(stage)"
-              >
-                시작
-              </button>
-
-              <button
-                v-if="canOpenNext(stage)"
-                type="button"
-                class="unlock-action"
-                @click="openNextStage(stage)"
-              >
-                개방
-              </button>
-            </div>
           </div>
         </article>
       </section>
@@ -82,8 +58,10 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { loadRctsAutoSave, saveRctsAutoSave } from './storage/rctsSaveStorage.js'
 
 const TARGET_RUNS = 10
+const BEFORE_TARGET_WAIT_SECONDS = 30 * 60
+const AFTER_TARGET_WAIT_SECONDS = 10 * 60
 const AUTO_SAVE_INTERVAL_MS = 10 * 60 * 1000
-const SECOND = 1000
+const SECOND_MS = 1000
 const MINUTE = 60
 const HOUR = 3600
 const DAY = 86400
@@ -121,8 +99,7 @@ function createInitialStages() {
   return stageDefinitions.map((stage, index) => ({
     ...stage,
     unlocked: index === 0,
-    auto: false,
-    status: 'idle',
+    status: index === 0 ? 'running' : 'locked',
     runs: 0,
     remainingSeconds: stage.durationSeconds,
   }))
@@ -133,142 +110,159 @@ const logs = ref([])
 
 const standardClock = computed(() => formatStandardClock(standardNow.value))
 
-function canManualStart(stage) {
-  return stage.unlocked && !stage.auto && stage.status !== 'running' && stage.runs < TARGET_RUNS
+function isAutoStage(stage) {
+  return stage.unlocked && stage.runs >= TARGET_RUNS
 }
 
-function canOpenNext(stage) {
-  const next = getNextStage(stage)
-  return Boolean(stage.unlocked && stage.runs >= TARGET_RUNS && !stage.auto && next && !next.unlocked)
+function getWaitSeconds(stage) {
+  return isAutoStage(stage) ? AFTER_TARGET_WAIT_SECONDS : BEFORE_TARGET_WAIT_SECONDS
 }
 
 function getNextStage(stage) {
   return stages.find((item) => item.order === stage.order + 1)
 }
 
-function startManualRun(stage) {
-  if (!canManualStart(stage)) return
-  stage.status = 'running'
-  stage.remainingSeconds = stage.durationSeconds
-  addLog(`${stage.name} 운행 시작`)
-  saveSoon()
-}
-
-function openNextStage(stage) {
+function unlockNextStage(stage) {
   const next = getNextStage(stage)
-  if (!canOpenNext(stage) || !next) return
-
-  stage.auto = true
-  stage.status = 'running'
-  stage.remainingSeconds = stage.durationSeconds
+  if (!next || next.unlocked) return
 
   next.unlocked = true
-  next.auto = false
-  next.status = 'idle'
+  next.status = 'running'
+  next.runs = 0
   next.remainingSeconds = next.durationSeconds
-
-  addLog(`${next.name} 슬롯 개방 · ${stage.name} 자동운행 전환`)
-  saveSoon()
+  addLog(`${next.name} 자동 개방`)
 }
 
 function tickGame() {
   const now = new Date()
-  const prev = new Date(now.getTime() - SECOND)
+  const prev = new Date(now.getTime() - SECOND_MS)
   standardNow.value = now
 
   stages.forEach((stage) => {
-    if (!stage.unlocked || stage.status !== 'running') return
-
-    const tickAmount = getTickAmountForStage(stage, now, prev)
-    if (tickAmount <= 0) return
-
-    stage.remainingSeconds = Math.max(0, stage.remainingSeconds - tickAmount)
-    if (stage.remainingSeconds <= 0) completeStageRun(stage)
+    if (!stage.unlocked) return
+    tickStage(stage, 1, prev, now)
   })
+}
+
+function tickStage(stage, elapsedSeconds, startDate, endDate) {
+  if (elapsedSeconds <= 0) return
+
+  if (stage.status === 'waiting') {
+    stage.remainingSeconds = Math.max(0, normalizeRemaining(stage, getWaitSeconds(stage)) - elapsedSeconds)
+    if (stage.remainingSeconds <= 0) {
+      stage.status = 'running'
+      stage.remainingSeconds = stage.durationSeconds
+    }
+    return
+  }
+
+  if (stage.status !== 'running') return
+
+  const effectiveElapsed = stage.timeWindow === 'commuter'
+    ? countCommuterOperableSeconds(startDate, endDate)
+    : elapsedSeconds
+
+  if (effectiveElapsed <= 0) return
+
+  stage.remainingSeconds = Math.max(0, normalizeRemaining(stage, stage.durationSeconds) - effectiveElapsed)
+  if (stage.remainingSeconds <= 0) completeStageRun(stage)
 }
 
 function completeStageRun(stage) {
   stage.runs += 1
 
-  if (stage.auto) {
-    stage.status = 'running'
-    stage.remainingSeconds = stage.durationSeconds
-    return
+  if (stage.runs === TARGET_RUNS) {
+    unlockNextStage(stage)
+    addLog(`${stage.name} 10회 완료`)
   }
 
-  stage.status = 'idle'
-  stage.remainingSeconds = stage.durationSeconds
-
-  if (stage.runs >= TARGET_RUNS) {
-    const next = getNextStage(stage)
-    addLog(next ? `${stage.name} 10회 완료 · ${next.name} 개방 가능` : `${stage.name} 10회 완료`)
-  } else {
-    addLog(`${stage.name} ${stage.runs}/${TARGET_RUNS}회 완료`)
-  }
-}
-
-function getTickAmountForStage(stage, currentDate, previousDate) {
-  if (stage.timeWindow === 'commuter') return countCommuterOperableSeconds(previousDate, currentDate)
-  return 1
+  stage.status = 'waiting'
+  stage.remainingSeconds = getWaitSeconds(stage)
 }
 
 function applyOfflineProgress(elapsedSeconds, savedAtDate) {
   if (elapsedSeconds <= 0) return
 
-  const start = savedAtDate
-  const end = new Date(start.getTime() + elapsedSeconds * SECOND)
+  let cursor = new Date(savedAtDate)
+  let restSeconds = elapsedSeconds
   let completedRuns = 0
-  let autoRuns = 0
+  let guard = 0
 
-  stages.forEach((stage) => {
-    if (!stage.unlocked || stage.status !== 'running') return
+  while (restSeconds > 0 && guard < 50000) {
+    guard += 1
+    const activeStages = stages.filter((stage) => stage.unlocked && (stage.status === 'running' || stage.status === 'waiting'))
+    if (activeStages.length === 0) break
 
-    const effectiveElapsed = stage.timeWindow === 'commuter'
-      ? countCommuterOperableSeconds(start, end)
-      : elapsedSeconds
+    const nextSeconds = Math.max(1, Math.min(restSeconds, ...activeStages.map((stage) => secondsToNextEvent(stage, cursor))))
+    const nextDate = new Date(cursor.getTime() + nextSeconds * SECOND_MS)
 
-    if (effectiveElapsed <= 0) return
+    activeStages.forEach((stage) => {
+      const beforeRuns = stage.runs
+      tickStage(stage, nextSeconds, cursor, nextDate)
+      completedRuns += Math.max(0, stage.runs - beforeRuns)
+    })
 
-    if (stage.auto) {
-      const currentRemaining = normalizeRemaining(stage)
-      if (effectiveElapsed >= currentRemaining) {
-        const rest = effectiveElapsed - currentRemaining
-        const addedRuns = 1 + Math.floor(rest / stage.durationSeconds)
-        const remainder = rest % stage.durationSeconds
-        stage.runs += addedRuns
-        stage.remainingSeconds = remainder === 0 ? stage.durationSeconds : stage.durationSeconds - remainder
-        completedRuns += addedRuns
-        autoRuns += addedRuns
-      } else {
-        stage.remainingSeconds = currentRemaining - effectiveElapsed
-      }
-      stage.status = 'running'
-      return
-    }
+    restSeconds -= nextSeconds
+    cursor = nextDate
+  }
 
-    if (effectiveElapsed >= normalizeRemaining(stage)) {
-      stage.runs += 1
-      stage.status = 'idle'
-      stage.remainingSeconds = stage.durationSeconds
-      completedRuns += 1
-    } else {
-      stage.remainingSeconds = normalizeRemaining(stage) - effectiveElapsed
-    }
-  })
+  standardNow.value = new Date(savedAtDate.getTime() + elapsedSeconds * SECOND_MS)
 
   if (completedRuns > 0) {
     offlineReport.value = {
       elapsedText: formatLongDuration(elapsedSeconds),
       completedRuns,
-      autoRuns,
     }
     addLog(`오프라인 진행 ${completedRuns}회 반영`)
   }
 }
 
-function normalizeRemaining(stage) {
-  if (!Number.isFinite(stage.remainingSeconds) || stage.remainingSeconds <= 0) return stage.durationSeconds
-  return stage.remainingSeconds
+function secondsToNextEvent(stage, fromDate) {
+  if (stage.status === 'waiting') return Math.max(1, normalizeRemaining(stage, getWaitSeconds(stage)))
+  if (stage.timeWindow === 'commuter') return actualSecondsForCommuterWork(fromDate, normalizeRemaining(stage, stage.durationSeconds))
+  return Math.max(1, normalizeRemaining(stage, stage.durationSeconds))
+}
+
+function actualSecondsForCommuterWork(fromDate, requiredOperableSeconds) {
+  if (requiredOperableSeconds <= 0) return 1
+
+  let worked = 0
+  let actual = 0
+  const cursor = new Date(fromDate)
+
+  while (worked < requiredOperableSeconds && actual < 370 * DAY) {
+    const nextBoundary = getNextCommuterBoundary(cursor)
+    const stepSeconds = Math.max(1, Math.floor((nextBoundary.getTime() - cursor.getTime()) / SECOND_MS))
+    const nextDate = new Date(cursor.getTime() + stepSeconds * SECOND_MS)
+    const operable = countCommuterOperableSeconds(cursor, nextDate)
+
+    if (operable > 0) {
+      const need = requiredOperableSeconds - worked
+      if (operable >= need) return actual + need
+      worked += operable
+    }
+
+    actual += stepSeconds
+    cursor.setTime(nextDate.getTime())
+  }
+
+  return Math.max(1, actual)
+}
+
+function getNextCommuterBoundary(date) {
+  const candidates = []
+  for (let offset = 0; offset <= 8; offset += 1) {
+    const base = new Date(date)
+    base.setDate(date.getDate() + offset)
+    base.setHours(0, 0, 0, 0)
+    candidates.push(withHour(base, 6), withHour(base, 10), withHour(base, 17), withHour(base, 21))
+  }
+  return candidates.find((candidate) => candidate > date) ?? new Date(date.getTime() + HOUR * SECOND_MS)
+}
+
+function normalizeRemaining(stage, fallbackSeconds) {
+  if (!Number.isFinite(stage.remainingSeconds) || stage.remainingSeconds <= 0) return fallbackSeconds
+  return Math.floor(stage.remainingSeconds)
 }
 
 function countCommuterOperableSeconds(startDate, endDate) {
@@ -302,25 +296,25 @@ function withHour(baseDate, hour) {
 function overlapSeconds(rangeStart, rangeEnd, windowStart, windowEnd) {
   const start = Math.max(rangeStart.getTime(), windowStart.getTime())
   const end = Math.min(rangeEnd.getTime(), windowEnd.getTime())
-  return Math.max(0, Math.floor((end - start) / SECOND))
+  return Math.max(0, Math.floor((end - start) / SECOND_MS))
 }
 
 function stageStateLabel(stage) {
   if (!stage.unlocked) return '대기'
-  if (stage.auto) return `자동 · 누적 ${stage.runs}회`
-  if (canOpenNext(stage)) return '개방 가능'
-  if (stage.status === 'running') return `${stage.runs}/${TARGET_RUNS}회 · 운행중`
-  return `${stage.runs}/${TARGET_RUNS}회 · 수동`
+  if (isAutoStage(stage)) return stage.status === 'waiting' ? '자동 · 대기' : '자동 · 운행중'
+  if (stage.status === 'waiting') return `${stage.runs}/${TARGET_RUNS}회 · 대기`
+  return `${stage.runs}/${TARGET_RUNS}회 · 운행중`
 }
 
 function timerText(stage) {
-  if (!stage.unlocked) return '이전 슬롯 필요'
-  if (stage.status !== 'running') return stage.auto ? '자동 대기' : '대기중'
-  if (stage.timeWindow === 'commuter' && !isCommuterWindow(standardNow.value)) return `휴식 · ${formatDuration(stage.remainingSeconds)}`
+  if (!stage.unlocked) return '대기'
+  if (stage.status === 'waiting') return formatDuration(stage.remainingSeconds)
+  if (stage.timeWindow === 'commuter' && !isCommuterWindow(standardNow.value)) return `휴식 ${formatDuration(stage.remainingSeconds)}`
   return formatDuration(stage.remainingSeconds)
 }
 
 function stageDurationLabel(stage) {
+  if (!stage.unlocked) return '이전 슬롯 자동 완료 후 개방'
   if (stage.timeWindow === 'commuter') return '1회 8시간 · 월~금 06~10 / 17~21'
   return `1회 ${formatLongDuration(stage.durationSeconds)}`
 }
@@ -345,7 +339,6 @@ function getSavePayload() {
     stages: stages.map((stage) => ({
       id: stage.id,
       unlocked: stage.unlocked,
-      auto: stage.auto,
       status: stage.status,
       runs: stage.runs,
       remainingSeconds: stage.remainingSeconds,
@@ -374,25 +367,31 @@ async function loadSave() {
       const stage = stages.find((item) => item.id === savedStage.id)
       if (!stage) return
       stage.unlocked = Boolean(savedStage.unlocked)
-      stage.auto = Boolean(savedStage.auto)
-      stage.status = savedStage.status === 'running' ? 'running' : 'idle'
+      stage.status = savedStage.status === 'waiting' ? 'waiting' : savedStage.status === 'running' ? 'running' : stage.unlocked ? 'running' : 'locked'
       stage.runs = Number(savedStage.runs) || 0
-      stage.remainingSeconds = Number(savedStage.remainingSeconds) || stage.durationSeconds
+      stage.remainingSeconds = Number(savedStage.remainingSeconds) || (stage.status === 'waiting' ? getWaitSeconds(stage) : stage.durationSeconds)
     })
   }
 
   if (Array.isArray(payload.logs)) logs.value = payload.logs.slice(0, 20)
 
+  const first = stages[0]
+  if (first && !first.unlocked) {
+    first.unlocked = true
+    first.status = 'running'
+    first.remainingSeconds = first.durationSeconds
+  }
+
   const savedAtIso = payload.savedAt ?? record.savedAt
   if (savedAtIso) {
     const savedAt = new Date(savedAtIso)
-    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - savedAt.getTime()) / SECOND))
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - savedAt.getTime()) / SECOND_MS))
     applyOfflineProgress(elapsedSeconds, savedAt)
   }
 }
 
 function scheduleTimers() {
-  secondTimer = window.setInterval(tickGame, SECOND)
+  secondTimer = window.setInterval(tickGame, SECOND_MS)
   autoSaveTimer = window.setInterval(saveSoon, AUTO_SAVE_INTERVAL_MS)
   scheduleStandardTick()
 }
@@ -429,8 +428,8 @@ function formatDuration(seconds) {
   const minutes = Math.floor((total % HOUR) / MINUTE)
   const secs = total % MINUTE
 
-  if (days > 0) return `${days}일 ${hours}시간 ${minutes}분`
-  if (hours > 0) return `${hours}시간 ${minutes}분 ${secs}초`
+  if (days > 0) return `${days}일 ${hours}시간`
+  if (hours > 0) return `${hours}시간 ${minutes}분`
   if (minutes > 0) return `${minutes}분 ${secs}초`
   return `${secs}초`
 }
@@ -481,9 +480,7 @@ onBeforeUnmount(() => {
   --text: #e8f1ff;
   --muted: #92a4bd;
   --blue: #38bdf8;
-  --blue-deep: #2563eb;
   --green: #22c55e;
-  --yellow: #f59e0b;
 }
 
 * { box-sizing: border-box; }
@@ -547,22 +544,12 @@ button { font-family: inherit; }
   display: grid;
   gap: 8px;
 }
-.summary-card,
 .offline-card,
 .slot-card {
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 14px;
 }
-.summary-card {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 12px;
-}
-.summary-card strong { font-size: 13px; }
-.summary-card span { color: var(--muted); font-size: 12px; text-align: right; }
 .offline-card {
   display: flex;
   justify-content: space-between;
@@ -574,35 +561,31 @@ button { font-family: inherit; }
 .offline-card div { display: grid; gap: 2px; }
 .offline-card strong { color: var(--blue); font-size: 13px; }
 .offline-card span { color: var(--muted); font-size: 12px; }
-.offline-card button,
-.primary-action,
-.unlock-action {
+.offline-card button {
   border: 0;
   border-radius: 999px;
   padding: 7px 10px;
-  color: white;
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--text);
   font-weight: 800;
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
 }
-.offline-card button { background: rgba(148, 163, 184, 0.18); color: var(--text); }
-.primary-action { background: linear-gradient(135deg, #2563eb, #38bdf8); }
-.unlock-action { background: linear-gradient(135deg, #f59e0b, #f97316); }
 
- .slot-list { display: grid; gap: 8px; }
+.slot-list { display: grid; gap: 8px; }
 .slot-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(130px, 220px) minmax(86px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(118px, 190px) minmax(84px, 1fr);
   gap: 8px;
   align-items: center;
-  min-height: 58px;
+  min-height: 56px;
   padding: 8px 10px;
 }
-.slot-card.locked { opacity: 0.45; }
+.slot-card.locked { opacity: 0.42; }
 .slot-card.running { border-color: rgba(56, 189, 248, 0.46); }
+.slot-card.waiting { border-color: rgba(148, 163, 184, 0.26); }
 .slot-card.auto { border-color: rgba(34, 197, 94, 0.42); }
-.slot-card.ready { border-color: rgba(245, 158, 11, 0.72); }
 .slot-title { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .slot-order {
   width: 24px;
@@ -626,10 +609,10 @@ p { margin: 1px 0 0; color: var(--muted); font-size: 11px; white-space: nowrap; 
 }
 .slot-timer strong {
   color: var(--blue);
-  font-size: clamp(24px, 5vw, 36px);
+  font-size: clamp(19px, 3.4vw, 28px);
   line-height: 1;
   font-weight: 950;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -649,35 +632,21 @@ p { margin: 1px 0 0; color: var(--muted); font-size: 11px; white-space: nowrap; 
   text-overflow: ellipsis;
   max-width: 100%;
 }
-.slot-actions { display: flex; gap: 4px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
-.primary-action,
-.unlock-action {
-  padding: 5px 8px;
-  font-size: 11px;
-}
 
 @media (max-width: 640px) {
   .top-header { padding: 9px 10px; }
   .brand span { display: none; }
   .page-body { width: min(100% - 10px, 980px); padding-top: 66px; }
-  .summary-card { display: grid; gap: 3px; }
-  .summary-card span { text-align: left; }
   .slot-card {
-    grid-template-columns: minmax(82px, 1fr) minmax(116px, 1.08fr) minmax(74px, 1fr);
+    grid-template-columns: minmax(78px, 1fr) minmax(98px, 1.05fr) minmax(70px, 0.9fr);
     gap: 5px;
-    min-height: 56px;
+    min-height: 54px;
     padding: 7px 8px;
   }
   .slot-order { width: 22px; height: 22px; font-size: 10px; border-radius: 8px; }
   h2 { font-size: 13px; }
   p { font-size: 10px; }
-  .slot-timer strong { font-size: clamp(24px, 8.8vw, 36px); }
+  .slot-timer strong { font-size: clamp(18px, 6.2vw, 25px); }
   .slot-state { font-size: 10px; }
-  .slot-actions { gap: 3px; }
-  .primary-action,
-  .unlock-action {
-    padding: 4px 6px;
-    font-size: 10px;
-  }
 }
 </style>
