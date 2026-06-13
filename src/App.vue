@@ -220,10 +220,17 @@
               <span>이름</span>
               <input v-model.trim="npcDraft.name" type="text" placeholder="예: 한서윤" maxlength="20" required />
             </label>
-            <label>
+            <div class="birth-split-field">
               <span>생년월일</span>
-              <input v-model="npcDraft.birth" type="text" inputmode="numeric" placeholder="YYYY/MM/DD" pattern="\d{4}/\d{2}/\d{2}" required />
-            </label>
+              <div class="birth-split-inputs">
+                <input v-model="npcDraft.birthYear" type="text" inputmode="numeric" placeholder="YYYY" maxlength="4" required />
+                <b>/</b>
+                <input v-model="npcDraft.birthMonth" type="text" inputmode="numeric" placeholder="MM" maxlength="2" required />
+                <b>/</b>
+                <input v-model="npcDraft.birthDay" type="text" inputmode="numeric" placeholder="DD" maxlength="2" required />
+              </div>
+              <em>{{ npcDraftBirthText || 'YYYY/MM/DD' }}</em>
+            </div>
             <label>
               <span>성별</span>
               <select v-model="npcDraft.gender">
@@ -694,7 +701,9 @@ const storyboardFormError = ref('')
 
 const defaultNpcDraft = {
   name: '',
-  birth: '',
+  birthYear: '',
+  birthMonth: '',
+  birthDay: '',
   gender: '여성',
   memo: '',
 }
@@ -835,7 +844,8 @@ const customDrafts = reactive(createInitialCustomDrafts())
 const logs = ref([])
 
 const standardClock = computed(() => formatStandardClock(standardNow.value))
-const npcDraftAge = computed(() => (npcDraft.birth ? npcAgeText(npcDraft.birth) : '-'))
+const npcDraftBirthText = computed(() => composeBirthText(npcDraft.birthYear, npcDraft.birthMonth, npcDraft.birthDay))
+const npcDraftAge = computed(() => (isValidBirthText(npcDraftBirthText.value) ? npcAgeText(npcDraftBirthText.value) : '-'))
 const terrariaWorldStatus = computed(() => {
   if (terrariaNpcs.length === 0) {
     return {
@@ -2293,7 +2303,7 @@ function startOfTodayValue() {
 
 function createTerrariaNpc() {
   const name = npcDraft.name.trim()
-  const birth = normalizeBirthText(npcDraft.birth)
+  const birth = normalizeBirthText(npcDraftBirthText.value)
   if (!name || !isValidBirthText(birth)) return
 
   terrariaNpcs.unshift({
@@ -2337,6 +2347,15 @@ function isValidDateTimeText(dateTimeText) {
   if (!isValidBirthText(datePart)) return false
   const [hour, minute] = timePart.split(':').map(Number)
   return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
+}
+
+
+function composeBirthText(year, month, day) {
+  const y = String(year || '').replace(/\D/g, '').slice(0, 4)
+  const m = String(month || '').replace(/\D/g, '').slice(0, 2)
+  const d = String(day || '').replace(/\D/g, '').slice(0, 2)
+  if (!y && !m && !d) return ''
+  return `${y.padStart(4, '0')}/${m.padStart(2, '0')}/${d.padStart(2, '0')}`
 }
 
 function normalizeBirthText(birthText) {
@@ -3369,10 +3388,12 @@ p { margin: 1px 0 0; color: var(--muted); font-size: 10px; white-space: nowrap; 
 .npc-create-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .npc-create-grid.simple { grid-template-columns: 1.15fr 1fr 0.8fr 0.72fr; }
 .npc-create-grid label,
-.npc-memo-field { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 900; }
+.npc-memo-field,
+.birth-split-field { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 900; }
 .npc-create-grid input,
 .npc-create-grid select,
-.npc-memo-field textarea {
+.npc-memo-field textarea,
+.birth-split-inputs input {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
@@ -3384,6 +3405,31 @@ p { margin: 1px 0 0; color: var(--muted); font-size: 10px; white-space: nowrap; 
   font-weight: 800;
 }
 .npc-memo-field textarea { min-height: 68px; resize: vertical; line-height: 1.45; }
+.birth-split-field {
+  align-content: start;
+}
+.birth-split-inputs {
+  display: grid;
+  grid-template-columns: 1.25fr auto 0.82fr auto 0.82fr;
+  gap: 4px;
+  align-items: center;
+}
+.birth-split-inputs input {
+  text-align: center;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.birth-split-inputs b {
+  color: var(--muted);
+  font-size: 13px;
+}
+.birth-split-field em {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .npc-age-preview {
   display: grid;
   gap: 5px;
