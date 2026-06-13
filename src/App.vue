@@ -1,15 +1,15 @@
 <template>
-  <div class="rcts-shell" :class="{ 'terraria-mode': activePage === 'terraria' }">
+  <div class="rcts-shell" :class="{ 'terraria-mode': activePage === 'terraria' && isTerrariaDesktop }">
     <header class="top-header">
       <div class="brand">
-        <strong>{{ activePage === 'terraria' ? 'TERRARIA' : 'RCTS' }}</strong>
-        <span>{{ activePage === 'terraria' ? 'NPC 스토리보드 세계' : '그룹 자동 진행 · 커스텀 노선' }}</span>
+        <strong>{{ activePage === 'terraria' && isTerrariaDesktop ? 'TERRARIA' : 'RCTS' }}</strong>
+        <span>{{ activePage === 'terraria' && isTerrariaDesktop ? 'NPC 스토리보드 세계' : '그룹 자동 진행 · 커스텀 노선' }}</span>
       </div>
       <nav class="page-switch" aria-label="프로젝트 전환">
         <button type="button" :class="{ active: activePage === 'rcts' }" @click="activePage = 'rcts'">
           RCTS
         </button>
-        <button type="button" :class="{ active: activePage === 'terraria' }" @click="activePage = 'terraria'">
+        <button v-if="isTerrariaDesktop" type="button" :class="{ active: activePage === 'terraria' }" @click="activePage = 'terraria'">
           테라리아
         </button>
       </nav>
@@ -20,7 +20,7 @@
       </div>
     </header>
 
-    <main v-if="activePage === 'rcts'" class="page-body">
+    <main v-if="activePage === 'rcts' || !isTerrariaDesktop" class="page-body">
       <section v-if="offlineReport" class="offline-card">
         <div>
           <strong>오프라인 반영</strong>
@@ -178,7 +178,7 @@
       </section>
     </main>
 
-    <main v-else class="terraria-page">
+    <main v-else-if="isTerrariaDesktop" class="terraria-page">
       <section class="terraria-hero">
         <div>
           <p class="eyebrow">표준시간 드라마 엔진</p>
@@ -667,6 +667,7 @@ const HOUR = 3600
 const DAY = 86400
 
 const activePage = ref('rcts')
+const isTerrariaDesktop = ref(true)
 const terrariaTab = ref('npcs')
 
 const terrariaTabs = [
@@ -709,6 +710,13 @@ const defaultNpcDraft = {
 }
 
 const npcDraft = reactive({ ...defaultNpcDraft })
+
+
+function syncTerrariaDesktop() {
+  if (typeof window === 'undefined') return
+  isTerrariaDesktop.value = window.innerWidth >= 900
+  if (!isTerrariaDesktop.value && activePage.value === 'terraria') activePage.value = 'rcts'
+}
 
 function createInitialTerrariaNpcs() {
   return []
@@ -951,15 +959,14 @@ function updateUnlocks() {
     }
   })
 
-  groups.forEach((group) => {
-    if (!isGroupMaster(group)) return
-    groupStages(group.id).forEach((stage) => {
-      if (stage.unlocked && stage.phase !== 'master') {
-        stage.phase = 'master'
-        stage.remainingSeconds = 0
-        changed = true
-      }
-    })
+  // 커스텀이 열려도 기본 슬롯은 계속 돌아가야 한다.
+  // 따라서 그룹 100회 달성 이후에도 기본 슬롯을 master로 멈추지 않고,
+  // 저장된 구버전 master 상태만 running/waiting으로 복구한다.
+  stages.forEach((stage) => {
+    if (!stage.unlocked || stage.phase !== 'master') return
+    stage.phase = 'running'
+    stage.remainingSeconds = stage.durationSeconds
+    changed = true
   })
 
   return changed
@@ -2570,13 +2577,15 @@ async function loadSave() {
 
   const payload = record.payload
   if (payload.activePage === 'terraria' || payload.activePage === 'rcts') activePage.value = payload.activePage
+  syncTerrariaDesktop()
 
   if (Array.isArray(payload.stages)) {
     payload.stages.forEach((savedStage) => {
       const stage = stages.find((item) => item.id === savedStage.id)
       if (!stage) return
       stage.unlocked = Boolean(savedStage.unlocked)
-      stage.phase = ['running', 'waiting', 'master'].includes(savedStage.phase) ? savedStage.phase : (stage.unlocked ? 'running' : 'locked')
+      const savedPhase = ['running', 'waiting'].includes(savedStage.phase) ? savedStage.phase : (stage.unlocked ? 'running' : 'locked')
+      stage.phase = savedStage.phase === 'master' ? 'running' : savedPhase
       stage.runs = Number(savedStage.runs) || 0
       stage.remainingSeconds = Number(savedStage.remainingSeconds) || stage.durationSeconds
     })
@@ -2712,8 +2721,10 @@ function cryptoRandomId() {
 }
 
 onMounted(async () => {
+  syncTerrariaDesktop()
   await loadSave()
   scheduleTimers()
+  window.addEventListener('resize', syncTerrariaDesktop)
   window.addEventListener('beforeunload', saveSoon)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   saveSoon()
@@ -2723,6 +2734,7 @@ onBeforeUnmount(() => {
   if (secondTimer) window.clearInterval(secondTimer)
   if (autoSaveTimer) window.clearInterval(autoSaveTimer)
   if (standardTimer) window.clearTimeout(standardTimer)
+  window.removeEventListener('resize', syncTerrariaDesktop)
   window.removeEventListener('beforeunload', saveSoon)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   saveSoon()
