@@ -3,7 +3,7 @@
     <header class="top-header">
       <div class="brand">
         <strong>RCTS</strong>
-        <span>자동 슬롯 진행</span>
+        <span>그룹 자동 진행 · 커스텀 노선</span>
       </div>
       <div class="clock-box">
         <span>표준시간</span>
@@ -15,7 +15,7 @@
       <section v-if="offlineReport" class="offline-card">
         <div>
           <strong>오프라인 반영</strong>
-          <span>{{ offlineReport.elapsedText }} · 완료 {{ offlineReport.completedRuns }}회</span>
+          <span>{{ offlineReport.elapsedText }} · 기본 {{ offlineReport.completedRuns }}회 · 커스텀 {{ offlineReport.customRuns }}회</span>
         </div>
         <button type="button" @click="offlineReport = null">닫기</button>
       </section>
@@ -37,10 +37,6 @@
               <span>{{ groupStateLabel(group) }}</span>
             </div>
           </header>
-
-          <div v-if="isGroupMaster(group)" class="custom-ready">
-            커스텀 영역 준비중
-          </div>
 
           <div class="slot-list">
             <section
@@ -72,6 +68,103 @@
               </div>
             </section>
           </div>
+
+          <section v-if="isGroupMaster(group)" class="custom-area">
+            <header class="custom-head">
+              <strong>{{ group.name }} 커스텀</strong>
+              <span>{{ customSummary(group) }}</span>
+            </header>
+
+            <form v-if="!customRoute(group.id).created" class="custom-form" @submit.prevent="createCustomRoute(group.id)">
+              <label>
+                <span>노선명</span>
+                <input v-model.trim="customDrafts[group.id].routeName" type="text" placeholder="예: 수원역 순환선" maxlength="24" />
+              </label>
+              <label>
+                <span>왕복시간</span>
+                <div class="time-inputs">
+                  <input v-model.number="customDrafts[group.id].roundTripDays" type="number" min="0" max="365" inputmode="numeric" />
+                  <em>일</em>
+                  <input v-model.number="customDrafts[group.id].roundTripHours" type="number" min="0" max="23" inputmode="numeric" />
+                  <em>시간</em>
+                  <input v-model.number="customDrafts[group.id].roundTripMinutes" type="number" min="0" max="59" inputmode="numeric" />
+                  <em>분</em>
+                </div>
+              </label>
+              <label>
+                <span>배차간격</span>
+                <div class="time-inputs short">
+                  <input v-model.number="customDrafts[group.id].headwayMinutes" type="number" min="1" max="1440" inputmode="numeric" />
+                  <em>분</em>
+                </div>
+              </label>
+
+              <div v-if="group.id === 'bus' && isStageUnlocked('commuter_charter')" class="timetable-note">
+                전세통근 개방됨 · 표준시간 시간표형 커스텀 준비
+                <small>첫차 06:00 · 막차 23:00 · 출퇴근/심야/주말 배차는 다음 설계에서 확장</small>
+              </div>
+
+              <button type="submit">커스텀 노선 등록</button>
+            </form>
+
+            <div v-else class="custom-slot" :class="{ complete: customRoute(group.id).runs >= CUSTOM_MASTER_RUNS }">
+              <div class="custom-title">
+                <h3>{{ customRoute(group.id).routeName }}</h3>
+                <p>왕복 {{ formatLongDuration(customRoute(group.id).roundTripSeconds) }} · 배차 {{ formatLongDuration(customRoute(group.id).dispatchIntervalSeconds) }}</p>
+              </div>
+              <div class="custom-timer">
+                <strong>{{ customTimerText(group.id) }}</strong>
+                <span>운행차량 {{ customRoute(group.id).activeVehicles.length }}대</span>
+              </div>
+              <div class="custom-side">
+                <strong>{{ customRoute(group.id).runs }}/100</strong>
+                <span>{{ customRoute(group.id).runs >= CUSTOM_MASTER_RUNS ? '마스터' : '커스텀 운행중' }}</span>
+              </div>
+
+              <p v-if="customRoute(group.id).pendingUpdate" class="pending-update">
+                수정 예약 · {{ formatApplyDate(customRoute(group.id).pendingUpdate.applyAt) }} 적용
+              </p>
+
+              <div v-if="customRoute(group.id).activeVehicles.length" class="vehicle-strip">
+                <span
+                  v-for="vehicle in customRoute(group.id).activeVehicles.slice(0, 4)"
+                  :key="vehicle.id"
+                >
+                  {{ vehicle.label }} · {{ formatDuration(vehicle.remainingSeconds) }}
+                </span>
+                <span v-if="customRoute(group.id).activeVehicles.length > 4">
+                  +{{ customRoute(group.id).activeVehicles.length - 4 }}대
+                </span>
+              </div>
+              <p v-else class="vehicle-empty">배차 대기중 · 배차간격에 따라 차량이 생성됩니다</p>
+            </div>
+
+            <form v-if="customRoute(group.id).created && customRoute(group.id).runs < CUSTOM_MASTER_RUNS" class="custom-form custom-edit-form" @submit.prevent="reserveCustomRouteUpdate(group.id)">
+              <label>
+                <span>다음날 수정 노선명</span>
+                <input v-model.trim="customDrafts[group.id].routeName" type="text" :placeholder="customRoute(group.id).routeName" maxlength="24" />
+              </label>
+              <label>
+                <span>다음날 왕복시간</span>
+                <div class="time-inputs">
+                  <input v-model.number="customDrafts[group.id].roundTripDays" type="number" min="0" max="365" inputmode="numeric" />
+                  <em>일</em>
+                  <input v-model.number="customDrafts[group.id].roundTripHours" type="number" min="0" max="23" inputmode="numeric" />
+                  <em>시간</em>
+                  <input v-model.number="customDrafts[group.id].roundTripMinutes" type="number" min="0" max="59" inputmode="numeric" />
+                  <em>분</em>
+                </div>
+              </label>
+              <label>
+                <span>다음날 배차간격</span>
+                <div class="time-inputs short">
+                  <input v-model.number="customDrafts[group.id].headwayMinutes" type="number" min="1" max="1440" inputmode="numeric" />
+                  <em>분</em>
+                </div>
+              </label>
+              <button type="submit">다음날 적용 예약</button>
+            </form>
+          </section>
         </article>
       </section>
     </main>
@@ -85,6 +178,7 @@ import { loadRctsAutoSave, saveRctsAutoSave } from './storage/rctsSaveStorage.js
 const SUB_STAGE_UNLOCK_RUNS = 10
 const NEXT_GROUP_UNLOCK_RUNS = 50
 const GROUP_MASTER_RUNS = 100
+const CUSTOM_MASTER_RUNS = 100
 const MANUAL_WAIT_SECONDS = 30 * 60
 const AUTO_WAIT_SECONDS = 10 * 60
 const AUTO_SAVE_INTERVAL_MS = 10 * 60 * 1000
@@ -127,6 +221,14 @@ const stageDefinitions = [
   { id: 'galaxy_shuttle', groupId: 'space', localOrder: 3, name: '은하 셔틀', durationSeconds: 180 * DAY },
 ]
 
+const defaultCustomDraft = {
+  routeName: '',
+  roundTripDays: 0,
+  roundTripHours: 1,
+  roundTripMinutes: 0,
+  headwayMinutes: 30,
+}
+
 const standardNow = ref(new Date())
 const offlineReport = ref(null)
 let secondTimer = null
@@ -147,7 +249,27 @@ function createInitialStages() {
   })
 }
 
+function createInitialCustomRoutes() {
+  return groups.map((group) => ({
+    groupId: group.id,
+    created: false,
+    routeName: '',
+    roundTripSeconds: 1 * HOUR,
+    dispatchIntervalSeconds: 30 * MINUTE,
+    nextDispatchAt: null,
+    activeVehicles: [],
+    runs: 0,
+    pendingUpdate: null,
+  }))
+}
+
+function createInitialCustomDrafts() {
+  return Object.fromEntries(groups.map((group) => [group.id, { ...defaultCustomDraft }]))
+}
+
 const stages = reactive(createInitialStages())
+const customRoutes = reactive(createInitialCustomRoutes())
+const customDrafts = reactive(createInitialCustomDrafts())
 const logs = ref([])
 
 const standardClock = computed(() => formatStandardClock(standardNow.value))
@@ -171,15 +293,15 @@ function isGroupMaster(group) {
 
 function groupStateLabel(group) {
   if (!isGroupUnlocked(group)) return '대기'
-  if (isGroupMaster(group)) return '마스터'
+  if (isGroupMaster(group)) return customRoute(group.id).created ? '커스텀' : '마스터'
   if (groupTotal(group) >= NEXT_GROUP_UNLOCK_RUNS) return '다음 그룹 개방됨'
   return '진행중'
 }
 
 function groupSubtitle(group) {
   if (!isGroupUnlocked(group)) return '이전 그룹 50회 달성 시 첫 슬롯 자동개방'
-  if (isGroupMaster(group)) return '100회 달성 · 커스텀 영역 준비중'
-  return '50회 다음 그룹 · 100회 마스터'
+  if (isGroupMaster(group)) return customRoute(group.id).created ? '커스텀 노선 운행중' : '100회 달성 · 커스텀 노선 등록 가능'
+  return '50회 다음 그룹 · 100회 커스텀'
 }
 
 function getGroupById(groupId) {
@@ -198,6 +320,10 @@ function firstStageOfGroup(groupId) {
 
 function nextStageInGroup(stage) {
   return groupStages(stage.groupId).find((item) => item.localOrder === stage.localOrder + 1) ?? null
+}
+
+function customRoute(groupId) {
+  return customRoutes.find((route) => route.groupId === groupId)
 }
 
 function unlockStage(stage) {
@@ -249,6 +375,7 @@ function tickGame() {
   const now = new Date()
   const prev = new Date(now.getTime() - SECOND)
   standardNow.value = now
+  applyPendingCustomUpdates(now)
 
   stages.forEach((stage) => {
     if (!stage.unlocked || stage.phase === 'locked' || stage.phase === 'master') return
@@ -260,6 +387,7 @@ function tickGame() {
     if (stage.remainingSeconds <= 0) completeStageStep(stage)
   })
 
+  processCustomRoutes(now, 1)
   updateUnlocks()
 }
 
@@ -293,6 +421,177 @@ function getWaitSeconds(stage) {
 function getTickAmountForStage(stage, currentDate, previousDate) {
   if (stage.timeWindow === 'commuter') return countCommuterOperableSeconds(previousDate, currentDate)
   return 1
+}
+
+function processCustomRoutes(now, elapsedSeconds) {
+  applyPendingCustomUpdates(now)
+
+  customRoutes.forEach((route) => {
+    if (!route.created || route.runs >= CUSTOM_MASTER_RUNS) return
+
+    route.activeVehicles.forEach((vehicle) => {
+      vehicle.remainingSeconds = Math.max(0, vehicle.remainingSeconds - elapsedSeconds)
+    })
+
+    const completed = route.activeVehicles.filter((vehicle) => vehicle.remainingSeconds <= 0)
+    if (completed.length > 0) {
+      const availableRuns = CUSTOM_MASTER_RUNS - route.runs
+      const addRuns = Math.min(availableRuns, completed.length)
+      route.runs += addRuns
+      if (route.runs >= CUSTOM_MASTER_RUNS) addLog(`${getGroupById(route.groupId).name} 커스텀 마스터`)
+    }
+    route.activeVehicles = route.activeVehicles.filter((vehicle) => vehicle.remainingSeconds > 0)
+
+    dispatchCustomVehicles(route, now)
+  })
+}
+
+function dispatchCustomVehicles(route, now) {
+  if (!route.created || route.runs >= CUSTOM_MASTER_RUNS) return
+  if (!route.nextDispatchAt) route.nextDispatchAt = now.toISOString()
+
+  let nextTime = new Date(route.nextDispatchAt)
+  let guard = 0
+  const headway = Math.max(MINUTE, route.dispatchIntervalSeconds || 30 * MINUTE)
+
+  while (nextTime <= now && guard < 50 && route.runs < CUSTOM_MASTER_RUNS) {
+    guard += 1
+    if (isCustomServiceActive(route.groupId, nextTime)) {
+      route.activeVehicles.push({
+        id: cryptoRandomId(),
+        label: `${route.routeName} ${route.activeVehicles.length + 1}호`,
+        remainingSeconds: route.roundTripSeconds,
+        startedAt: nextTime.toISOString(),
+      })
+    }
+    nextTime = new Date(nextTime.getTime() + headway * SECOND)
+  }
+
+  route.nextDispatchAt = nextTime.toISOString()
+}
+
+function isCustomServiceActive(groupId, date) {
+  if (groupId !== 'bus') return true
+  if (!isStageUnlocked('commuter_charter')) return true
+  const hour = date.getHours()
+  return hour >= 6 && hour < 23
+}
+
+function createCustomRoute(groupId) {
+  const route = customRoute(groupId)
+  const draft = customDrafts[groupId]
+  if (!route || !draft) return
+
+  const name = draft.routeName?.trim() || `${getGroupById(groupId).name} 커스텀 노선`
+  const roundTripSeconds = normalizeCustomRoundTrip(groupId, (
+    (Number(draft.roundTripDays) || 0) * DAY
+    + (Number(draft.roundTripHours) || 0) * HOUR
+    + (Number(draft.roundTripMinutes) || 0) * MINUTE
+  ))
+  const dispatchIntervalSeconds = Math.max(MINUTE, (Number(draft.headwayMinutes) || 30) * MINUTE)
+
+  route.created = true
+  route.routeName = name
+  route.roundTripSeconds = roundTripSeconds
+  route.dispatchIntervalSeconds = dispatchIntervalSeconds
+  route.nextDispatchAt = new Date().toISOString()
+  route.activeVehicles = []
+  route.runs = 1
+  route.pendingUpdate = null
+  setDraftFromRoute(groupId)
+
+  addLog(`${getGroupById(groupId).name} 커스텀 노선 등록 · ${name}`)
+  saveSoon()
+}
+
+function reserveCustomRouteUpdate(groupId) {
+  const route = customRoute(groupId)
+  const draft = customDrafts[groupId]
+  if (!route?.created || !draft) return
+
+  const routeName = draft.routeName?.trim() || route.routeName
+  const roundTripSeconds = normalizeCustomRoundTrip(groupId, (
+    (Number(draft.roundTripDays) || 0) * DAY
+    + (Number(draft.roundTripHours) || 0) * HOUR
+    + (Number(draft.roundTripMinutes) || 0) * MINUTE
+  ))
+  const dispatchIntervalSeconds = Math.max(MINUTE, (Number(draft.headwayMinutes) || 30) * MINUTE)
+  const applyAt = nextDayStart(new Date()).toISOString()
+
+  route.pendingUpdate = {
+    routeName,
+    roundTripSeconds,
+    dispatchIntervalSeconds,
+    applyAt,
+  }
+
+  addLog(`${getGroupById(groupId).name} 커스텀 수정 예약 · 다음날 적용`)
+  saveSoon()
+}
+
+function applyPendingCustomUpdates(now) {
+  customRoutes.forEach((route) => {
+    if (!route.pendingUpdate?.applyAt) return
+    const applyAt = new Date(route.pendingUpdate.applyAt)
+    if (applyAt > now) return
+
+    route.routeName = route.pendingUpdate.routeName || route.routeName
+    route.roundTripSeconds = normalizeCustomRoundTrip(route.groupId, route.pendingUpdate.roundTripSeconds)
+    route.dispatchIntervalSeconds = Math.max(MINUTE, route.pendingUpdate.dispatchIntervalSeconds || route.dispatchIntervalSeconds)
+    route.nextDispatchAt = now.toISOString()
+    route.pendingUpdate = null
+    setDraftFromRoute(route.groupId)
+    addLog(`${getGroupById(route.groupId).name} 커스텀 수정 적용 · 다음날 반영 완료`)
+  })
+}
+
+function nextDayStart(date) {
+  const next = new Date(date)
+  next.setHours(0, 0, 0, 0)
+  next.setDate(next.getDate() + 1)
+  return next
+}
+
+function setDraftFromRoute(groupId) {
+  const route = customRoute(groupId)
+  const draft = customDrafts[groupId]
+  if (!route || !draft) return
+  const days = Math.floor(route.roundTripSeconds / DAY)
+  const hours = Math.floor((route.roundTripSeconds % DAY) / HOUR)
+  const minutes = Math.floor((route.roundTripSeconds % HOUR) / MINUTE)
+  draft.routeName = route.routeName
+  draft.roundTripDays = days
+  draft.roundTripHours = hours
+  draft.roundTripMinutes = minutes
+  draft.headwayMinutes = Math.max(1, Math.round(route.dispatchIntervalSeconds / MINUTE))
+}
+
+function normalizeCustomRoundTrip(groupId, seconds) {
+  let value = Math.max(10 * MINUTE, seconds || HOUR)
+  if (groupId === 'space') value = Math.max(30 * DAY, value)
+  return value
+}
+
+function isStageUnlocked(stageId) {
+  return stages.find((stage) => stage.id === stageId)?.unlocked ?? false
+}
+
+function customSummary(group) {
+  const route = customRoute(group.id)
+  if (!route?.created) return '노선명 · 왕복시간 · 배차간격 등록'
+  if (route.runs >= CUSTOM_MASTER_RUNS) return '커스텀 마스터'
+  return '배차간격에 따라 차량 생성 · 운행 완료 후 소멸'
+}
+
+function customTimerText(groupId) {
+  const route = customRoute(groupId)
+  if (!route?.created) return '준비'
+  if (route.runs >= CUSTOM_MASTER_RUNS) return 'MASTER'
+  const soonest = route.activeVehicles.reduce((min, vehicle) => Math.min(min, vehicle.remainingSeconds), Infinity)
+  if (Number.isFinite(soonest)) return formatDuration(soonest)
+  if (!route.nextDispatchAt) return '배차 대기'
+  const diff = Math.max(0, Math.floor((new Date(route.nextDispatchAt).getTime() - Date.now()) / SECOND))
+  return `배차 ${formatDuration(diff)}`
 }
 
 function applyOfflineProgress(elapsedSeconds, savedAtDate) {
@@ -335,19 +634,71 @@ function applyOfflineProgress(elapsedSeconds, savedAtDate) {
     })
   }
 
+  applyPendingCustomUpdates(new Date())
+  const customRuns = applyCustomOfflineProgress(elapsedSeconds)
+
   if (guard >= 20000 && remainingElapsed > 0) {
     addLog('오프라인 진행 일부 반영 · 장기 방치 보정 필요')
   }
 
   updateUnlocks()
 
-  if (completedRuns > 0) {
+  if (completedRuns > 0 || customRuns > 0) {
     offlineReport.value = {
       elapsedText: formatLongDuration(elapsedSeconds),
       completedRuns,
+      customRuns,
     }
-    addLog(`오프라인 진행 ${completedRuns}회 반영`)
+    addLog(`오프라인 진행 기본 ${completedRuns}회 · 커스텀 ${customRuns}회 반영`)
   }
+}
+
+function applyCustomOfflineProgress(elapsedSeconds) {
+  let customRuns = 0
+  const now = new Date()
+
+  customRoutes.forEach((route) => {
+    if (!route.created || route.runs >= CUSTOM_MASTER_RUNS) return
+
+    route.activeVehicles.forEach((vehicle) => {
+      vehicle.remainingSeconds = Math.max(0, vehicle.remainingSeconds - elapsedSeconds)
+    })
+
+    const completed = route.activeVehicles.filter((vehicle) => vehicle.remainingSeconds <= 0).length
+    if (completed > 0) {
+      const addRuns = Math.min(CUSTOM_MASTER_RUNS - route.runs, completed)
+      route.runs += addRuns
+      customRuns += addRuns
+    }
+    route.activeVehicles = route.activeVehicles.filter((vehicle) => vehicle.remainingSeconds > 0)
+
+    if (!route.nextDispatchAt) route.nextDispatchAt = now.toISOString()
+    let nextTime = new Date(route.nextDispatchAt)
+    const headway = Math.max(MINUTE, route.dispatchIntervalSeconds || 30 * MINUTE)
+    let guard = 0
+
+    while (nextTime <= now && route.runs < CUSTOM_MASTER_RUNS && guard < 1000) {
+      guard += 1
+      if (isCustomServiceActive(route.groupId, nextTime)) {
+        const ageSeconds = Math.floor((now.getTime() - nextTime.getTime()) / SECOND)
+        if (ageSeconds >= route.roundTripSeconds) {
+          route.runs += 1
+          customRuns += 1
+        } else {
+          route.activeVehicles.push({
+            id: cryptoRandomId(),
+            label: `${route.routeName} ${route.activeVehicles.length + 1}호`,
+            remainingSeconds: route.roundTripSeconds - ageSeconds,
+            startedAt: nextTime.toISOString(),
+          })
+        }
+      }
+      nextTime = new Date(nextTime.getTime() + headway * SECOND)
+    }
+    route.nextDispatchAt = nextTime.toISOString()
+  })
+
+  return customRuns
 }
 
 function realSecondsUntilStageEvent(stage, cursor, maxSeconds) {
@@ -448,7 +799,7 @@ function overlapSeconds(rangeStart, rangeEnd, windowStart, windowEnd) {
 
 function stageStateLabel(stage) {
   if (!stage.unlocked) return '대기'
-  if (stage.phase === 'master') return '마스터'
+  if (stage.phase === 'master') return '기본 완료'
   const mode = stage.runs >= SUB_STAGE_UNLOCK_RUNS ? '자동' : `${stage.runs}/${SUB_STAGE_UNLOCK_RUNS}회`
   if (stage.phase === 'waiting') return `${mode} · 대기중`
   if (stage.phase === 'running') return `${mode} · 운행중`
@@ -457,7 +808,7 @@ function stageStateLabel(stage) {
 
 function timerText(stage) {
   if (!stage.unlocked) return '대기'
-  if (stage.phase === 'master') return 'MASTER'
+  if (stage.phase === 'master') return '완료'
   if (stage.timeWindow === 'commuter' && !isCommuterWindow(standardNow.value)) return `휴식 · ${formatDuration(stage.remainingSeconds)}`
   return formatDuration(stage.remainingSeconds)
 }
@@ -491,6 +842,18 @@ function getSavePayload() {
       runs: stage.runs,
       remainingSeconds: stage.remainingSeconds,
     })),
+    customRoutes: customRoutes.map((route) => ({
+      groupId: route.groupId,
+      created: route.created,
+      routeName: route.routeName,
+      roundTripSeconds: route.roundTripSeconds,
+      dispatchIntervalSeconds: route.dispatchIntervalSeconds,
+      nextDispatchAt: route.nextDispatchAt,
+      activeVehicles: route.activeVehicles,
+      runs: route.runs,
+      pendingUpdate: route.pendingUpdate,
+    })),
+    customDrafts: JSON.parse(JSON.stringify(customDrafts)),
     logs: logs.value,
   }
 }
@@ -524,6 +887,28 @@ async function loadSave() {
     })
   }
 
+  if (Array.isArray(payload.customRoutes)) {
+    payload.customRoutes.forEach((savedRoute) => {
+      const route = customRoute(savedRoute.groupId)
+      if (!route) return
+      route.created = Boolean(savedRoute.created)
+      route.routeName = savedRoute.routeName || ''
+      route.roundTripSeconds = Number(savedRoute.roundTripSeconds) || HOUR
+      route.dispatchIntervalSeconds = Number(savedRoute.dispatchIntervalSeconds) || 30 * MINUTE
+      route.nextDispatchAt = savedRoute.nextDispatchAt || null
+      route.activeVehicles = Array.isArray(savedRoute.activeVehicles) ? savedRoute.activeVehicles : []
+      route.runs = Math.min(CUSTOM_MASTER_RUNS, Number(savedRoute.runs) || 0)
+      route.pendingUpdate = savedRoute.pendingUpdate ?? null
+      if (route.created) setDraftFromRoute(route.groupId)
+    })
+  }
+
+  if (payload.customDrafts && typeof payload.customDrafts === 'object') {
+    Object.keys(customDrafts).forEach((groupId) => {
+      Object.assign(customDrafts[groupId], payload.customDrafts[groupId] ?? {})
+    })
+  }
+
   if (Array.isArray(payload.logs)) logs.value = payload.logs.slice(0, 20)
 
   const savedAtIso = payload.savedAt ?? record.savedAt
@@ -550,6 +935,13 @@ function scheduleStandardTick() {
 
 function handleVisibilityChange() {
   if (document.visibilityState === 'hidden') saveSoon()
+}
+
+function formatApplyDate(value) {
+  const date = new Date(value)
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  return `${mm}.${dd} 00:00`
 }
 
 function formatStandardClock(date) {
@@ -646,7 +1038,7 @@ html::-webkit-scrollbar,
 body::-webkit-scrollbar,
 #app::-webkit-scrollbar,
 .rcts-shell::-webkit-scrollbar { width: 0; height: 0; display: none; }
-button { font-family: inherit; }
+button, input { font-family: inherit; }
 
 .rcts-shell { min-height: 100vh; overflow: visible; }
 .top-header {
@@ -680,7 +1072,9 @@ button { font-family: inherit; }
 }
 .offline-card,
 .group-card,
-.slot-card {
+.slot-card,
+.custom-area,
+.custom-slot {
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 14px;
@@ -696,13 +1090,14 @@ button { font-family: inherit; }
 .offline-card div { display: grid; gap: 2px; }
 .offline-card strong { color: var(--blue); font-size: 13px; }
 .offline-card span { color: var(--muted); font-size: 12px; }
-.offline-card button {
+.offline-card button,
+.custom-form button {
   border: 0;
   border-radius: 999px;
   padding: 7px 10px;
-  background: rgba(148, 163, 184, 0.18);
+  background: rgba(56, 189, 248, 0.22);
   color: var(--text);
-  font-weight: 800;
+  font-weight: 900;
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
@@ -724,15 +1119,6 @@ button { font-family: inherit; }
 .group-state { display: grid; justify-items: end; gap: 2px; min-width: max-content; }
 .group-state strong { color: var(--blue); font-size: 15px; font-variant-numeric: tabular-nums; }
 .group-state span { color: var(--muted); font-size: 10px; }
-.custom-ready {
-  padding: 7px 10px;
-  border: 1px solid rgba(34, 197, 94, 0.32);
-  border-radius: 10px;
-  background: rgba(34, 197, 94, 0.08);
-  color: #86efac;
-  font-size: 12px;
-  font-weight: 800;
-}
 
 .slot-list { display: grid; gap: 6px; }
 .slot-card {
@@ -786,6 +1172,112 @@ p { margin: 1px 0 0; color: var(--muted); font-size: 10px; white-space: nowrap; 
   max-width: 100%;
 }
 
+.custom-area {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.055);
+}
+.custom-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.custom-head strong { color: #86efac; font-size: 13px; }
+.custom-head span { color: var(--muted); font-size: 10px; text-align: right; }
+.custom-form {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.1fr) minmax(160px, 1.5fr) minmax(90px, 0.7fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+.custom-form label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; }
+.custom-form input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 9px;
+  background: rgba(6, 15, 28, 0.72);
+  color: var(--text);
+  font-weight: 800;
+}
+.time-inputs { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto; gap: 4px; align-items: center; }
+.time-inputs.short { grid-template-columns: 1fr auto; }
+.time-inputs em { color: var(--muted); font-style: normal; font-size: 10px; }
+.timetable-note {
+  grid-column: 1 / -1;
+  padding: 7px 9px;
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  border-radius: 10px;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 900;
+  background: rgba(56, 189, 248, 0.07);
+}
+.timetable-note small { display: block; margin-top: 3px; color: var(--muted); font-weight: 700; }
+.custom-slot {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(118px, 190px) minmax(84px, 0.6fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 9px;
+  background: rgba(15, 28, 48, 0.74);
+}
+.custom-slot.complete { border-color: rgba(34, 197, 94, 0.58); }
+.custom-title { min-width: 0; }
+.custom-timer { display: grid; justify-items: center; gap: 3px; text-align: center; }
+.custom-timer strong {
+  color: #86efac;
+  font-size: clamp(18px, 3vw, 24px);
+  line-height: 1;
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+}
+.custom-timer span,
+.custom-side span { color: var(--muted); font-size: 10px; }
+.custom-side { display: grid; justify-items: end; gap: 2px; }
+.custom-side strong { color: #86efac; font-size: 14px; font-variant-numeric: tabular-nums; }
+.pending-update {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  font-size: 10px;
+  font-weight: 900;
+  width: fit-content;
+}
+.custom-edit-form {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.vehicle-strip,
+.vehicle-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.vehicle-strip span,
+.vehicle-empty {
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+@media (max-width: 760px) {
+  .custom-form { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 640px) {
   .top-header { padding: 9px 10px; }
   .brand span { display: none; }
@@ -805,5 +1297,13 @@ p { margin: 1px 0 0; color: var(--muted); font-size: 10px; white-space: nowrap; 
   p { font-size: 9px; }
   .slot-timer strong { font-size: clamp(18px, 6.5vw, 25px); }
   .slot-side span { font-size: 9px; }
+  .custom-head { align-items: start; }
+  .custom-head span { max-width: 48%; }
+  .custom-slot {
+    grid-template-columns: minmax(86px, 1fr) minmax(100px, 1fr) minmax(58px, 0.6fr);
+    gap: 5px;
+    padding: 7px;
+  }
+  .custom-timer strong { font-size: clamp(17px, 6vw, 23px); }
 }
 </style>
