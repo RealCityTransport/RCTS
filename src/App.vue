@@ -3,7 +3,7 @@
     <header class="top-header">
       <div class="brand">
         <strong>RCTS</strong>
-        <span>교통 슬롯 진행</span>
+        <span>자동 교통 슬롯</span>
       </div>
       <div class="clock-box">
         <span>표준시간</span>
@@ -15,9 +15,17 @@
       <section v-if="offlineReport" class="offline-card">
         <div>
           <strong>오프라인 반영</strong>
-          <span>{{ offlineReport.elapsedText }} · {{ offlineReport.completedRuns }}회 진행</span>
+          <span>{{ offlineReport.elapsedText }} · 완료 {{ offlineReport.completedRuns }}회</span>
         </div>
         <button type="button" @click="offlineReport = null">닫기</button>
+      </section>
+
+      <section class="custom-area" aria-label="커스텀 영역 준비 현황">
+        <article v-for="group in groupSummaries" :key="group.id" class="custom-pill" :class="{ ready: group.count >= CUSTOM_UNLOCK_RUNS }">
+          <strong>{{ group.name }}</strong>
+          <span>{{ Math.min(group.count, CUSTOM_UNLOCK_RUNS) }}/{{ CUSTOM_UNLOCK_RUNS }}회</span>
+          <em>{{ group.count >= CUSTOM_UNLOCK_RUNS ? '커스텀 영역 준비중' : '커스텀 준비중' }}</em>
+        </article>
       </section>
 
       <section class="slot-list" aria-label="교통 운행 슬롯 목록">
@@ -29,7 +37,7 @@
             locked: !stage.unlocked,
             running: stage.status === 'running',
             waiting: stage.status === 'waiting',
-            auto: isAutoStage(stage),
+            automated: stage.runs >= STAGE_UNLOCK_RUNS,
           }"
         >
           <div class="slot-title">
@@ -57,35 +65,44 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { loadRctsAutoSave, saveRctsAutoSave } from './storage/rctsSaveStorage.js'
 
-const TARGET_RUNS = 10
-const BEFORE_TARGET_WAIT_SECONDS = 30 * 60
-const AFTER_TARGET_WAIT_SECONDS = 10 * 60
+const STAGE_UNLOCK_RUNS = 10
+const CUSTOM_UNLOCK_RUNS = 100
+const BEFORE_UNLOCK_WAIT_SECONDS = 30 * 60
+const AFTER_UNLOCK_WAIT_SECONDS = 10 * 60
 const AUTO_SAVE_INTERVAL_MS = 10 * 60 * 1000
-const SECOND_MS = 1000
+const SECOND = 1000
 const MINUTE = 60
 const HOUR = 3600
 const DAY = 86400
 
+const groupDefinitions = [
+  { id: 'bus', name: '버스' },
+  { id: 'rail', name: '철도' },
+  { id: 'air', name: '항공' },
+  { id: 'ship', name: '선박' },
+  { id: 'space', name: '우주선' },
+]
+
 const stageDefinitions = [
-  { id: 'village_bus', order: 1, name: '마을버스', durationSeconds: 30 * MINUTE },
-  { id: 'city_bus', order: 2, name: '시내버스', durationSeconds: 1 * HOUR },
-  { id: 'express_bus', order: 3, name: '광역버스', durationSeconds: 2 * HOUR },
-  { id: 'commuter_charter', order: 4, name: '전세통근', durationSeconds: 8 * HOUR, timeWindow: 'commuter' },
-  { id: 'charter_bus', order: 5, name: '전세버스', durationSeconds: 3 * DAY },
-  { id: 'tram', order: 6, name: '트램', durationSeconds: 1 * HOUR },
-  { id: 'light_rail', order: 7, name: '경전철', durationSeconds: 1 * HOUR },
-  { id: 'metro_rail', order: 8, name: '광역전철', durationSeconds: 2 * HOUR },
-  { id: 'general_train', order: 9, name: '일반열차', durationSeconds: 4 * HOUR },
-  { id: 'domestic_hsr', order: 10, name: '국내고속열차', durationSeconds: 2 * HOUR },
-  { id: 'international_hsr', order: 11, name: '국제고속열차', durationSeconds: 6 * HOUR },
-  { id: 'domestic_flight', order: 12, name: '국내선 항공', durationSeconds: 2 * HOUR },
-  { id: 'international_flight', order: 13, name: '국제선 항공', durationSeconds: 10 * HOUR },
-  { id: 'domestic_ship', order: 14, name: '국내선 선박', durationSeconds: 1 * DAY },
-  { id: 'short_international_ship', order: 15, name: '국제선 단거리 선박', durationSeconds: 15 * DAY },
-  { id: 'long_international_ship', order: 16, name: '국제선 장거리 선박', durationSeconds: 30 * DAY },
-  { id: 'space_station_shuttle', order: 17, name: '우주정거장 셔틀', durationSeconds: 3 * HOUR },
-  { id: 'stellar_shuttle', order: 18, name: '성계 셔틀', durationSeconds: 60 * DAY },
-  { id: 'galaxy_shuttle', order: 19, name: '은하 셔틀', durationSeconds: 180 * DAY },
+  { id: 'village_bus', groupId: 'bus', order: 1, name: '마을버스', durationSeconds: 30 * MINUTE },
+  { id: 'city_bus', groupId: 'bus', order: 2, name: '시내버스', durationSeconds: 1 * HOUR },
+  { id: 'express_bus', groupId: 'bus', order: 3, name: '광역버스', durationSeconds: 2 * HOUR },
+  { id: 'commuter_charter', groupId: 'bus', order: 4, name: '전세통근', durationSeconds: 8 * HOUR, timeWindow: 'commuter' },
+  { id: 'charter_bus', groupId: 'bus', order: 5, name: '전세버스', durationSeconds: 3 * DAY },
+  { id: 'tram', groupId: 'rail', order: 6, name: '트램', durationSeconds: 1 * HOUR },
+  { id: 'light_rail', groupId: 'rail', order: 7, name: '경전철', durationSeconds: 1 * HOUR },
+  { id: 'metro_rail', groupId: 'rail', order: 8, name: '광역전철', durationSeconds: 2 * HOUR },
+  { id: 'general_train', groupId: 'rail', order: 9, name: '일반열차', durationSeconds: 4 * HOUR },
+  { id: 'domestic_hsr', groupId: 'rail', order: 10, name: '국내고속열차', durationSeconds: 2 * HOUR },
+  { id: 'international_hsr', groupId: 'rail', order: 11, name: '국제고속열차', durationSeconds: 6 * HOUR },
+  { id: 'domestic_flight', groupId: 'air', order: 12, name: '국내선 항공', durationSeconds: 2 * HOUR },
+  { id: 'international_flight', groupId: 'air', order: 13, name: '국제선 항공', durationSeconds: 10 * HOUR },
+  { id: 'domestic_ship', groupId: 'ship', order: 14, name: '국내선 선박', durationSeconds: 1 * DAY },
+  { id: 'short_international_ship', groupId: 'ship', order: 15, name: '국제선 단거리 선박', durationSeconds: 15 * DAY },
+  { id: 'long_international_ship', groupId: 'ship', order: 16, name: '국제선 장거리 선박', durationSeconds: 30 * DAY },
+  { id: 'space_station_shuttle', groupId: 'space', order: 17, name: '우주정거장 셔틀', durationSeconds: 3 * HOUR },
+  { id: 'stellar_shuttle', groupId: 'space', order: 18, name: '성계 셔틀', durationSeconds: 60 * DAY },
+  { id: 'galaxy_shuttle', groupId: 'space', order: 19, name: '은하 셔틀', durationSeconds: 180 * DAY },
 ]
 
 const standardNow = ref(new Date())
@@ -110,103 +127,112 @@ const logs = ref([])
 
 const standardClock = computed(() => formatStandardClock(standardNow.value))
 
-function isAutoStage(stage) {
-  return stage.unlocked && stage.runs >= TARGET_RUNS
-}
-
-function getWaitSeconds(stage) {
-  return isAutoStage(stage) ? AFTER_TARGET_WAIT_SECONDS : BEFORE_TARGET_WAIT_SECONDS
-}
+const groupSummaries = computed(() => groupDefinitions.map((group) => ({
+  ...group,
+  count: stages
+    .filter((stage) => stage.groupId === group.id)
+    .reduce((sum, stage) => sum + stage.runs, 0),
+})))
 
 function getNextStage(stage) {
   return stages.find((item) => item.order === stage.order + 1)
 }
 
-function unlockNextStage(stage) {
-  const next = getNextStage(stage)
-  if (!next || next.unlocked) return
-
-  next.unlocked = true
-  next.status = 'running'
-  next.runs = 0
-  next.remainingSeconds = next.durationSeconds
-  addLog(`${next.name} 자동 개방`)
+function waitSecondsForStage(stage) {
+  return stage.runs >= STAGE_UNLOCK_RUNS ? AFTER_UNLOCK_WAIT_SECONDS : BEFORE_UNLOCK_WAIT_SECONDS
 }
 
 function tickGame() {
   const now = new Date()
-  const prev = new Date(now.getTime() - SECOND_MS)
+  const prev = new Date(now.getTime() - SECOND)
   standardNow.value = now
 
   stages.forEach((stage) => {
-    if (!stage.unlocked) return
-    tickStage(stage, 1, prev, now)
-  })
-}
+    if (!stage.unlocked || stage.status === 'locked') return
 
-function tickStage(stage, elapsedSeconds, startDate, endDate) {
-  if (elapsedSeconds <= 0) return
+    const tickAmount = getTickAmountForStage(stage, now, prev)
+    if (tickAmount <= 0) return
 
-  if (stage.status === 'waiting') {
-    stage.remainingSeconds = Math.max(0, normalizeRemaining(stage, getWaitSeconds(stage)) - elapsedSeconds)
+    stage.remainingSeconds = Math.max(0, normalizeRemaining(stage) - tickAmount)
+
     if (stage.remainingSeconds <= 0) {
-      stage.status = 'running'
-      stage.remainingSeconds = stage.durationSeconds
+      if (stage.status === 'running') completeStageRun(stage)
+      else if (stage.status === 'waiting') startNextRun(stage)
     }
-    return
-  }
-
-  if (stage.status !== 'running') return
-
-  const effectiveElapsed = stage.timeWindow === 'commuter'
-    ? countCommuterOperableSeconds(startDate, endDate)
-    : elapsedSeconds
-
-  if (effectiveElapsed <= 0) return
-
-  stage.remainingSeconds = Math.max(0, normalizeRemaining(stage, stage.durationSeconds) - effectiveElapsed)
-  if (stage.remainingSeconds <= 0) completeStageRun(stage)
+  })
 }
 
 function completeStageRun(stage) {
   stage.runs += 1
 
-  if (stage.runs === TARGET_RUNS) {
-    unlockNextStage(stage)
-    addLog(`${stage.name} 10회 완료`)
+  if (stage.runs === STAGE_UNLOCK_RUNS) {
+    openNextStageAutomatically(stage)
   }
 
   stage.status = 'waiting'
-  stage.remainingSeconds = getWaitSeconds(stage)
+  stage.remainingSeconds = waitSecondsForStage(stage)
+}
+
+function startNextRun(stage) {
+  stage.status = 'running'
+  stage.remainingSeconds = stage.durationSeconds
+}
+
+function openNextStageAutomatically(stage) {
+  const next = getNextStage(stage)
+  if (!next || next.unlocked) return
+
+  next.unlocked = true
+  next.status = 'running'
+  next.remainingSeconds = next.durationSeconds
+  addLog(`${stage.name} 10회 완료 · ${next.name} 자동개방`)
+}
+
+function getTickAmountForStage(stage, currentDate, previousDate) {
+  if (stage.status !== 'running') return 1
+  if (stage.timeWindow === 'commuter') return countCommuterOperableSeconds(previousDate, currentDate)
+  return 1
 }
 
 function applyOfflineProgress(elapsedSeconds, savedAtDate) {
   if (elapsedSeconds <= 0) return
 
-  let cursor = new Date(savedAtDate)
-  let restSeconds = elapsedSeconds
+  const start = savedAtDate
+  const end = new Date(start.getTime() + elapsedSeconds * SECOND)
   let completedRuns = 0
-  let guard = 0
 
-  while (restSeconds > 0 && guard < 50000) {
-    guard += 1
-    const activeStages = stages.filter((stage) => stage.unlocked && (stage.status === 'running' || stage.status === 'waiting'))
-    if (activeStages.length === 0) break
+  stages.forEach((stage) => {
+    if (!stage.unlocked || stage.status === 'locked') return
 
-    const nextSeconds = Math.max(1, Math.min(restSeconds, ...activeStages.map((stage) => secondsToNextEvent(stage, cursor))))
-    const nextDate = new Date(cursor.getTime() + nextSeconds * SECOND_MS)
+    let effectiveElapsed = stage.status === 'running' && stage.timeWindow === 'commuter'
+      ? countCommuterOperableSeconds(start, end)
+      : elapsedSeconds
 
-    activeStages.forEach((stage) => {
-      const beforeRuns = stage.runs
-      tickStage(stage, nextSeconds, cursor, nextDate)
-      completedRuns += Math.max(0, stage.runs - beforeRuns)
-    })
+    let guard = 0
+    while (effectiveElapsed > 0 && guard < 5000) {
+      guard += 1
+      const remaining = normalizeRemaining(stage)
 
-    restSeconds -= nextSeconds
-    cursor = nextDate
-  }
+      if (effectiveElapsed < remaining) {
+        stage.remainingSeconds = remaining - effectiveElapsed
+        effectiveElapsed = 0
+        break
+      }
 
-  standardNow.value = new Date(savedAtDate.getTime() + elapsedSeconds * SECOND_MS)
+      effectiveElapsed -= remaining
+
+      if (stage.status === 'running') {
+        stage.runs += 1
+        completedRuns += 1
+        if (stage.runs === STAGE_UNLOCK_RUNS) openNextStageAutomatically(stage)
+        stage.status = 'waiting'
+        stage.remainingSeconds = waitSecondsForStage(stage)
+      } else if (stage.status === 'waiting') {
+        stage.status = 'running'
+        stage.remainingSeconds = stage.durationSeconds
+      }
+    }
+  })
 
   if (completedRuns > 0) {
     offlineReport.value = {
@@ -217,52 +243,11 @@ function applyOfflineProgress(elapsedSeconds, savedAtDate) {
   }
 }
 
-function secondsToNextEvent(stage, fromDate) {
-  if (stage.status === 'waiting') return Math.max(1, normalizeRemaining(stage, getWaitSeconds(stage)))
-  if (stage.timeWindow === 'commuter') return actualSecondsForCommuterWork(fromDate, normalizeRemaining(stage, stage.durationSeconds))
-  return Math.max(1, normalizeRemaining(stage, stage.durationSeconds))
-}
-
-function actualSecondsForCommuterWork(fromDate, requiredOperableSeconds) {
-  if (requiredOperableSeconds <= 0) return 1
-
-  let worked = 0
-  let actual = 0
-  const cursor = new Date(fromDate)
-
-  while (worked < requiredOperableSeconds && actual < 370 * DAY) {
-    const nextBoundary = getNextCommuterBoundary(cursor)
-    const stepSeconds = Math.max(1, Math.floor((nextBoundary.getTime() - cursor.getTime()) / SECOND_MS))
-    const nextDate = new Date(cursor.getTime() + stepSeconds * SECOND_MS)
-    const operable = countCommuterOperableSeconds(cursor, nextDate)
-
-    if (operable > 0) {
-      const need = requiredOperableSeconds - worked
-      if (operable >= need) return actual + need
-      worked += operable
-    }
-
-    actual += stepSeconds
-    cursor.setTime(nextDate.getTime())
+function normalizeRemaining(stage) {
+  if (!Number.isFinite(stage.remainingSeconds) || stage.remainingSeconds <= 0) {
+    return stage.status === 'waiting' ? waitSecondsForStage(stage) : stage.durationSeconds
   }
-
-  return Math.max(1, actual)
-}
-
-function getNextCommuterBoundary(date) {
-  const candidates = []
-  for (let offset = 0; offset <= 8; offset += 1) {
-    const base = new Date(date)
-    base.setDate(date.getDate() + offset)
-    base.setHours(0, 0, 0, 0)
-    candidates.push(withHour(base, 6), withHour(base, 10), withHour(base, 17), withHour(base, 21))
-  }
-  return candidates.find((candidate) => candidate > date) ?? new Date(date.getTime() + HOUR * SECOND_MS)
-}
-
-function normalizeRemaining(stage, fallbackSeconds) {
-  if (!Number.isFinite(stage.remainingSeconds) || stage.remainingSeconds <= 0) return fallbackSeconds
-  return Math.floor(stage.remainingSeconds)
+  return stage.remainingSeconds
 }
 
 function countCommuterOperableSeconds(startDate, endDate) {
@@ -296,26 +281,25 @@ function withHour(baseDate, hour) {
 function overlapSeconds(rangeStart, rangeEnd, windowStart, windowEnd) {
   const start = Math.max(rangeStart.getTime(), windowStart.getTime())
   const end = Math.min(rangeEnd.getTime(), windowEnd.getTime())
-  return Math.max(0, Math.floor((end - start) / SECOND_MS))
+  return Math.max(0, Math.floor((end - start) / SECOND))
 }
 
 function stageStateLabel(stage) {
   if (!stage.unlocked) return '대기'
-  if (isAutoStage(stage)) return stage.status === 'waiting' ? '자동 · 대기' : '자동 · 운행중'
-  if (stage.status === 'waiting') return `${stage.runs}/${TARGET_RUNS}회 · 대기`
-  return `${stage.runs}/${TARGET_RUNS}회 · 운행중`
+  if (stage.runs < STAGE_UNLOCK_RUNS) return `${stage.runs}/${STAGE_UNLOCK_RUNS}회 · ${stage.status === 'waiting' ? '대기중' : '운행중'}`
+  return stage.status === 'waiting' ? '자동 · 대기중' : '자동 · 운행중'
 }
 
 function timerText(stage) {
   if (!stage.unlocked) return '대기'
-  if (stage.status === 'waiting') return formatDuration(stage.remainingSeconds)
-  if (stage.timeWindow === 'commuter' && !isCommuterWindow(standardNow.value)) return `휴식 ${formatDuration(stage.remainingSeconds)}`
+  if (stage.status === 'running' && stage.timeWindow === 'commuter' && !isCommuterWindow(standardNow.value)) {
+    return `휴식 ${formatDuration(stage.remainingSeconds)}`
+  }
   return formatDuration(stage.remainingSeconds)
 }
 
 function stageDurationLabel(stage) {
-  if (!stage.unlocked) return '이전 슬롯 자동 완료 후 개방'
-  if (stage.timeWindow === 'commuter') return '1회 8시간 · 월~금 06~10 / 17~21'
+  if (stage.timeWindow === 'commuter') return '월~금 06~10 / 17~21'
   return `1회 ${formatLongDuration(stage.durationSeconds)}`
 }
 
@@ -359,7 +343,11 @@ async function saveSoon() {
 
 async function loadSave() {
   const record = await loadRctsAutoSave()
-  if (!record?.payload) return
+  if (!record?.payload) {
+    stages[0].unlocked = true
+    stages[0].status = 'running'
+    return
+  }
 
   const payload = record.payload
   if (Array.isArray(payload.stages)) {
@@ -369,29 +357,27 @@ async function loadSave() {
       stage.unlocked = Boolean(savedStage.unlocked)
       stage.status = savedStage.status === 'waiting' ? 'waiting' : savedStage.status === 'running' ? 'running' : stage.unlocked ? 'running' : 'locked'
       stage.runs = Number(savedStage.runs) || 0
-      stage.remainingSeconds = Number(savedStage.remainingSeconds) || (stage.status === 'waiting' ? getWaitSeconds(stage) : stage.durationSeconds)
+      stage.remainingSeconds = Number(savedStage.remainingSeconds) || normalizeRemaining(stage)
     })
   }
 
   if (Array.isArray(payload.logs)) logs.value = payload.logs.slice(0, 20)
 
-  const first = stages[0]
-  if (first && !first.unlocked) {
-    first.unlocked = true
-    first.status = 'running'
-    first.remainingSeconds = first.durationSeconds
+  if (!stages.some((stage) => stage.unlocked)) {
+    stages[0].unlocked = true
+    stages[0].status = 'running'
   }
 
   const savedAtIso = payload.savedAt ?? record.savedAt
   if (savedAtIso) {
     const savedAt = new Date(savedAtIso)
-    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - savedAt.getTime()) / SECOND_MS))
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - savedAt.getTime()) / SECOND))
     applyOfflineProgress(elapsedSeconds, savedAt)
   }
 }
 
 function scheduleTimers() {
-  secondTimer = window.setInterval(tickGame, SECOND_MS)
+  secondTimer = window.setInterval(tickGame, SECOND)
   autoSaveTimer = window.setInterval(saveSoon, AUTO_SAVE_INTERVAL_MS)
   scheduleStandardTick()
 }
@@ -481,18 +467,12 @@ onBeforeUnmount(() => {
   --muted: #92a4bd;
   --blue: #38bdf8;
   --green: #22c55e;
+  --yellow: #f59e0b;
 }
 
 * { box-sizing: border-box; }
-html, body, #app {
-  min-height: 100%;
-  margin: 0;
-}
-html {
-  overflow-y: scroll;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
+html, body, #app { min-height: 100%; margin: 0; }
+html { overflow-y: scroll; scrollbar-width: none; -ms-overflow-style: none; }
 body {
   font-family: Inter, Pretendard, Apple SD Gothic Neo, Noto Sans KR, system-ui, sans-serif;
   background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 32%), var(--bg);
@@ -504,17 +484,10 @@ body {
 html::-webkit-scrollbar,
 body::-webkit-scrollbar,
 #app::-webkit-scrollbar,
-.rcts-shell::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
-}
+.rcts-shell::-webkit-scrollbar { width: 0; height: 0; display: none; }
 button { font-family: inherit; }
 
-.rcts-shell {
-  min-height: 100vh;
-  overflow: visible;
-}
+.rcts-shell { min-height: 100vh; overflow: visible; }
 .top-header {
   position: fixed;
   top: 0;
@@ -545,7 +518,8 @@ button { font-family: inherit; }
   gap: 8px;
 }
 .offline-card,
-.slot-card {
+.slot-card,
+.custom-pill {
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 14px;
@@ -564,7 +538,7 @@ button { font-family: inherit; }
 .offline-card button {
   border: 0;
   border-radius: 999px;
-  padding: 7px 10px;
+  padding: 6px 10px;
   background: rgba(148, 163, 184, 0.18);
   color: var(--text);
   font-weight: 800;
@@ -573,19 +547,36 @@ button { font-family: inherit; }
   white-space: nowrap;
 }
 
+.custom-area {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+.custom-pill {
+  min-height: 54px;
+  padding: 8px 9px;
+  display: grid;
+  gap: 2px;
+}
+.custom-pill strong { font-size: 12px; color: var(--text); }
+.custom-pill span { font-size: 15px; font-weight: 950; color: var(--blue); font-variant-numeric: tabular-nums; }
+.custom-pill em { font-size: 10px; color: var(--muted); font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.custom-pill.ready { border-color: rgba(34, 197, 94, 0.5); }
+.custom-pill.ready span { color: var(--green); }
+
 .slot-list { display: grid; gap: 8px; }
 .slot-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(118px, 190px) minmax(84px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(118px, 196px) minmax(74px, 1fr);
   gap: 8px;
   align-items: center;
   min-height: 56px;
   padding: 8px 10px;
 }
-.slot-card.locked { opacity: 0.42; }
+.slot-card.locked { opacity: 0.43; }
 .slot-card.running { border-color: rgba(56, 189, 248, 0.46); }
-.slot-card.waiting { border-color: rgba(148, 163, 184, 0.26); }
-.slot-card.auto { border-color: rgba(34, 197, 94, 0.42); }
+.slot-card.waiting { border-color: rgba(245, 158, 11, 0.34); }
+.slot-card.automated { border-color: rgba(34, 197, 94, 0.38); }
 .slot-title { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .slot-order {
   width: 24px;
@@ -601,27 +592,17 @@ button { font-family: inherit; }
 }
 h2 { margin: 0; font-size: 14px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 p { margin: 1px 0 0; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.slot-timer {
-  display: grid;
-  place-items: center;
-  min-width: 0;
-  text-align: center;
-}
+.slot-timer { display: grid; place-items: center; min-width: 0; text-align: center; }
 .slot-timer strong {
   color: var(--blue);
-  font-size: clamp(19px, 3.4vw, 28px);
+  font-size: clamp(20px, 4vw, 28px);
   line-height: 1;
   font-weight: 950;
   letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.slot-side {
-  display: grid;
-  justify-items: end;
-  gap: 4px;
-  min-width: 0;
-}
+.slot-side { display: grid; justify-items: end; gap: 4px; min-width: 0; }
 .slot-state {
   color: var(--muted);
   font-size: 11px;
@@ -637,8 +618,11 @@ p { margin: 1px 0 0; color: var(--muted); font-size: 11px; white-space: nowrap; 
   .top-header { padding: 9px 10px; }
   .brand span { display: none; }
   .page-body { width: min(100% - 10px, 980px); padding-top: 66px; }
+  .custom-area { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+  .custom-pill { min-height: 48px; padding: 7px 8px; }
+  .custom-pill span { font-size: 13px; }
   .slot-card {
-    grid-template-columns: minmax(78px, 1fr) minmax(98px, 1.05fr) minmax(70px, 0.9fr);
+    grid-template-columns: minmax(82px, 1fr) minmax(104px, 1.02fr) minmax(66px, 0.88fr);
     gap: 5px;
     min-height: 54px;
     padding: 7px 8px;
@@ -646,7 +630,7 @@ p { margin: 1px 0 0; color: var(--muted); font-size: 11px; white-space: nowrap; 
   .slot-order { width: 22px; height: 22px; font-size: 10px; border-radius: 8px; }
   h2 { font-size: 13px; }
   p { font-size: 10px; }
-  .slot-timer strong { font-size: clamp(18px, 6.2vw, 25px); }
+  .slot-timer strong { font-size: clamp(19px, 7vw, 26px); }
   .slot-state { font-size: 10px; }
 }
 </style>
