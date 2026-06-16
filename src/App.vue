@@ -3,7 +3,8 @@
     <header class="top-header">
       <div class="brand">
         <strong>RCTS</strong>
-        <span>차량 구매형 자동 운영</span>
+
+        <span>자동 운영</span>
       </div>
 
       <div class="fund-box">
@@ -33,7 +34,8 @@
       <section v-if="offlineReport" class="offline-card">
         <div>
           <strong>오프라인 반영</strong>
-          <span>{{ offlineReport.elapsedText }} · 차량 {{ offlineReport.completedRuns }}회 운행 완료 · 수익 {{ formatMoney(offlineReport.revenue) }}</span>
+
+          <span>{{ offlineReport.elapsedText }} · {{ offlineReport.completedRuns }}회 · +{{ formatMoney(offlineReport.revenue) }}</span>
         </div>
         <button type="button" @click="offlineReport = null">닫기</button>
       </section>
@@ -61,9 +63,9 @@
         <section class="section-head">
           <div>
             <h1>운영메인</h1>
-            <p>구입센터에서 차량을 사면 이곳에 운영 카드가 계속 추가됩니다.</p>
           </div>
-          <button type="button" class="ghost-button" @click="activeMenu = 'purchase'">차량 구입하기</button>
+
+          <button type="button" class="ghost-button" @click="activeMenu = 'purchase'">구입</button>
         </section>
 
         <section v-if="ownedVehicles.length" class="vehicle-list" aria-label="운영 중인 차량 목록">
@@ -76,7 +78,6 @@
             <div class="vehicle-main">
               <span class="vehicle-kind">{{ vehicle.typeName }}</span>
               <h2>{{ vehicle.name }}</h2>
-              <p>{{ vehicle.description }}</p>
             </div>
 
             <div class="vehicle-timer">
@@ -88,15 +89,16 @@
             <div class="vehicle-stats">
               <span>운행 {{ vehicle.runs }}회</span>
               <strong>+{{ formatMoney(vehicle.revenuePerRun) }}</strong>
-              <em>완료 시 자동 정산</em>
+
+              <em>자동 정산</em>
             </div>
           </article>
         </section>
 
         <section v-else class="empty-card">
-          <strong>아직 운영 중인 차량이 없습니다.</strong>
-          <p>구입센터에서 기본 차량을 구입하면 운영메인에 차량 카드가 추가되고 바로 카운터가 차감됩니다.</p>
-          <button type="button" @click="activeMenu = 'purchase'">구입센터로 이동</button>
+
+          <strong>운영 차량 없음</strong>
+          <button type="button" @click="activeMenu = 'purchase'">구입센터</button>
         </section>
       </section>
 
@@ -104,7 +106,6 @@
         <section class="section-head">
           <div>
             <h1>구입센터</h1>
-            <p>버스, 철도, 항공, 선박 기본 차량을 구입합니다. 구입한 차량은 운영메인에 계속 누적됩니다.</p>
           </div>
         </section>
 
@@ -119,19 +120,19 @@
             <div class="catalog-body">
               <span>{{ item.typeName }}</span>
               <h2>{{ item.name }}</h2>
-              <p>{{ item.description }}</p>
-
               <dl>
                 <div>
                   <dt>가격</dt>
                   <dd>{{ formatMoney(item.price) }}</dd>
                 </div>
                 <div>
-                  <dt>운영시간</dt>
+
+                  <dt>시간</dt>
                   <dd>{{ formatDuration(item.durationSeconds) }}</dd>
                 </div>
                 <div>
-                  <dt>1회 수익</dt>
+
+                  <dt>수익</dt>
                   <dd>{{ formatMoney(item.revenuePerRun) }}</dd>
                 </div>
               </dl>
@@ -151,8 +152,9 @@
 
       <section v-if="logs.length" class="log-card" aria-label="최근 기록">
         <header>
-          <strong>최근 기록</strong>
-          <button type="button" @click="logs = []">지우기</button>
+
+          <strong>기록</strong>
+          <button type="button" @click="logs = []">삭제</button>
         </header>
         <ul>
           <li v-for="log in logs" :key="log.id">
@@ -184,7 +186,7 @@ const vehicleCatalog = [
     typeName: '버스',
     icon: '🚌',
     name: '기본 버스',
-    description: '초기 수익을 만드는 기본 도로 운송 차량입니다.',
+    description: '도로 운송',
     price: 180_000_000,
     durationSeconds: 30 * MINUTE,
     revenuePerRun: 300_000,
@@ -195,7 +197,7 @@ const vehicleCatalog = [
     typeName: '철도',
     icon: '🚆',
     name: '기본 철도',
-    description: '1시간 단위로 안정적인 수익을 만드는 기본 철도 편성입니다.',
+    description: '철도 편성',
     price: 850_000_000,
     durationSeconds: 1 * HOUR,
     revenuePerRun: 1_200_000,
@@ -206,7 +208,7 @@ const vehicleCatalog = [
     typeName: '항공',
     icon: '✈️',
     name: '기본 항공',
-    description: '2시간 단위로 느리지만 안정적인 수익을 만드는 기본 항공기입니다.',
+    description: '항공 운송',
     price: 3_500_000_000,
     durationSeconds: 2 * HOUR,
     revenuePerRun: 4_500_000,
@@ -217,7 +219,7 @@ const vehicleCatalog = [
     typeName: '선박',
     icon: '🚢',
     name: '기본 선박',
-    description: '한강버스형 도심 수상교통으로, 2시간 단위로 낮지만 안정적인 수익을 만듭니다.',
+    description: '도심 수상교통',
     price: 650_000_000,
     durationSeconds: 2 * HOUR,
     revenuePerRun: 800_000,
@@ -248,7 +250,8 @@ function buyVehicle(item) {
 
   const count = ownedVehicles.filter((vehicle) => vehicle.catalogId === item.id).length + 1
   ownedVehicles.unshift(createOwnedVehicle(item, count))
-  addLog(`${item.name} ${count}호 구입 · 운영메인에 추가`)
+
+  addLog(`${item.name} ${count}호 구입`)
   activeMenu.value = 'operations'
   saveSoon()
 }
@@ -289,7 +292,8 @@ function completeVehicleRun(vehicle, count = 1) {
 
   if (completedCount === 1) {
     vehicle.remainingSeconds += vehicle.durationSeconds
-    addLog(`${vehicle.name} 운행 완료 · ${formatMoney(vehicle.revenuePerRun)} 정산`)
+
+    addLog(`${vehicle.name} 완료 · +${formatMoney(vehicle.revenuePerRun)}`)
   }
 }
 
@@ -323,7 +327,8 @@ function applyOfflineProgress(elapsedSeconds) {
       completedRuns,
       revenue,
     }
-    addLog(`오프라인 운행 ${completedRuns}회 완료 · ${formatMoney(revenue)} 정산`)
+
+    addLog(`오프라인 ${completedRuns}회 · +${formatMoney(revenue)}`)
   }
 }
 
@@ -356,7 +361,8 @@ async function loadSave() {
 
   if (!payload || payload.schemaVersion !== SAVE_SCHEMA_VERSION) {
     financeModule.reset(DEFAULT_MODULE_FUNDS)
-    addLog('구입센터 구조로 새로 시작')
+
+    addLog('새 구조 시작')
     return
   }
 
@@ -521,7 +527,7 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px clamp(16px, 4vw, 42px);
+  padding: 12px clamp(14px, 4vw, 34px);
   background: rgba(248, 250, 252, 0.88);
   border-bottom: 1px solid rgba(148, 163, 184, 0.24);
   backdrop-filter: blur(16px);
@@ -554,8 +560,8 @@ button:disabled {
 .fund-box {
   display: grid;
   gap: 2px;
-  min-width: 150px;
-  padding: 10px 14px;
+  min-width: 140px;
+  padding: 8px 12px;
   text-align: right;
   border: 1px solid rgba(37, 99, 235, 0.18);
   border-radius: 18px;
@@ -572,7 +578,7 @@ button:disabled {
 .page-body {
   width: min(1180px, calc(100% - 28px));
   margin: 0 auto;
-  padding: 22px 0 56px;
+  padding: 16px 0 44px;
 }
 
 .mode-tabs {
@@ -588,7 +594,7 @@ button:disabled {
 
 .mode-tabs button {
   flex: 1;
-  padding: 12px 14px;
+  padding: 10px 12px;
   color: #475569;
   font-weight: 800;
   border-radius: 16px;
@@ -660,8 +666,8 @@ button:disabled {
 .summary-card {
   display: grid;
   gap: 6px;
-  padding: 16px;
-  border-radius: 22px;
+  padding: 11px 14px;
+  border-radius: 18px;
 }
 
 .summary-card strong {
@@ -675,9 +681,9 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 20px;
-  margin-bottom: 14px;
-  border-radius: 24px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  border-radius: 20px;
 }
 
 .section-head h1 {
@@ -713,11 +719,11 @@ button:disabled {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 16px;
+  gap: 12px;
   align-items: center;
   overflow: hidden;
-  padding: 18px;
-  border-radius: 26px;
+  padding: 14px 16px;
+  border-radius: 22px;
 }
 
 .vehicle-card::before,
@@ -757,8 +763,8 @@ button:disabled {
   z-index: 1;
   display: grid;
   gap: 4px;
-  min-width: 118px;
-  padding: 12px;
+  min-width: 112px;
+  padding: 10px;
   border-radius: 18px;
   background: rgba(248, 250, 252, 0.88);
 }
@@ -796,8 +802,8 @@ button:disabled {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 14px;
-  padding: 18px;
-  border-radius: 26px;
+  padding: 14px 16px;
+  border-radius: 22px;
 }
 
 .catalog-icon {
@@ -805,11 +811,11 @@ button:disabled {
   z-index: 1;
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 18px;
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
   background: rgba(37, 99, 235, 0.1);
-  font-size: 26px;
+  font-size: 23px;
 }
 
 .catalog-body dl {
@@ -839,7 +845,7 @@ button:disabled {
   grid-column: 1 / -1;
   position: relative;
   z-index: 1;
-  padding: 13px 14px;
+  padding: 11px 14px;
   color: #ffffff;
   font-weight: 900;
   border-radius: 16px;
@@ -893,35 +899,246 @@ button:disabled {
 }
 
 @media (max-width: 860px) {
-  .summary-grid,
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .vehicle-list,
   .catalog-grid {
     grid-template-columns: 1fr;
   }
 
   .vehicle-card {
-    grid-template-columns: 1fr;
-  }
-
-  .section-head,
-  .offline-card {
-    align-items: stretch;
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
 }
 
 @media (max-width: 560px) {
   .top-header {
-    align-items: stretch;
-    flex-direction: column;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .brand span {
+    display: none;
+  }
+
+  .brand strong {
+    font-size: 18px;
   }
 
   .fund-box {
-    text-align: left;
+    min-width: auto;
+    padding: 7px 9px;
+    text-align: right;
+    border-radius: 13px;
+  }
+
+  .fund-box span {
+    font-size: 10px;
+  }
+
+  .fund-box strong {
+    font-size: 14px;
+  }
+
+  .page-body {
+    width: calc(100% - 12px);
+    padding: 8px 0 28px;
+  }
+
+  .mode-tabs {
+    gap: 5px;
+    padding: 4px;
+    margin-bottom: 8px;
+    border-radius: 14px;
+  }
+
+  .mode-tabs button {
+    padding: 8px 6px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+
+  .summary-grid {
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .summary-card {
+    gap: 2px;
+    padding: 8px 9px;
+    border-radius: 13px;
+  }
+
+  .summary-card span,
+  .vehicle-kind,
+  .vehicle-timer span,
+  .vehicle-stats span,
+  .catalog-body span,
+  .catalog-body dt,
+  .log-card li span {
+    font-size: 10px;
+  }
+
+  .summary-card strong {
+    font-size: 15px;
+  }
+
+  .section-head {
+    gap: 8px;
+    padding: 9px 10px;
+    margin-bottom: 8px;
+    border-radius: 14px;
+  }
+
+  .section-head h1 {
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .ghost-button,
+  .offline-card button,
+  .empty-card button,
+  .log-card header button {
+    padding: 7px 9px;
+    font-size: 11px;
+    border-radius: 10px;
+  }
+
+  .offline-card {
+    gap: 8px;
+    padding: 8px 9px;
+    margin-bottom: 8px;
+    border-radius: 14px;
+  }
+
+  .offline-card strong,
+  .offline-card span {
+    font-size: 11px;
+  }
+
+  .vehicle-list,
+  .catalog-grid {
+    gap: 7px;
+  }
+
+  .vehicle-card {
+    grid-template-columns: minmax(0, 1fr) minmax(82px, auto);
+    gap: 7px;
+    padding: 9px 9px 9px 13px;
+    border-radius: 15px;
+  }
+
+  .vehicle-card::before,
+  .catalog-card::before {
+    width: 3px;
+  }
+
+  .vehicle-main {
+    grid-column: 1 / -1;
+    gap: 2px;
+  }
+
+  .vehicle-main h2,
+  .catalog-body h2 {
+    font-size: 15px;
+  }
+
+  .vehicle-timer,
+  .vehicle-stats {
+    min-width: 0;
+    gap: 2px;
+    padding: 7px;
+    border-radius: 11px;
+  }
+
+  .vehicle-timer strong,
+  .vehicle-stats strong {
+    font-size: 14px;
+  }
+
+  .vehicle-timer em,
+  .vehicle-stats em {
+    display: none;
+  }
+
+  .empty-card {
+    gap: 8px;
+    padding: 24px 14px;
+    border-radius: 18px;
+  }
+
+  .empty-card strong {
+    font-size: 16px;
+  }
+
+  .catalog-card {
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 8px;
+    padding: 9px 9px 9px 13px;
+    border-radius: 15px;
+  }
+
+  .catalog-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    font-size: 19px;
+  }
+
+  .catalog-body {
+    gap: 3px;
   }
 
   .catalog-body dl {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    margin-top: 5px;
+  }
+
+  .catalog-body dl div {
+    gap: 1px;
+    padding: 5px;
+    border-radius: 9px;
+  }
+
+  .catalog-body dd {
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
+  .buy-button {
+    padding: 8px 10px;
+    border-radius: 11px;
+  }
+
+  .log-card {
+    max-height: 170px;
+    overflow: auto;
+    margin-top: 8px;
+    padding: 9px;
+    border-radius: 15px;
+  }
+
+  .log-card header {
+    margin-bottom: 6px;
+  }
+
+  .log-card ul {
+    gap: 5px;
+  }
+
+  .log-card li {
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 6px;
+    padding: 6px 7px;
+    border-radius: 10px;
+  }
+
+  .log-card li p {
+    font-size: 12px;
+    line-height: 1.35;
   }
 }
 </style>
