@@ -13,20 +13,6 @@
       </aside>
     </header>
 
-    <section class="rule-row" aria-label="자동 진행 규칙">
-      <article>
-        <span>운영</span>
-        <strong>1시간마다 2~3건</strong>
-      </article>
-      <article>
-        <span>시설</span>
-        <strong>7일마다 1건</strong>
-      </article>
-      <article>
-        <span>정비</span>
-        <strong>매일 자동 입고</strong>
-      </article>
-    </section>
 
     <main class="deck-panel" aria-label="통합카드덱">
       <header class="deck-head">
@@ -57,7 +43,6 @@
 
       <div v-else class="empty-card">
         <strong>진행 중인 항목 없음</strong>
-        <p>시간이 지나면 운영, 시설, 정비 항목이 자동으로 들어옵니다.</p>
       </div>
     </main>
   </div>
@@ -987,7 +972,6 @@ onBeforeUnmount(() => {
 }
 
 .topbar,
-.rule-row article,
 .deck-panel,
 .watch-card,
 .empty-card {
@@ -1015,7 +999,6 @@ onBeforeUnmount(() => {
 
 .brand-block span,
 .digital-clock span,
-.rule-row span,
 .deck-head span,
 .card-label {
   display: block;
@@ -1058,27 +1041,6 @@ onBeforeUnmount(() => {
   color: #8da3bd;
   font-size: 12px;
   font-style: normal;
-}
-
-.rule-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.rule-row article {
-  min-width: 0;
-  border-radius: 18px;
-  padding: 12px;
-}
-
-.rule-row strong {
-  display: block;
-  margin-top: 5px;
-  color: #f8fafc;
-  font-size: 14px;
-  line-height: 1.25;
 }
 
 .deck-panel {
@@ -1211,15 +1173,11 @@ onBeforeUnmount(() => {
   }
 
   .digital-clock,
-  .rule-row article,
   .deck-panel,
   .watch-card {
     border-radius: 16px;
   }
 
-  .rule-row {
-    grid-template-columns: 1fr;
-  }
 
   .card-bodyline {
     grid-template-columns: 1fr;
