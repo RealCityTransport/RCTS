@@ -48,7 +48,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { loadRctsAutoSave, saveRctsAutoSave } from './storage/rctsSaveStorage.js'
 
-const SAVE_SCHEMA_VERSION = 8
+const SAVE_SCHEMA_VERSION = 9
 const SECOND_MS = 1000
 const MINUTE_MS = 60 * SECOND_MS
 const HOUR_MS = 60 * MINUTE_MS
@@ -79,8 +79,8 @@ const maintenanceGroups = [
 const operationGroups = [
   { id: 'bus', label: '버스', title: '버스운행', minMs: 1 * HOUR_MS, maxMs: 4 * HOUR_MS },
   { id: 'rail', label: '철도', title: '철도운행', minMs: 2 * HOUR_MS, maxMs: 6 * HOUR_MS },
-  { id: 'air', label: '항공', title: '항공운항', minMs: 1 * HOUR_MS, maxMs: 15 * HOUR_MS },
-  { id: 'ship', label: '선박', title: '선박운항', minMs: 1 * DAY_MS, maxMs: 30 * DAY_MS },
+  { id: 'air', label: '항공', title: '항공운행', minMs: 1 * HOUR_MS, maxMs: 15 * HOUR_MS },
+  { id: 'ship', label: '선박', title: '선박운행', minMs: 1 * DAY_MS, maxMs: 30 * DAY_MS },
 ]
 
 const facilityCatalog = [
