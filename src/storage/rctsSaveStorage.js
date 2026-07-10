@@ -1,8 +1,13 @@
 const DB_NAME = 'rcts_transport_operation_db'
+const LEGACY_DB_NAMES = ['rcts_realtime_mission_db']
 const DB_VERSION = 1
 const STORE_NAME = 'saves'
 const SAVE_KEY = 'main-autosave'
 const LOCAL_STORAGE_KEY = `${DB_NAME}:${SAVE_KEY}`
+
+function storageKey(dbName = DB_NAME) {
+  return `${dbName}:${SAVE_KEY}`
+}
 
 function hasIndexedDb() {
   return typeof window !== 'undefined' && 'indexedDB' in window
@@ -24,14 +29,14 @@ function toPlainData(value) {
   return JSON.parse(JSON.stringify(value))
 }
 
-function openDatabase() {
+function openDatabase(dbName = DB_NAME) {
   return new Promise((resolve, reject) => {
     if (!hasIndexedDb()) {
       reject(new Error('IndexedDB를 사용할 수 없습니다.'))
       return
     }
 
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION)
+    const request = window.indexedDB.open(dbName, DB_VERSION)
 
     request.onupgradeneeded = () => {
       const db = request.result
@@ -47,8 +52,8 @@ function openDatabase() {
   })
 }
 
-function withStore(mode, callback) {
-  return openDatabase().then((db) => new Promise((resolve, reject) => {
+function withStore(mode, callback, dbName = DB_NAME) {
+  return openDatabase(dbName).then((db) => new Promise((resolve, reject) => {
     let settled = false
 
     function done(value) {
@@ -80,10 +85,10 @@ function withStore(mode, callback) {
   }))
 }
 
-function loadFromLocalStorage() {
+function loadFromLocalStorage(dbName = DB_NAME) {
   if (!hasLocalStorage()) return null
 
-  const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
+  const raw = window.localStorage.getItem(storageKey(dbName))
   if (!raw) return null
 
   return JSON.parse(raw)
@@ -107,12 +112,30 @@ function saveToLocalStorage(payload) {
   return savedAt
 }
 
-export async function loadRctsAutoSave() {
+async function loadFromIndexedDb(dbName = DB_NAME) {
   try {
-    return await withStore('readonly', (store) => store.get(SAVE_KEY))
+    return await withStore('readonly', (store) => store.get(SAVE_KEY), dbName)
   } catch {
-    return loadFromLocalStorage()
+    return null
   }
+}
+
+export async function loadRctsAutoSave() {
+  const currentIndexedDbRecord = await loadFromIndexedDb(DB_NAME)
+  if (currentIndexedDbRecord) return currentIndexedDbRecord
+
+  const currentLocalStorageRecord = loadFromLocalStorage(DB_NAME)
+  if (currentLocalStorageRecord) return currentLocalStorageRecord
+
+  for (const legacyDbName of LEGACY_DB_NAMES) {
+    const legacyIndexedDbRecord = await loadFromIndexedDb(legacyDbName)
+    if (legacyIndexedDbRecord) return legacyIndexedDbRecord
+
+    const legacyLocalStorageRecord = loadFromLocalStorage(legacyDbName)
+    if (legacyLocalStorageRecord) return legacyLocalStorageRecord
+  }
+
+  return null
 }
 
 export async function saveRctsAutoSave(payload) {

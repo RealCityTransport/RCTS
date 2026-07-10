@@ -13,14 +13,13 @@
       </aside>
     </header>
 
-
     <main class="deck-panel" aria-label="통합카드덱">
       <header class="deck-head">
         <span>통합카드덱</span>
         <strong>{{ watchCards.length }}개 진행중</strong>
       </header>
 
-      <div v-if="watchCards.length" class="card-deck">
+      <div class="card-deck">
         <article
           v-for="card in watchCards"
           :key="card.id"
@@ -28,6 +27,7 @@
           :class="[card.kind, card.group || '', card.status || '']"
         >
           <div class="card-label">{{ card.badge }}</div>
+
           <div class="card-bodyline">
             <h2>{{ card.title }}</h2>
             <strong>{{ card.timeLabel }}</strong>
@@ -40,10 +40,6 @@
           <p v-if="card.sub">{{ card.sub }}</p>
         </article>
       </div>
-
-      <div v-else class="empty-card">
-        <strong>진행 중인 항목 없음</strong>
-      </div>
     </main>
   </div>
 </template>
@@ -52,28 +48,27 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { loadRctsAutoSave, saveRctsAutoSave } from './storage/rctsSaveStorage.js'
 
-const SAVE_SCHEMA_VERSION = 6
+const SAVE_SCHEMA_VERSION = 8
 const SECOND_MS = 1000
 const MINUTE_MS = 60 * SECOND_MS
 const HOUR_MS = 60 * MINUTE_MS
 const DAY_MS = 24 * HOUR_MS
 const AUTO_SAVE_INTERVAL_MS = 60 * SECOND_MS
-const MAINTENANCE_SLOT_LIMIT = 5
-const LOG_LIMIT = 140
-const MAX_OPERATION_CATCH_UP = 180
+const OPERATION_INTERVAL_MS = HOUR_MS
+const FACILITY_INTERVAL_MS = 7 * DAY_MS
+const MAX_OPERATION_CATCH_UP = 120
 const MAX_FACILITY_CATCH_UP = 30
-const MAX_MAINTENANCE_CATCH_UP = 120
+const MAINTENANCE_SLOT_LIMIT = 5
 
-const AUTO_RULES = {
-  operationIntervalHours: 1,
-  operationBatchMin: 2,
-  operationBatchMax: 3,
-  facilityIntervalDays: 7,
-  maintenanceIntervalDays: 1,
-  maintenanceDailyCount: 1,
+const groupLabels = {
+  bus: '버스',
+  rail: '철도',
+  air: '항공',
+  ship: '선박',
+  space: '우주',
 }
 
-const groups = [
+const maintenanceGroups = [
   { id: 'bus', label: '버스' },
   { id: 'rail', label: '철도' },
   { id: 'air', label: '항공' },
@@ -81,69 +76,20 @@ const groups = [
   { id: 'space', label: '우주' },
 ]
 
-const missionCatalog = [
-  { group: 'bus', title: '출근 시간대 대체 운행', minHours: 2, maxHours: 4 },
-  { group: 'bus', title: '퇴근 시간대 대체 운행', minHours: 2, maxHours: 4 },
-  { group: 'bus', title: '행사장 셔틀 운행', minHours: 3, maxHours: 8 },
-  { group: 'bus', title: '통근버스 지원', minHours: 2, maxHours: 6 },
-  { group: 'bus', title: '학교 셔틀 운행', minHours: 1, maxHours: 3 },
-  { group: 'bus', title: '광역버스 증차 지원', minHours: 4, maxHours: 8 },
-  { group: 'bus', title: '심야 임시 운행', minHours: 3, maxHours: 6 },
-  { group: 'bus', title: '전세버스 단거리 운행', minHours: 4, maxHours: 10 },
-  { group: 'bus', title: '전세버스 장거리 운행', minHours: 8, maxHours: 12 },
-  { group: 'bus', title: '비상 수송 지원', minHours: 1, maxHours: 5 },
-  { group: 'rail', title: '임시 열차 투입', minHours: 6, maxHours: 12 },
-  { group: 'rail', title: '혼잡 구간 증편', minHours: 4, maxHours: 10 },
-  { group: 'rail', title: '관광열차 운행', minHours: 12, maxHours: 24 },
-  { group: 'rail', title: '장거리 열차 운행', minHours: 24, maxHours: 72 },
-  { group: 'air', title: '국내선 임시 운항', minHours: 4, maxHours: 8 },
-  { group: 'air', title: '단거리 국제선 운항', minHours: 6, maxHours: 10 },
-  { group: 'air', title: '장거리 국제선 운항', minHours: 12, maxHours: 14 },
-  { group: 'air', title: '긴급 화물 운송', minHours: 8, maxHours: 24 },
-  { group: 'ship', title: '국내 여객선 운항', minHours: 12, maxHours: 24 },
-  { group: 'ship', title: '단거리 화물선 운송', minHours: 72, maxHours: 168 },
-  { group: 'ship', title: '해외 화물선 운송', minHours: 360, maxHours: 720 },
-  { group: 'ship', title: '장거리 해외 화물선 운송', minHours: 720, maxHours: 1440 },
-  { group: 'space', title: '우주정거장 보급', minHours: 720, maxHours: 1440 },
-  { group: 'space', title: '달 궤도 운송', minHours: 2160, maxHours: 4320 },
-  { group: 'space', title: '심우주 보급', minHours: 4320, maxHours: 8760 },
-  { group: 'space', title: '외행성 운송', minHours: 8760, maxHours: 17280 },
+const operationGroups = [
+  { id: 'bus', label: '버스', title: '버스운행', minMs: 1 * HOUR_MS, maxMs: 4 * HOUR_MS },
+  { id: 'rail', label: '철도', title: '철도운행', minMs: 2 * HOUR_MS, maxMs: 6 * HOUR_MS },
+  { id: 'air', label: '항공', title: '항공운항', minMs: 1 * HOUR_MS, maxMs: 15 * HOUR_MS },
+  { id: 'ship', label: '선박', title: '선박운항', minMs: 1 * DAY_MS, maxMs: 30 * DAY_MS },
 ]
 
 const facilityCatalog = [
-  { title: '도로신설', type: 'linear', dailyMin: 2, dailyMax: 5 },
-  { title: '철도신설', type: 'linear', dailyMin: 1, dailyMax: 3 },
-  { title: '시설유지보수', minDays: 7, maxDays: 30 },
-  { title: '신설노선', minDays: 14, maxDays: 60 },
-  { title: '도로 유지보수', minDays: 3, maxDays: 14 },
-  { title: '철도 유지보수', minDays: 7, maxDays: 30 },
-  { title: '공항 시설 개선', minDays: 14, maxDays: 90 },
-  { title: '항만 시설 개선', minDays: 14, maxDays: 90 },
-  { title: '우주 기지 확장', minDays: 180, maxDays: 720 },
+  { title: '도로설치', type: 'install', totalMin: 30, totalMax: 500, dailyMin: 2, dailyMax: 5 },
+  { title: '철도설치', type: 'install', totalMin: 30, totalMax: 500, dailyMin: 1, dailyMax: 3 },
+  { title: '시설유지보수', type: 'maintenance', totalMin: 5, totalMax: 120, dailyMin: 4, dailyMax: 10 },
+  { title: '도로유지보수', type: 'maintenance', totalMin: 10, totalMax: 180, dailyMin: 5, dailyMax: 12 },
+  { title: '철도유지보수', type: 'maintenance', totalMin: 10, totalMax: 160, dailyMin: 3, dailyMax: 8 },
 ]
-
-const maintenanceRules = {
-  bus: {
-    heavy: { title: '버스 중정비', minHours: 12, maxHours: 72, partsChance: 10, partsMinHours: 2, partsMaxHours: 12 },
-    overhaul: { title: '버스 대수선', minHours: 72, maxHours: 168, partsChance: 20, partsMinHours: 2, partsMaxHours: 12 },
-  },
-  rail: {
-    heavy: { title: '철도 중정비', minHours: 72, maxHours: 336, partsChance: 15, partsMinHours: 12, partsMaxHours: 72 },
-    overhaul: { title: '철도 대수선', minHours: 336, maxHours: 1080, partsChance: 25, partsMinHours: 12, partsMaxHours: 72 },
-  },
-  air: {
-    heavy: { title: '항공 중정비', minHours: 168, maxHours: 720, partsChance: 20, partsMinHours: 24, partsMaxHours: 168 },
-    overhaul: { title: '항공 대수선', minHours: 720, maxHours: 2160, partsChance: 35, partsMinHours: 24, partsMaxHours: 168 },
-  },
-  ship: {
-    heavy: { title: '선박 중정비', minHours: 336, maxHours: 1440, partsChance: 25, partsMinHours: 72, partsMaxHours: 336 },
-    overhaul: { title: '선박 대수선', minHours: 1440, maxHours: 4320, partsChance: 40, partsMinHours: 72, partsMaxHours: 336 },
-  },
-  space: {
-    heavy: { title: '우주 중정비', minHours: 720, maxHours: 4320, partsChance: 35, partsMinHours: 168, partsMaxHours: 1440 },
-    overhaul: { title: '우주 대수선', minHours: 4320, maxHours: 17280, partsChance: 50, partsMinHours: 168, partsMaxHours: 1440 },
-  },
-}
 
 const standardNow = ref(new Date())
 let tickTimer = null
@@ -155,42 +101,19 @@ const state = reactive({
   facilityQueue: [],
   activeFacilityMission: null,
   maintenanceCenters: createEmptyMaintenanceCenters(),
-  activityLog: [],
-  lastOperationAt: '',
+  lastOperationByGroup: {},
   lastFacilityAt: '',
-  lastMaintenanceAt: '',
-  offlineReport: '',
 })
 
-const standardTimeText = computed(() => formatDateTime(standardNow.value))
 const digitalDateText = computed(() => formatDateOnly(standardNow.value))
 const digitalClockText = computed(() => formatClockTime(standardNow.value))
-const operationSorted = computed(() => [...state.acceptedMissions].sort((a, b) => toTime(a.endsAt) - toTime(b.endsAt)))
-const facilityQueueSorted = computed(() => [...state.facilityQueue].sort((a, b) => toTime(a.createdAt) - toTime(b.createdAt)))
-const recentLogs = computed(() => [...state.activityLog].sort((a, b) => toTime(b.at) - toTime(a.at)).slice(0, 10))
 
-const totalMaintenanceCapacity = computed(() => groups.length * MAINTENANCE_SLOT_LIMIT)
-const totalActiveMaintenance = computed(() => groups.reduce((sum, group) => sum + maintenanceActiveCount(group.id), 0))
-const totalQueuedMaintenance = computed(() => groups.reduce((sum, group) => sum + maintenanceQueueCount(group.id), 0))
+const operationSorted = computed(() => {
+  return [...state.acceptedMissions].sort((a, b) => toTime(a.endsAt) - toTime(b.endsAt))
+})
 
-const nextCompletion = computed(() => {
-  const candidates = []
-
-  state.acceptedMissions.forEach((mission) => {
-    candidates.push({ title: `[${groupName(mission.group)}] ${mission.title}`, endsAt: mission.endsAt })
-  })
-
-  if (state.activeFacilityMission) {
-    candidates.push({ title: `[시설] ${state.activeFacilityMission.title}`, endsAt: state.activeFacilityMission.endsAt })
-  }
-
-  allMaintenanceItems().forEach((item) => {
-    if (item.status !== 'queued') candidates.push({ title: `[정비] ${item.title}`, endsAt: item.currentEndsAt })
-  })
-
-  return candidates
-    .filter((item) => toTime(item.endsAt) > standardNow.value.getTime())
-    .sort((a, b) => toTime(a.endsAt) - toTime(b.endsAt))[0] || null
+const facilityQueueSorted = computed(() => {
+  return [...state.facilityQueue].sort((a, b) => toTime(a.createdAt) - toTime(b.createdAt))
 })
 
 const watchCards = computed(() => {
@@ -204,26 +127,19 @@ const watchCards = computed(() => {
     cards.push(createFacilityWatchCard(mission, `queue-${index + 1}`))
   })
 
-  operationSorted.value.slice(0, 18).forEach((mission) => {
+  operationSorted.value.slice(0, 40).forEach((mission) => {
     cards.push(createOperationWatchCard(mission))
   })
 
-  allMaintenanceItems().slice(0, 22).forEach((item) => {
+  allMaintenanceItems().slice(0, 20).forEach((item) => {
     cards.push(createMaintenanceWatchCard(item))
   })
 
   return cards
     .filter(Boolean)
     .sort((a, b) => a.sortAt - b.sortAt)
-    .slice(0, 32)
+    .slice(0, 48)
 })
-
-function createEmptyMaintenanceCenters() {
-  return groups.reduce((centers, group) => {
-    centers[group.id] = []
-    return centers
-  }, {})
-}
 
 function bootstrapNewGame(now) {
   standardNow.value = now
@@ -231,156 +147,112 @@ function bootstrapNewGame(now) {
   state.facilityQueue = []
   state.activeFacilityMission = null
   state.maintenanceCenters = createEmptyMaintenanceCenters()
-  state.activityLog = []
-  state.offlineReport = ''
-  state.lastOperationAt = now.toISOString()
+  state.lastOperationByGroup = {}
   state.lastFacilityAt = now.toISOString()
-  state.lastMaintenanceAt = now.toISOString()
 
-  for (let index = 5; index >= 0; index -= 1) {
-    generateOperationBatch(new Date(now.getTime() - index * 18 * MINUTE_MS), 'seed')
-  }
+  operationGroups.forEach((group, index) => {
+    const seedDate = new Date(now.getTime() - randomInteger(5, 45) * MINUTE_MS - index * 2 * MINUTE_MS)
+    generateOperationMission(group, seedDate)
+    state.lastOperationByGroup[group.id] = now.toISOString()
+  })
 
-  generateFacilityMission(new Date(now.getTime() - 2 * DAY_MS), 'seed')
-
-  for (let index = 0; index < 5; index += 1) {
-    createRandomMaintenance(new Date(now.getTime() - randomInteger(1, 30) * HOUR_MS), 'seed')
-  }
-
+  generateFacilityMission(new Date(now.getTime() - 2 * DAY_MS))
   processGameState(now)
 }
 
-function processGameState(now, reason = 'tick') {
-  const beforeLogCount = state.activityLog.length
+function processGameState(now) {
   standardNow.value = now
-
-  completeOperationMissions(now)
-  processFacility(now)
-  processMaintenance(now)
   maybeGenerateOperations(now)
   maybeGenerateFacility(now)
-  maybeGenerateMaintenance(now)
+  processFacility(now)
+  processMaintenance(now)
+  completeOperationMissions(now)
   trimLists()
-
-  if (reason === 'load') {
-    const newLogCount = Math.max(0, state.activityLog.length - beforeLogCount)
-    state.offlineReport = newLogCount > 0
-      ? `${newLogCount}개의 자동 흐름이 반영되었습니다.`
-      : '완료된 항목은 없지만 자동 진행 시간을 최신 상태로 맞췄습니다.'
-  }
-}
-
-function generateOperationBatch(date, source = 'auto') {
-  const count = randomInteger(AUTO_RULES.operationBatchMin, AUTO_RULES.operationBatchMax)
-
-  for (let index = 0; index < count; index += 1) {
-    generateOperationMission(new Date(date.getTime() + index * 3 * MINUTE_MS), source)
-  }
-
-  if (source !== 'seed') saveSoon()
-}
-
-function generateOperationMission(date, source = 'auto') {
-  const template = pickRandom(missionCatalog)
-  const durationMs = randomInteger(template.minHours, template.maxHours) * HOUR_MS
-  const mission = {
-    id: createId('op'),
-    kind: 'operation',
-    group: template.group,
-    title: template.title,
-    durationMs,
-    startedAt: date.toISOString(),
-    endsAt: new Date(date.getTime() + durationMs).toISOString(),
-  }
-
-  state.acceptedMissions.push(mission)
-  addLog('operation', `[${groupName(mission.group)}] ${mission.title} 자동수락`, date)
-
-  if (source !== 'seed') saveSoon()
-  return mission
 }
 
 function maybeGenerateOperations(now) {
-  const interval = AUTO_RULES.operationIntervalHours * HOUR_MS
-  const last = toTime(state.lastOperationAt)
+  operationGroups.forEach((group) => {
+    const last = toTime(state.lastOperationByGroup[group.id]) || now.getTime()
+    const elapsed = Math.floor((now.getTime() - last) / OPERATION_INTERVAL_MS)
 
-  if (!last) {
-    state.lastOperationAt = now.toISOString()
-    return
-  }
+    if (elapsed <= 0) {
+      if (!state.lastOperationByGroup[group.id]) state.lastOperationByGroup[group.id] = now.toISOString()
+      return
+    }
 
-  const elapsed = Math.floor((now.getTime() - last) / interval)
-  if (elapsed <= 0) return
+    const count = Math.min(elapsed, MAX_OPERATION_CATCH_UP)
 
-  const count = Math.min(elapsed, MAX_OPERATION_CATCH_UP)
-  const skipped = Math.max(0, elapsed - count)
+    for (let index = count; index >= 1; index -= 1) {
+      generateOperationMission(group, new Date(now.getTime() - index * OPERATION_INTERVAL_MS))
+    }
 
-  for (let index = count; index >= 1; index -= 1) {
-    generateOperationBatch(new Date(now.getTime() - index * interval), 'auto')
-  }
+    state.lastOperationByGroup[group.id] = new Date(last + elapsed * OPERATION_INTERVAL_MS).toISOString()
+  })
+}
 
-  if (skipped > 0) addLog('system', `장기 오프라인 운영 ${skipped}시간은 요약 처리`, now)
+function generateOperationMission(group, date) {
+  const durationMs = randomInteger(group.minMs, group.maxMs)
 
-  state.lastOperationAt = new Date(last + elapsed * interval).toISOString()
+  state.acceptedMissions.push({
+    id: createId('op'),
+    kind: 'operation',
+    group: group.id,
+    title: group.title,
+    durationMs,
+    startedAt: date.toISOString(),
+    endsAt: new Date(date.getTime() + durationMs).toISOString(),
+  })
 }
 
 function completeOperationMissions(now) {
-  const active = []
-
-  state.acceptedMissions.forEach((mission) => {
-    if (toTime(mission.endsAt) <= now.getTime()) {
-      addLog('complete', `[${groupName(mission.group)}] ${mission.title} 완료`, new Date(mission.endsAt))
-      return
-    }
-    active.push(mission)
+  state.acceptedMissions = state.acceptedMissions.filter((mission) => {
+    return toTime(mission.endsAt) > now.getTime()
   })
-
-  state.acceptedMissions = active
 }
 
-function generateFacilityMission(date, source = 'auto') {
+function maybeGenerateFacility(now) {
+  const last = toTime(state.lastFacilityAt) || now.getTime()
+  const elapsed = Math.floor((now.getTime() - last) / FACILITY_INTERVAL_MS)
+
+  if (elapsed <= 0) {
+    if (!state.lastFacilityAt) state.lastFacilityAt = now.toISOString()
+    return
+  }
+
+  const count = Math.min(elapsed, MAX_FACILITY_CATCH_UP)
+
+  for (let index = count; index >= 1; index -= 1) {
+    generateFacilityMission(new Date(now.getTime() - index * FACILITY_INTERVAL_MS))
+  }
+
+  state.lastFacilityAt = new Date(last + elapsed * FACILITY_INTERVAL_MS).toISOString()
+}
+
+function generateFacilityMission(date) {
   const template = pickRandom(facilityCatalog)
   const mission = createFacilityMission(template, date)
 
   if (!state.activeFacilityMission) {
     startFacilityMission(mission, date)
-    addLog('facility', `[시설] ${mission.title} 자동 시작`, date)
   } else {
     state.facilityQueue.push(mission)
-    addLog('facility', `[시설] ${mission.title} 자동 대기`, date)
   }
 
-  if (source !== 'seed') saveSoon()
   return mission
 }
 
 function createFacilityMission(template, date) {
-  if (template.type === 'linear') {
-    const totalKm = randomInteger(30, 500)
-    const dailyKm = randomInteger(template.dailyMin, template.dailyMax)
-    const durationMs = Math.ceil(totalKm / dailyKm) * DAY_MS
-
-    return {
-      id: createId('facility'),
-      kind: 'facility',
-      type: 'linear',
-      title: template.title,
-      totalKm,
-      dailyKm,
-      durationMs,
-      createdAt: date.toISOString(),
-      startedAt: '',
-      endsAt: '',
-    }
-  }
-
-  const durationMs = randomInteger(template.minDays, template.maxDays) * DAY_MS
+  const totalKm = randomInteger(template.totalMin, template.totalMax)
+  const dailyKm = randomInteger(template.dailyMin, template.dailyMax)
+  const durationMs = Math.ceil(totalKm / dailyKm) * DAY_MS
 
   return {
     id: createId('facility'),
     kind: 'facility',
-    type: 'standard',
+    type: template.type,
     title: template.title,
+    totalKm,
+    dailyKm,
     durationMs,
     createdAt: date.toISOString(),
     startedAt: '',
@@ -396,33 +268,8 @@ function startFacilityMission(mission, date) {
   }
 }
 
-function maybeGenerateFacility(now) {
-  const interval = AUTO_RULES.facilityIntervalDays * DAY_MS
-  const last = toTime(state.lastFacilityAt)
-
-  if (!last) {
-    state.lastFacilityAt = now.toISOString()
-    return
-  }
-
-  const elapsed = Math.floor((now.getTime() - last) / interval)
-  if (elapsed <= 0) return
-
-  const count = Math.min(elapsed, MAX_FACILITY_CATCH_UP)
-
-  for (let index = count; index >= 1; index -= 1) {
-    generateFacilityMission(new Date(now.getTime() - index * interval), 'auto')
-  }
-
-  if (elapsed > count) addLog('system', `장기 오프라인 시설 ${elapsed - count}건은 요약 처리`, now)
-
-  state.lastFacilityAt = new Date(last + elapsed * interval).toISOString()
-}
-
 function processFacility(now) {
   if (state.activeFacilityMission && toTime(state.activeFacilityMission.endsAt) <= now.getTime()) {
-    const completed = state.activeFacilityMission
-    addLog('complete', `[시설] ${completed.title} 완료`, new Date(completed.endsAt))
     state.activeFacilityMission = null
   }
 
@@ -430,105 +277,18 @@ function processFacility(now) {
     const [nextMission, ...rest] = facilityQueueSorted.value
     state.facilityQueue = rest
     startFacilityMission(nextMission, now)
-    addLog('facility', `[시설] ${nextMission.title} 대기열 자동 시작`, now)
   }
 }
 
-function createRandomMaintenance(date, source = 'auto') {
-  const group = pickRandom(groups).id
-  const level = Math.random() < 0.72 ? 'heavy' : 'overhaul'
-  const item = createMaintenanceItem(group, level, date)
-  enqueueOrStartMaintenance(item, date)
-
-  if (source !== 'seed') saveSoon()
-  return item
-}
-
-function createMaintenanceItem(group, level, date) {
-  const rule = maintenanceRules[group][level]
-  const baseDurationMs = randomInteger(rule.minHours, rule.maxHours) * HOUR_MS
-  const hasPartsEvent = randomInteger(1, 100) <= rule.partsChance
-
-  return {
-    id: createId('maint'),
-    kind: 'maintenance',
-    group,
-    level,
-    title: rule.title,
-    status: 'queued',
-    enteredAt: date.toISOString(),
-    baseDurationMs,
-    repairStartedAt: '',
-    originalEndsAt: '',
-    currentEndsAt: '',
-    partsEvent: hasPartsEvent
-      ? {
-          plannedAt: '',
-          occurredAt: '',
-          durationMs: randomInteger(rule.partsMinHours, rule.partsMaxHours) * HOUR_MS,
-          endsAt: '',
-        }
-      : null,
-  }
-}
-
-function enqueueOrStartMaintenance(item, date) {
-  const center = state.maintenanceCenters[item.group] || []
-
-  if (maintenanceActiveCount(item.group) < MAINTENANCE_SLOT_LIMIT) {
-    startMaintenance(item, date)
-    center.push(item)
-    addLog('maintenance', `[${groupName(item.group)}] ${item.title} 자동 입고`, date)
-  } else {
-    center.push(item)
-    addLog('maintenance', `[${groupName(item.group)}] ${item.title} 대기열 등록`, date)
-  }
-
-  state.maintenanceCenters[item.group] = center
-}
-
-function startMaintenance(item, date) {
-  const originalEndsAt = new Date(date.getTime() + item.baseDurationMs)
-  item.status = 'repairing'
-  item.repairStartedAt = date.toISOString()
-  item.originalEndsAt = originalEndsAt.toISOString()
-  item.currentEndsAt = originalEndsAt.toISOString()
-
-  if (item.partsEvent) {
-    const minDelay = Math.max(1, Math.floor(item.baseDurationMs * 0.2))
-    const maxDelay = Math.max(minDelay, Math.floor(item.baseDurationMs * 0.72))
-    item.partsEvent.plannedAt = new Date(date.getTime() + randomInteger(minDelay, maxDelay)).toISOString()
-  }
-}
-
-function maybeGenerateMaintenance(now) {
-  const interval = AUTO_RULES.maintenanceIntervalDays * DAY_MS
-  const last = toTime(state.lastMaintenanceAt)
-
-  if (!last) {
-    state.lastMaintenanceAt = now.toISOString()
-    return
-  }
-
-  const elapsed = Math.floor((now.getTime() - last) / interval)
-  if (elapsed <= 0) return
-
-  const count = Math.min(elapsed, MAX_MAINTENANCE_CATCH_UP)
-
-  for (let dayIndex = count; dayIndex >= 1; dayIndex -= 1) {
-    const checkDate = new Date(now.getTime() - dayIndex * interval)
-    for (let itemIndex = 0; itemIndex < AUTO_RULES.maintenanceDailyCount; itemIndex += 1) {
-      createRandomMaintenance(checkDate, 'auto')
-    }
-  }
-
-  if (elapsed > count) addLog('system', `장기 오프라인 정비 ${elapsed - count}일은 요약 처리`, now)
-
-  state.lastMaintenanceAt = new Date(last + elapsed * interval).toISOString()
+function createEmptyMaintenanceCenters() {
+  return maintenanceGroups.reduce((centers, group) => {
+    centers[group.id] = []
+    return centers
+  }, {})
 }
 
 function processMaintenance(now) {
-  groups.forEach((group) => {
+  maintenanceGroups.forEach((group) => {
     const center = state.maintenanceCenters[group.id] || []
     const remaining = []
 
@@ -540,24 +300,23 @@ function processMaintenance(now) {
 
       if (item.status === 'repairing' && item.partsEvent?.plannedAt && !item.partsEvent.occurredAt && toTime(item.partsEvent.plannedAt) <= now.getTime()) {
         const occurredAt = new Date(item.partsEvent.plannedAt)
-        const partsEndsAt = new Date(occurredAt.getTime() + item.partsEvent.durationMs)
+        const durationMs = Number(item.partsEvent.durationMs || item.partsEvent.durationHours * HOUR_MS || 0)
+        const partsEndsAt = new Date(occurredAt.getTime() + durationMs)
         item.partsEvent.occurredAt = occurredAt.toISOString()
         item.partsEvent.endsAt = partsEndsAt.toISOString()
-        item.currentEndsAt = new Date(toTime(item.currentEndsAt) + item.partsEvent.durationMs).toISOString()
+        item.currentEndsAt = new Date(toTime(item.currentEndsAt) + durationMs).toISOString()
         item.status = partsEndsAt.getTime() > now.getTime() ? 'parts_waiting' : 'repairing'
-        addLog('parts', `[${groupName(item.group)}] ${item.title} 부품조달 +${formatDuration(item.partsEvent.durationMs)}`, occurredAt)
       }
 
       if (item.status === 'parts_waiting' && item.partsEvent?.endsAt && toTime(item.partsEvent.endsAt) <= now.getTime()) {
         item.status = 'repairing'
-        addLog('maintenance', `[${groupName(item.group)}] ${item.title} 정비 재개`, new Date(item.partsEvent.endsAt))
       }
 
       if (item.currentEndsAt && toTime(item.currentEndsAt) <= now.getTime()) {
-        addLog('complete', `[${groupName(item.group)}] ${item.title} 완료`, new Date(item.currentEndsAt))
-      } else {
-        remaining.push(item)
+        return
       }
+
+      remaining.push(item)
     })
 
     state.maintenanceCenters[group.id] = promoteMaintenanceQueue(group.id, remaining, now)
@@ -570,28 +329,41 @@ function promoteMaintenanceQueue(groupId, items, now) {
   while (promoted.filter((item) => item.status !== 'queued').length < MAINTENANCE_SLOT_LIMIT) {
     const next = promoted.find((item) => item.status === 'queued')
     if (!next) break
-    startMaintenance(next, now)
-    addLog('maintenance', `[${groupName(groupId)}] ${next.title} 대기열 자동 입고`, now)
+    startLegacyMaintenance(next, now)
   }
 
   return promoted
 }
 
+function startLegacyMaintenance(item, date) {
+  const baseDurationMs = Number(item.baseDurationMs) || Math.max(HOUR_MS, toTime(item.currentEndsAt || item.originalEndsAt) - date.getTime()) || DAY_MS
+  const originalEndsAt = new Date(date.getTime() + baseDurationMs)
+
+  item.status = 'repairing'
+  item.baseDurationMs = baseDurationMs
+  item.repairStartedAt = date.toISOString()
+  item.originalEndsAt = item.originalEndsAt || originalEndsAt.toISOString()
+  item.currentEndsAt = item.currentEndsAt || originalEndsAt.toISOString()
+
+  if (item.partsEvent && item.partsEvent.durationHours && !item.partsEvent.durationMs) {
+    item.partsEvent.durationMs = Number(item.partsEvent.durationHours) * HOUR_MS
+  }
+}
+
 function createOperationWatchCard(mission) {
   const startedAt = toTime(mission.startedAt)
   const endsAt = toTime(mission.endsAt)
-  const progress = progressPercent(startedAt, endsAt)
 
   return {
     id: mission.id,
     kind: 'operation',
     group: mission.group,
     badge: `운영.${groupName(mission.group)}`,
-    title: operationDisplayTitle(mission.group),
+    title: mission.title,
     sub: '',
     timeLabel: formatRemaining(mission.endsAt),
     sortAt: endsAt,
-    progress,
+    progress: progressPercent(startedAt, endsAt),
   }
 }
 
@@ -600,31 +372,28 @@ function createFacilityWatchCard(mission, mode) {
   const startedAt = toTime(mission.startedAt)
   const endsAt = toTime(mission.endsAt)
   const progress = isQueue ? 0 : progressPercent(startedAt, endsAt)
-  const linear = mission.type === 'linear'
-  const linearProgress = linear && !isQueue ? facilityProgress(mission) : null
+  const linearProgress = !isQueue ? facilityProgress(mission) : null
 
   return {
     id: `${mission.id}_${mode}`,
     kind: 'facility',
-    status: isQueue ? 'queued' : 'active',
-    badge: `시설.${mission.title}`,
+    status: isQueue ? 'queued' : mission.type,
+    badge: `시설.${mission.type === 'maintenance' ? '유지보수' : '설치'}`,
     title: mission.title,
-    sub: linear && !isQueue
-      ? `${linearProgress.doneKm}km / ${mission.totalKm}km · ${linearProgress.percent.toFixed(1)}%`
-      : isQueue
-        ? '대기중'
-        : '',
+    sub: isQueue
+      ? '대기중'
+      : `${linearProgress.doneKm}km / ${mission.totalKm}km · ${linearProgress.percent.toFixed(1)}%`,
     timeLabel: isQueue ? '대기중' : formatRemaining(mission.endsAt),
     sortAt: isQueue ? toTime(mission.createdAt) + 1000 * DAY_MS : endsAt,
     progress,
   }
 }
 
+
 function createMaintenanceWatchCard(item) {
   const isQueued = item.status === 'queued'
   const startedAt = toTime(item.repairStartedAt || item.enteredAt)
   const endsAt = toTime(item.currentEndsAt)
-  const progress = isQueued ? 0 : progressPercent(startedAt, endsAt)
 
   return {
     id: item.id,
@@ -632,16 +401,40 @@ function createMaintenanceWatchCard(item) {
     group: item.group,
     status: item.status,
     badge: `정비.${groupName(item.group)}`,
-    title: maintenanceDisplayTitle(item.group),
+    title: maintenanceDisplayTitle(item),
     sub: maintenanceStatusText(item.status),
     timeLabel: isQueued ? '대기중' : formatRemaining(item.currentEndsAt),
     sortAt: isQueued ? toTime(item.enteredAt) + 1200 * DAY_MS : endsAt,
-    progress,
+    progress: isQueued ? 0 : progressPercent(startedAt, endsAt),
   }
 }
 
+function allMaintenanceItems() {
+  return maintenanceGroups
+    .flatMap((group) => state.maintenanceCenters[group.id] || [])
+    .sort((a, b) => {
+      if (a.status === 'queued' && b.status !== 'queued') return 1
+      if (a.status !== 'queued' && b.status === 'queued') return -1
+      return toTime(a.currentEndsAt || a.enteredAt) - toTime(b.currentEndsAt || b.enteredAt)
+    })
+}
+
+function maintenanceActiveCount(groupId) {
+  return (state.maintenanceCenters[groupId] || []).filter((item) => item.status !== 'queued').length
+}
+
+function maintenanceDisplayTitle(item) {
+  return item?.title || `${groupName(item?.group)}정비`
+}
+
+function maintenanceStatusText(status) {
+  if (status === 'parts_waiting') return '부품조달중'
+  if (status === 'queued') return '대기열'
+  return '정비중'
+}
+
 function facilityProgress(mission) {
-  if (!mission?.startedAt || mission.type !== 'linear') {
+  if (!mission?.startedAt) {
     return { doneKm: '0.0', remainingKm: mission?.totalKm || 0, percent: 0 }
   }
 
@@ -663,75 +456,6 @@ function progressPercent(startAt, endAt) {
   return Math.min(100, Math.max(0, percent))
 }
 
-function allMaintenanceItems() {
-  return groups
-    .flatMap((group) => state.maintenanceCenters[group.id] || [])
-    .sort((a, b) => {
-      if (a.status === 'queued' && b.status !== 'queued') return 1
-      if (a.status !== 'queued' && b.status === 'queued') return -1
-      return toTime(a.currentEndsAt || a.enteredAt) - toTime(b.currentEndsAt || b.enteredAt)
-    })
-}
-
-function maintenanceActiveCount(groupId) {
-  return (state.maintenanceCenters[groupId] || []).filter((item) => item.status !== 'queued').length
-}
-
-function maintenanceQueueCount(groupId) {
-  return (state.maintenanceCenters[groupId] || []).filter((item) => item.status === 'queued').length
-}
-
-function operationDisplayTitle(groupId) {
-  const labels = {
-    bus: '버스운행',
-    rail: '철도운행',
-    air: '항공운항',
-    ship: '선박운항',
-    space: '우주운송',
-  }
-
-  return labels[groupId] || '운영임무'
-}
-
-function maintenanceDisplayTitle(groupId) {
-  const labels = {
-    bus: '버스정비',
-    rail: '철도정비',
-    air: '항공정비',
-    ship: '선박정비',
-    space: '우주정비',
-  }
-
-  return labels[groupId] || '정비'
-}
-
-function maintenanceStatusText(status) {
-  if (status === 'parts_waiting') return '부품조달중'
-  if (status === 'queued') return '대기열'
-  return '정비중'
-}
-
-function logTypeText(type) {
-  if (type === 'operation') return '운영'
-  if (type === 'facility') return '시설'
-  if (type === 'maintenance') return '정비'
-  if (type === 'parts') return '부품'
-  if (type === 'complete') return '완료'
-  return '시스템'
-}
-
-function addLog(type, title, date = new Date()) {
-  state.activityLog = [
-    {
-      id: createId('log'),
-      type,
-      title,
-      at: date.toISOString(),
-    },
-    ...state.activityLog,
-  ].slice(0, LOG_LIMIT)
-}
-
 function trimLists() {
   if (state.acceptedMissions.length > 240) {
     state.acceptedMissions = operationSorted.value.slice(0, 240)
@@ -740,17 +464,6 @@ function trimLists() {
   if (state.facilityQueue.length > 40) {
     state.facilityQueue = facilityQueueSorted.value.slice(0, 40)
   }
-
-  groups.forEach((group) => {
-    const items = state.maintenanceCenters[group.id] || []
-    if (items.length > 80) {
-      state.maintenanceCenters[group.id] = items.slice(0, 80)
-    }
-  })
-
-  state.activityLog = [...state.activityLog]
-    .sort((a, b) => toTime(b.at) - toTime(a.at))
-    .slice(0, LOG_LIMIT)
 }
 
 function getSavePayload() {
@@ -762,44 +475,95 @@ function getSavePayload() {
     facilityQueue: toPlainArray(state.facilityQueue),
     activeFacilityMission: state.activeFacilityMission ? { ...state.activeFacilityMission } : null,
     maintenanceCenters: toPlainMaintenanceCenters(),
-    activityLog: toPlainArray(state.activityLog),
-    lastOperationAt: state.lastOperationAt,
+    lastOperationByGroup: { ...state.lastOperationByGroup },
     lastFacilityAt: state.lastFacilityAt,
-    lastMaintenanceAt: state.lastMaintenanceAt,
   }
 }
 
-function restorePayload(payload) {
+function restorePayload(payload, now = new Date()) {
   state.acceptedMissions = normalizeArray(payload.acceptedMissions)
   state.facilityQueue = normalizeArray(payload.facilityQueue)
   state.activeFacilityMission = payload.activeFacilityMission || null
   state.maintenanceCenters = normalizeMaintenanceCenters(payload.maintenanceCenters)
-  state.activityLog = normalizeArray(payload.activityLog).slice(0, LOG_LIMIT)
-  state.lastOperationAt = payload.lastOperationAt || payload.lastGeneralMissionAt || ''
-  state.lastFacilityAt = payload.lastFacilityAt || payload.lastFacilityMissionAt || ''
-  state.lastMaintenanceAt = payload.lastMaintenanceAt || payload.lastMaintenanceCheckAt || ''
+  state.lastOperationByGroup = normalizeLastOperationByGroup(payload.lastOperationByGroup, now)
+  state.lastFacilityAt = payload.lastFacilityAt || now.toISOString()
+}
+
+function normalizeLastOperationByGroup(value, now = new Date()) {
+  return operationGroups.reduce((result, group) => {
+    result[group.id] = value?.[group.id] || now.toISOString()
+    return result
+  }, {})
 }
 
 function toPlainArray(array) {
   return JSON.parse(JSON.stringify(array || []))
 }
 
+function normalizeArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
 function toPlainMaintenanceCenters() {
-  return groups.reduce((result, group) => {
+  return maintenanceGroups.reduce((result, group) => {
     result[group.id] = toPlainArray(state.maintenanceCenters[group.id])
     return result
   }, {})
 }
 
-function normalizeArray(value) {
-  return Array.isArray(value) ? value : []
+function normalizeMaintenanceCenters(value) {
+  const centers = createEmptyMaintenanceCenters()
+  if (!value || typeof value !== 'object') return centers
+
+  maintenanceGroups.forEach((group) => {
+    centers[group.id] = normalizeArray(value[group.id])
+      .map((item) => normalizeLegacyMaintenanceItem(item, group.id))
+      .filter(Boolean)
+  })
+
+  return centers
 }
 
-function normalizeMaintenanceCenters(value) {
-  return groups.reduce((centers, group) => {
-    centers[group.id] = Array.isArray(value?.[group.id]) ? value[group.id] : []
-    return centers
-  }, {})
+function normalizeLegacyMaintenanceItem(item, fallbackGroup) {
+  if (!item || typeof item !== 'object') return null
+
+  const group = groupLabels[item.group] ? item.group : fallbackGroup
+  const enteredAt = validDateText(item.enteredAt || item.createdAt || item.startedAt) || new Date().toISOString()
+  const status = item.status || (item.repairStartedAt || item.currentEndsAt || item.originalEndsAt ? 'repairing' : 'queued')
+  const repairStartedAt = item.repairStartedAt || (status === 'queued' ? '' : enteredAt)
+  const endCandidate = item.currentEndsAt || item.endsAt || item.originalEndsAt
+  const baseDurationMs = Number(item.baseDurationMs) || Math.max(
+    HOUR_MS,
+    toTime(endCandidate) - toTime(repairStartedAt || enteredAt),
+  )
+  const originalEndsAt = item.originalEndsAt || item.endsAt || (repairStartedAt ? new Date(toTime(repairStartedAt) + baseDurationMs).toISOString() : '')
+  const currentEndsAt = item.currentEndsAt || item.endsAt || originalEndsAt
+  const partsEvent = item.partsEvent
+    ? {
+        ...item.partsEvent,
+        durationMs: Number(item.partsEvent.durationMs || item.partsEvent.durationHours * HOUR_MS || 0),
+      }
+    : null
+
+  return {
+    ...item,
+    id: item.id || createId('maint_legacy'),
+    kind: 'maintenance',
+    group,
+    level: item.level || 'legacy',
+    title: item.title || `${groupName(group)}정비`,
+    status,
+    enteredAt,
+    baseDurationMs,
+    repairStartedAt,
+    originalEndsAt,
+    currentEndsAt,
+    partsEvent,
+  }
+}
+
+function validDateText(value) {
+  return toTime(value) ? new Date(value).toISOString() : ''
 }
 
 async function loadSave() {
@@ -807,13 +571,13 @@ async function loadSave() {
   const record = await loadRctsAutoSave()
   const payload = record?.payload
 
-  if (!payload || payload.schemaVersion !== SAVE_SCHEMA_VERSION) {
+  if (!payload) {
     bootstrapNewGame(now)
     return
   }
 
-  restorePayload(payload)
-  processGameState(now, 'load')
+  restorePayload(payload, now)
+  processGameState(now)
 }
 
 async function saveSoon() {
@@ -837,11 +601,11 @@ function startTimers() {
 
 function handleVisibilityChange() {
   if (document.visibilityState === 'hidden') saveSoon()
-  if (document.visibilityState === 'visible') processGameState(new Date(), 'load')
+  if (document.visibilityState === 'visible') processGameState(new Date())
 }
 
 function groupName(groupId) {
-  return groups.find((group) => group.id === groupId)?.label || groupId
+  return groupLabels[groupId] || groupId || '기타'
 }
 
 function pickRandom(array) {
@@ -872,18 +636,6 @@ function formatClockTime(value) {
   const hh = String(date.getHours()).padStart(2, '0')
   const mm = String(date.getMinutes()).padStart(2, '0')
   return `${hh}:${mm}`
-}
-
-function formatDateTime(value) {
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-
-  const yyyy = date.getFullYear()
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const dd = String(date.getDate()).padStart(2, '0')
-  const hh = String(date.getHours()).padStart(2, '0')
-  const min = String(date.getMinutes()).padStart(2, '0')
-  return `${yyyy}/${mm}/${dd} ${hh}:${min}`
 }
 
 function formatRemaining(value) {
@@ -973,8 +725,7 @@ onBeforeUnmount(() => {
 
 .topbar,
 .deck-panel,
-.watch-card,
-.empty-card {
+.watch-card {
   border: 1px solid rgba(148, 163, 184, 0.14);
   background: rgba(15, 23, 42, 0.72);
   box-shadow: 0 16px 44px rgba(0, 0, 0, 0.24);
@@ -1078,22 +829,17 @@ onBeforeUnmount(() => {
   padding: 12px;
 }
 
-.watch-card.operation.bus,
-.watch-card.maintenance.bus { border-left-color: #38bdf8; }
-.watch-card.operation.rail,
-.watch-card.maintenance.rail { border-left-color: #a78bfa; }
-.watch-card.operation.air,
-.watch-card.maintenance.air { border-left-color: #22d3ee; }
-.watch-card.operation.ship,
-.watch-card.maintenance.ship { border-left-color: #2dd4bf; }
-.watch-card.operation.space,
-.watch-card.maintenance.space { border-left-color: #f0abfc; }
+.watch-card.operation.bus { border-left-color: #38bdf8; }
+.watch-card.operation.rail { border-left-color: #a78bfa; }
+.watch-card.operation.air { border-left-color: #22d3ee; }
+.watch-card.operation.ship { border-left-color: #2dd4bf; }
 .watch-card.facility { border-left-color: #c084fc; }
-.watch-card.parts_waiting {
-  border-color: rgba(250, 204, 21, 0.3);
-  border-left-color: #facc15;
-  background: rgba(113, 63, 18, 0.18);
-}
+.watch-card.maintenance { border-left-color: #f59e0b; }
+.watch-card.maintenance.bus { border-left-color: #38bdf8; }
+.watch-card.maintenance.rail { border-left-color: #a78bfa; }
+.watch-card.maintenance.air { border-left-color: #22d3ee; }
+.watch-card.maintenance.ship { border-left-color: #2dd4bf; }
+.watch-card.maintenance.space { border-left-color: #f0abfc; }
 .watch-card.queued { opacity: 0.76; }
 
 .card-label {
@@ -1145,21 +891,6 @@ onBeforeUnmount(() => {
   line-height: 1.35;
 }
 
-.empty-card {
-  border-radius: 18px;
-  padding: 16px;
-}
-
-.empty-card strong {
-  color: #f8fafc;
-}
-
-.empty-card p {
-  margin: 6px 0 0;
-  color: #b6c5da;
-  font-size: 13px;
-}
-
 @media (max-width: 620px) {
   .rcts-page {
     width: min(100% - 14px, 620px);
@@ -1177,7 +908,6 @@ onBeforeUnmount(() => {
   .watch-card {
     border-radius: 16px;
   }
-
 
   .card-bodyline {
     grid-template-columns: 1fr;
