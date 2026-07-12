@@ -1,45 +1,67 @@
 <template>
-  <div class="rcts-page">
-    <header class="topbar">
-      <div class="brand-block">
-        <span>Realtime Mission Simulation</span>
+  <div class="facility-page">
+    <header class="hero simple-hero">
+      <div class="title-block compact title-row">
         <h1>RCTS</h1>
+        <strong>행정예산 {{ formatWon(state.budgetWon) }}</strong>
       </div>
-
-      <aside class="digital-clock" aria-label="현 표준시간">
-        <span>현 표준시간</span>
-        <strong>{{ digitalClockText }}</strong>
-        <em>{{ digitalDateText }}</em>
-      </aside>
     </header>
 
-    <main class="deck-panel" aria-label="통합카드덱">
-      <header class="deck-head">
-        <span>통합카드덱</span>
-        <strong>{{ watchCards.length }}개 진행중</strong>
-      </header>
+    <p v-if="noticeText" class="notice-line">{{ noticeText }}</p>
 
-      <div class="card-deck">
-        <article
-          v-for="card in watchCards"
-          :key="card.id"
-          class="watch-card"
-          :class="[card.kind, card.group || '', card.status || '']"
-        >
-          <div class="card-label">{{ card.badge }}</div>
+    <main class="deck" aria-label="시설행정 카드덱">
+      <section class="deck-section" v-if="activeCards.length">
+        <header class="section-head">
+          <span>진행 중 시설사업</span>
+          <strong>{{ activeCards.length }}건</strong>
+        </header>
 
-          <div class="card-bodyline">
-            <h2>{{ card.title }}</h2>
-            <strong>{{ card.timeLabel }}</strong>
-          </div>
+        <div class="card-list">
+          <article
+            v-for="project in activeCards"
+            :key="project.id"
+            class="project-card active"
+            :class="[project.method, project.scale, project.status]"
+          >
+            <div class="card-topline">
+              <span>{{ methodLabel(project) }}.{{ groupLabel(project.group) }}</span>
+              <em>{{ scaleLabel(project.scale) }}</em>
+            </div>
 
-          <div class="progress-track" aria-label="진행률">
-            <span :style="{ width: `${card.progress}%` }"></span>
-          </div>
+            <h2>{{ project.title }}</h2>
 
-          <p v-if="card.sub">{{ card.sub }}</p>
-        </article>
-      </div>
+            <div class="info-grid compact-info">
+              <div class="info-row progress-inline">
+                <span>진행률</span>
+                <b aria-hidden="true" :style="{ '--progress': `${project.progress}%` }"></b>
+                <strong>{{ project.progress }}%</strong>
+              </div>
+              <div class="info-row">
+                <span>남은시간</span>
+                <strong>{{ project.status === 'payment_waiting' ? '정산 대기' : project.remainingText }}</strong>
+              </div>
+              <div class="info-row">
+                <span>위탁비용</span>
+                <strong>{{ formatWon(contractFeeAmount(project)) }}</strong>
+              </div>
+              <div class="info-row">
+                <span>전체사업비</span>
+                <strong>{{ formatWon(project.totalCostWon) }}</strong>
+              </div>
+            </div>
+
+            <button
+              v-if="project.status === 'payment_waiting'"
+              class="action-button primary"
+              :disabled="state.budgetWon < project.contractFeeWon"
+              @click="payContractProject(project.id)"
+            >
+              위탁비 지급
+            </button>
+          </article>
+        </div>
+      </section>
+
     </main>
   </div>
 </template>
@@ -48,639 +70,584 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { loadRctsAutoSave, saveRctsAutoSave } from './storage/rctsSaveStorage.js'
 
-const SAVE_SCHEMA_VERSION = 9
+const SAVE_SCHEMA_VERSION = 26
 const SECOND_MS = 1000
 const MINUTE_MS = 60 * SECOND_MS
 const HOUR_MS = 60 * MINUTE_MS
 const DAY_MS = 24 * HOUR_MS
+const TICK_MS = 1000
 const AUTO_SAVE_INTERVAL_MS = 60 * SECOND_MS
-const OPERATION_INTERVAL_MS = HOUR_MS
-const FACILITY_INTERVAL_MS = 7 * DAY_MS
-const MAX_OPERATION_CATCH_UP = 120
-const MAX_FACILITY_CATCH_UP = 30
-const MAINTENANCE_SLOT_LIMIT = 5
+const MAX_MISSION_CATCH_UP = 80
+const MAX_AVAILABLE_PROJECTS = 18
+const MAX_ACTIVE_PROJECTS = 80
+const MAX_COMPLETED_HISTORY = 80
+
+const cityName = ''
+
+const facilityGroups = ['bus', 'rail', 'air', 'ship']
 
 const groupLabels = {
-  bus: '버스',
-  rail: '철도',
-  air: '항공',
-  ship: '선박',
-  space: '우주',
+  bus: '버스시설',
+  rail: '철도시설',
+  air: '항공시설',
+  ship: '선박시설',
 }
 
-const maintenanceGroups = [
-  { id: 'bus', label: '버스' },
-  { id: 'rail', label: '철도' },
-  { id: 'air', label: '항공' },
-  { id: 'ship', label: '선박' },
-  { id: 'space', label: '우주' },
-]
+const scaleLabels = {
+  small: '소형',
+  medium: '중형',
+  large: '대형',
+  mega: '초대형',
+}
 
-const operationGroups = [
-  { id: 'bus', label: '버스', title: '버스운행', minMs: 1 * HOUR_MS, maxMs: 4 * HOUR_MS },
-  { id: 'rail', label: '철도', title: '철도운행', minMs: 2 * HOUR_MS, maxMs: 6 * HOUR_MS },
-  { id: 'air', label: '항공', title: '항공운행', minMs: 1 * HOUR_MS, maxMs: 15 * HOUR_MS },
-  { id: 'ship', label: '선박', title: '선박운행', minMs: 1 * DAY_MS, maxMs: 30 * DAY_MS },
-]
+const contractFeeRates = {
+  small: 0.32,
+  medium: 0.26,
+  large: 0.16,
+  mega: 0.08,
+}
 
-const facilityCatalog = [
-  { title: '도로설치', type: 'install', totalMin: 30, totalMax: 500, dailyMin: 2, dailyMax: 5 },
-  { title: '철도설치', type: 'install', totalMin: 30, totalMax: 500, dailyMin: 1, dailyMax: 3 },
-  { title: '시설유지보수', type: 'maintenance', totalMin: 5, totalMax: 120, dailyMin: 4, dailyMax: 10 },
-  { title: '도로유지보수', type: 'maintenance', totalMin: 10, totalMax: 180, dailyMin: 5, dailyMax: 12 },
-  { title: '철도유지보수', type: 'maintenance', totalMin: 10, totalMax: 160, dailyMin: 3, dailyMax: 8 },
-]
+const directAllowedScales = new Set(['small', 'medium'])
 
-const standardNow = ref(new Date())
+const generationRules = {
+  small: { minMs: 6 * HOUR_MS, maxMs: 18 * HOUR_MS, catchUp: 24 },
+  medium: { minMs: 18 * HOUR_MS, maxMs: 3 * DAY_MS, catchUp: 18 },
+  large: { minMs: 7 * DAY_MS, maxMs: 21 * DAY_MS, catchUp: 8 },
+  mega: { minMs: 30 * DAY_MS, maxMs: 90 * DAY_MS, catchUp: 3 },
+}
+
+const templates = {
+  bus: [
+    template('정류장 표지판 정비', 'small', 6 * HOUR_MS, 2 * DAY_MS, 5_000_000, 30_000_000, '정류장 안내성과 보행 접근성이 개선됩니다.'),
+    template('정류장 승강장 개선', 'small', 2 * DAY_MS, 14 * DAY_MS, 50_000_000, 500_000_000, '승하차 안전성과 시민 이용 만족도가 개선됩니다.'),
+    template('버스전용차로 노면 보수', 'medium', 3 * DAY_MS, 20 * DAY_MS, 200_000_000, 2_000_000_000, '버스 통행 안정성과 정시성이 개선됩니다.'),
+    template('회차지 포장 보수', 'medium', 7 * DAY_MS, 30 * DAY_MS, 300_000_000, 1_500_000_000, '회차 안정성과 기사 휴게 여건이 개선됩니다.'),
+    template('회차지 신설', 'large', 30 * DAY_MS, 180 * DAY_MS, 3_000_000_000, 30_000_000_000, '노선 회전율과 배차 안정성이 크게 개선됩니다.'),
+    template('공영차고지 확장', 'large', 60 * DAY_MS, 365 * DAY_MS, 8_000_000_000, 80_000_000_000, '차량 수용 능력과 장기 시설 여력이 증가합니다.'),
+  ],
+  rail: [
+    template('철도역 승강장 안전시설', 'large', 90 * DAY_MS, 365 * DAY_MS, 10_000_000_000, 100_000_000_000, '철도역 안전성과 승객 처리 능력이 개선됩니다.'),
+    template('환승통로 확장', 'large', 180 * DAY_MS, 720 * DAY_MS, 30_000_000_000, 300_000_000_000, '환승 혼잡이 줄고 광역교통 연결성이 개선됩니다.'),
+    template('선로 유지보수', 'large', 30 * DAY_MS, 180 * DAY_MS, 5_000_000_000, 50_000_000_000, '철도시설 안전도와 안정성이 개선됩니다.'),
+    template('차량기지 확장', 'large', 365 * DAY_MS, 1080 * DAY_MS, 100_000_000_000, 1_000_000_000_000, '철도 운영 기반시설의 수용 능력이 증가합니다.'),
+    template('철도신설', 'mega', 720 * DAY_MS, 2400 * DAY_MS, 500_000_000_000, 5_000_000_000_000, '장기 광역교통 축이 신설됩니다. 세부 노선도는 추상화됩니다.'),
+  ],
+  air: [
+    template('공항 접근도로 개선', 'large', 180 * DAY_MS, 720 * DAY_MS, 50_000_000_000, 500_000_000_000, '공항 접근성과 광역교통 연결성이 개선됩니다.'),
+    template('공항버스 터미널 개선', 'large', 120 * DAY_MS, 540 * DAY_MS, 30_000_000_000, 250_000_000_000, '공항 대중교통 환승 여건이 개선됩니다.'),
+    template('공항 환승센터 건설', 'mega', 720 * DAY_MS, 1800 * DAY_MS, 500_000_000_000, 3_000_000_000_000, '공항과 도시교통의 환승 기반이 완성됩니다.'),
+    template('여객터미널 기반공사', 'mega', 1080 * DAY_MS, 2520 * DAY_MS, 1_000_000_000_000, 10_000_000_000_000, '대규모 항공 여객시설 기반이 구축됩니다.'),
+    template('화물터미널 기반공사', 'mega', 720 * DAY_MS, 2160 * DAY_MS, 800_000_000_000, 6_000_000_000_000, '항공 물류 처리 기반이 구축됩니다.'),
+    template('활주로 지원시설 건설', 'mega', 720 * DAY_MS, 2520 * DAY_MS, 800_000_000_000, 8_000_000_000_000, '공항 운항 기반시설이 확장됩니다.'),
+  ],
+  ship: [
+    template('선착장 개선', 'medium', 30 * DAY_MS, 180 * DAY_MS, 3_000_000_000, 50_000_000_000, '연안 교통시설 접근성과 안전성이 개선됩니다.'),
+    template('여객터미널 확장', 'large', 180 * DAY_MS, 720 * DAY_MS, 50_000_000_000, 500_000_000_000, '여객 처리 능력과 항만 접근성이 개선됩니다.'),
+    template('항만 접속도로 개선', 'large', 180 * DAY_MS, 720 * DAY_MS, 30_000_000_000, 300_000_000_000, '항만과 도시 교통망의 연결성이 개선됩니다.'),
+    template('항만 물류시설 정비', 'large', 90 * DAY_MS, 365 * DAY_MS, 20_000_000_000, 200_000_000_000, '물류 처리 안정성과 항만 운영 기반이 개선됩니다.'),
+    template('도서 여객선 터미널 개선', 'large', 180 * DAY_MS, 900 * DAY_MS, 80_000_000_000, 800_000_000_000, '도서지역 공공교통 연결성이 개선됩니다.'),
+  ],
+}
+
+function template(title, scale, minMs, maxMs, minCost, maxCost, effect) {
+  return { title, scale, minMs, maxMs, minCost, maxCost, effect }
+}
+
+const now = ref(Date.now())
+const noticeText = ref('')
 let tickTimer = null
-let autoSaveTimer = null
-let saveLock = false
-
-const state = reactive({
-  acceptedMissions: [],
-  facilityQueue: [],
-  activeFacilityMission: null,
-  maintenanceCenters: createEmptyMaintenanceCenters(),
-  lastOperationByGroup: {},
-  lastFacilityAt: '',
-})
-
-const digitalDateText = computed(() => formatDateOnly(standardNow.value))
-const digitalClockText = computed(() => formatClockTime(standardNow.value))
-
-const operationSorted = computed(() => {
-  return [...state.acceptedMissions].sort((a, b) => toTime(a.endsAt) - toTime(b.endsAt))
-})
-
-const facilityQueueSorted = computed(() => {
-  return [...state.facilityQueue].sort((a, b) => toTime(a.createdAt) - toTime(b.createdAt))
-})
-
-const watchCards = computed(() => {
-  const cards = []
-
-  if (state.activeFacilityMission) {
-    cards.push(createFacilityWatchCard(state.activeFacilityMission, 'active'))
-  }
-
-  facilityQueueSorted.value.slice(0, 4).forEach((mission, index) => {
-    cards.push(createFacilityWatchCard(mission, `queue-${index + 1}`))
-  })
-
-  operationSorted.value.slice(0, 40).forEach((mission) => {
-    cards.push(createOperationWatchCard(mission))
-  })
-
-  allMaintenanceItems().slice(0, 20).forEach((item) => {
-    cards.push(createMaintenanceWatchCard(item))
-  })
-
-  return cards
-    .filter(Boolean)
-    .sort((a, b) => a.sortAt - b.sortAt)
-    .slice(0, 48)
-})
-
-function bootstrapNewGame(now) {
-  standardNow.value = now
-  state.acceptedMissions = []
-  state.facilityQueue = []
-  state.activeFacilityMission = null
-  state.maintenanceCenters = createEmptyMaintenanceCenters()
-  state.lastOperationByGroup = {}
-  state.lastFacilityAt = now.toISOString()
-
-  operationGroups.forEach((group, index) => {
-    const seedDate = new Date(now.getTime() - randomInteger(5, 45) * MINUTE_MS - index * 2 * MINUTE_MS)
-    generateOperationMission(group, seedDate)
-    state.lastOperationByGroup[group.id] = now.toISOString()
-  })
-
-  generateFacilityMission(new Date(now.getTime() - 2 * DAY_MS))
-  processGameState(now)
-}
-
-function processGameState(now) {
-  standardNow.value = now
-  maybeGenerateOperations(now)
-  maybeGenerateFacility(now)
-  processFacility(now)
-  processMaintenance(now)
-  completeOperationMissions(now)
-  trimLists()
-}
-
-function maybeGenerateOperations(now) {
-  operationGroups.forEach((group) => {
-    const last = toTime(state.lastOperationByGroup[group.id]) || now.getTime()
-    const elapsed = Math.floor((now.getTime() - last) / OPERATION_INTERVAL_MS)
-
-    if (elapsed <= 0) {
-      if (!state.lastOperationByGroup[group.id]) state.lastOperationByGroup[group.id] = now.toISOString()
-      return
-    }
-
-    const count = Math.min(elapsed, MAX_OPERATION_CATCH_UP)
-
-    for (let index = count; index >= 1; index -= 1) {
-      generateOperationMission(group, new Date(now.getTime() - index * OPERATION_INTERVAL_MS))
-    }
-
-    state.lastOperationByGroup[group.id] = new Date(last + elapsed * OPERATION_INTERVAL_MS).toISOString()
-  })
-}
-
-function generateOperationMission(group, date) {
-  const durationMs = randomInteger(group.minMs, group.maxMs)
-
-  state.acceptedMissions.push({
-    id: createId('op'),
-    kind: 'operation',
-    group: group.id,
-    title: group.title,
-    durationMs,
-    startedAt: date.toISOString(),
-    endsAt: new Date(date.getTime() + durationMs).toISOString(),
-  })
-}
-
-function completeOperationMissions(now) {
-  state.acceptedMissions = state.acceptedMissions.filter((mission) => {
-    return toTime(mission.endsAt) > now.getTime()
-  })
-}
-
-function maybeGenerateFacility(now) {
-  const last = toTime(state.lastFacilityAt) || now.getTime()
-  const elapsed = Math.floor((now.getTime() - last) / FACILITY_INTERVAL_MS)
-
-  if (elapsed <= 0) {
-    if (!state.lastFacilityAt) state.lastFacilityAt = now.toISOString()
-    return
-  }
-
-  const count = Math.min(elapsed, MAX_FACILITY_CATCH_UP)
-
-  for (let index = count; index >= 1; index -= 1) {
-    generateFacilityMission(new Date(now.getTime() - index * FACILITY_INTERVAL_MS))
-  }
-
-  state.lastFacilityAt = new Date(last + elapsed * FACILITY_INTERVAL_MS).toISOString()
-}
-
-function generateFacilityMission(date) {
-  const template = pickRandom(facilityCatalog)
-  const mission = createFacilityMission(template, date)
-
-  if (!state.activeFacilityMission) {
-    startFacilityMission(mission, date)
-  } else {
-    state.facilityQueue.push(mission)
-  }
-
-  return mission
-}
-
-function createFacilityMission(template, date) {
-  const totalKm = randomInteger(template.totalMin, template.totalMax)
-  const dailyKm = randomInteger(template.dailyMin, template.dailyMax)
-  const durationMs = Math.ceil(totalKm / dailyKm) * DAY_MS
-
-  return {
-    id: createId('facility'),
-    kind: 'facility',
-    type: template.type,
-    title: template.title,
-    totalKm,
-    dailyKm,
-    durationMs,
-    createdAt: date.toISOString(),
-    startedAt: '',
-    endsAt: '',
-  }
-}
-
-function startFacilityMission(mission, date) {
-  state.activeFacilityMission = {
-    ...mission,
-    startedAt: date.toISOString(),
-    endsAt: new Date(date.getTime() + mission.durationMs).toISOString(),
-  }
-}
-
-function processFacility(now) {
-  if (state.activeFacilityMission && toTime(state.activeFacilityMission.endsAt) <= now.getTime()) {
-    state.activeFacilityMission = null
-  }
-
-  if (!state.activeFacilityMission && state.facilityQueue.length) {
-    const [nextMission, ...rest] = facilityQueueSorted.value
-    state.facilityQueue = rest
-    startFacilityMission(nextMission, now)
-  }
-}
-
-function createEmptyMaintenanceCenters() {
-  return maintenanceGroups.reduce((centers, group) => {
-    centers[group.id] = []
-    return centers
-  }, {})
-}
-
-function processMaintenance(now) {
-  maintenanceGroups.forEach((group) => {
-    const center = state.maintenanceCenters[group.id] || []
-    const remaining = []
-
-    center.forEach((item) => {
-      if (item.status === 'queued') {
-        remaining.push(item)
-        return
-      }
-
-      if (item.status === 'repairing' && item.partsEvent?.plannedAt && !item.partsEvent.occurredAt && toTime(item.partsEvent.plannedAt) <= now.getTime()) {
-        const occurredAt = new Date(item.partsEvent.plannedAt)
-        const durationMs = Number(item.partsEvent.durationMs || item.partsEvent.durationHours * HOUR_MS || 0)
-        const partsEndsAt = new Date(occurredAt.getTime() + durationMs)
-        item.partsEvent.occurredAt = occurredAt.toISOString()
-        item.partsEvent.endsAt = partsEndsAt.toISOString()
-        item.currentEndsAt = new Date(toTime(item.currentEndsAt) + durationMs).toISOString()
-        item.status = partsEndsAt.getTime() > now.getTime() ? 'parts_waiting' : 'repairing'
-      }
-
-      if (item.status === 'parts_waiting' && item.partsEvent?.endsAt && toTime(item.partsEvent.endsAt) <= now.getTime()) {
-        item.status = 'repairing'
-      }
-
-      if (item.currentEndsAt && toTime(item.currentEndsAt) <= now.getTime()) {
-        return
-      }
-
-      remaining.push(item)
-    })
-
-    state.maintenanceCenters[group.id] = promoteMaintenanceQueue(group.id, remaining, now)
-  })
-}
-
-function promoteMaintenanceQueue(groupId, items, now) {
-  const promoted = [...items]
-
-  while (promoted.filter((item) => item.status !== 'queued').length < MAINTENANCE_SLOT_LIMIT) {
-    const next = promoted.find((item) => item.status === 'queued')
-    if (!next) break
-    startLegacyMaintenance(next, now)
-  }
-
-  return promoted
-}
-
-function startLegacyMaintenance(item, date) {
-  const baseDurationMs = Number(item.baseDurationMs) || Math.max(HOUR_MS, toTime(item.currentEndsAt || item.originalEndsAt) - date.getTime()) || DAY_MS
-  const originalEndsAt = new Date(date.getTime() + baseDurationMs)
-
-  item.status = 'repairing'
-  item.baseDurationMs = baseDurationMs
-  item.repairStartedAt = date.toISOString()
-  item.originalEndsAt = item.originalEndsAt || originalEndsAt.toISOString()
-  item.currentEndsAt = item.currentEndsAt || originalEndsAt.toISOString()
-
-  if (item.partsEvent && item.partsEvent.durationHours && !item.partsEvent.durationMs) {
-    item.partsEvent.durationMs = Number(item.partsEvent.durationHours) * HOUR_MS
-  }
-}
-
-function createOperationWatchCard(mission) {
-  const startedAt = toTime(mission.startedAt)
-  const endsAt = toTime(mission.endsAt)
-
-  return {
-    id: mission.id,
-    kind: 'operation',
-    group: mission.group,
-    badge: `운영.${groupName(mission.group)}`,
-    title: mission.title,
-    sub: '',
-    timeLabel: formatRemaining(mission.endsAt),
-    sortAt: endsAt,
-    progress: progressPercent(startedAt, endsAt),
-  }
-}
-
-function createFacilityWatchCard(mission, mode) {
-  const isQueue = mode !== 'active'
-  const startedAt = toTime(mission.startedAt)
-  const endsAt = toTime(mission.endsAt)
-  const progress = isQueue ? 0 : progressPercent(startedAt, endsAt)
-  const linearProgress = !isQueue ? facilityProgress(mission) : null
-
-  return {
-    id: `${mission.id}_${mode}`,
-    kind: 'facility',
-    status: isQueue ? 'queued' : mission.type,
-    badge: `시설.${mission.type === 'maintenance' ? '유지보수' : '설치'}`,
-    title: mission.title,
-    sub: isQueue
-      ? '대기중'
-      : `${linearProgress.doneKm}km / ${mission.totalKm}km · ${linearProgress.percent.toFixed(1)}%`,
-    timeLabel: isQueue ? '대기중' : formatRemaining(mission.endsAt),
-    sortAt: isQueue ? toTime(mission.createdAt) + 1000 * DAY_MS : endsAt,
-    progress,
-  }
-}
-
-
-function createMaintenanceWatchCard(item) {
-  const isQueued = item.status === 'queued'
-  const startedAt = toTime(item.repairStartedAt || item.enteredAt)
-  const endsAt = toTime(item.currentEndsAt)
-
-  return {
-    id: item.id,
-    kind: 'maintenance',
-    group: item.group,
-    status: item.status,
-    badge: `정비.${groupName(item.group)}`,
-    title: maintenanceDisplayTitle(item),
-    sub: maintenanceStatusText(item.status),
-    timeLabel: isQueued ? '대기중' : formatRemaining(item.currentEndsAt),
-    sortAt: isQueued ? toTime(item.enteredAt) + 1200 * DAY_MS : endsAt,
-    progress: isQueued ? 0 : progressPercent(startedAt, endsAt),
-  }
-}
-
-function allMaintenanceItems() {
-  return maintenanceGroups
-    .flatMap((group) => state.maintenanceCenters[group.id] || [])
-    .sort((a, b) => {
-      if (a.status === 'queued' && b.status !== 'queued') return 1
-      if (a.status !== 'queued' && b.status === 'queued') return -1
-      return toTime(a.currentEndsAt || a.enteredAt) - toTime(b.currentEndsAt || b.enteredAt)
-    })
-}
-
-function maintenanceActiveCount(groupId) {
-  return (state.maintenanceCenters[groupId] || []).filter((item) => item.status !== 'queued').length
-}
-
-function maintenanceDisplayTitle(item) {
-  return item?.title || `${groupName(item?.group)}정비`
-}
-
-function maintenanceStatusText(status) {
-  if (status === 'parts_waiting') return '부품조달중'
-  if (status === 'queued') return '대기열'
-  return '정비중'
-}
-
-function facilityProgress(mission) {
-  if (!mission?.startedAt) {
-    return { doneKm: '0.0', remainingKm: mission?.totalKm || 0, percent: 0 }
-  }
-
-  const elapsedDays = Math.max(0, (standardNow.value.getTime() - toTime(mission.startedAt)) / DAY_MS)
-  const done = Math.min(mission.totalKm, elapsedDays * mission.dailyKm)
-  const remaining = Math.max(0, mission.totalKm - done)
-  const percent = mission.totalKm > 0 ? Math.min(100, (done / mission.totalKm) * 100) : 0
-
-  return {
-    doneKm: done.toFixed(1),
-    remainingKm: remaining.toFixed(1),
-    percent,
-  }
-}
-
-function progressPercent(startAt, endAt) {
-  if (!startAt || !endAt || endAt <= startAt) return 0
-  const percent = ((standardNow.value.getTime() - startAt) / (endAt - startAt)) * 100
-  return Math.min(100, Math.max(0, percent))
-}
-
-function trimLists() {
-  if (state.acceptedMissions.length > 240) {
-    state.acceptedMissions = operationSorted.value.slice(0, 240)
-  }
-
-  if (state.facilityQueue.length > 40) {
-    state.facilityQueue = facilityQueueSorted.value.slice(0, 40)
-  }
-}
-
-function getSavePayload() {
+let saveTimer = null
+let noticeTimer = null
+
+const state = reactive(createFreshSave())
+
+const standardNowMs = computed(() => state.standardBaseMs + (now.value - state.realBaseMs))
+const clockTime = computed(() => formatTime(standardNowMs.value))
+const clockDate = computed(() => formatDate(standardNowMs.value))
+const unlockedGroups = computed(() => facilityGroups)
+const directActiveCount = computed(() => state.activeProjects.filter((project) => project.method === 'direct' && project.status === 'active').length)
+const contractActiveCount = computed(() => state.activeProjects.filter((project) => project.method === 'contract').length)
+const activeCards = computed(() => state.activeProjects
+  .map((project) => decorateActiveProject(project))
+  .sort((a, b) => {
+    const aIsNew = Number(a.newUntilMs) > standardNowMs.value
+    const bIsNew = Number(b.newUntilMs) > standardNowMs.value
+    if (aIsNew !== bIsNew) return aIsNew ? -1 : 1
+    if (aIsNew && bIsNew) return (Number(b.createdAtMs) || 0) - (Number(a.createdAtMs) || 0)
+
+    const aEnd = Number(a.endsAtMs) || Number.MAX_SAFE_INTEGER
+    const bEnd = Number(b.endsAtMs) || Number.MAX_SAFE_INTEGER
+    if (aEnd !== bEnd) return aEnd - bEnd
+    return (Number(b.startedAtMs) || 0) - (Number(a.startedAtMs) || 0)
+  }))
+
+function createFreshSave() {
+  const baseMs = Date.now()
+  const standardBaseMs = baseMs
   return {
     schemaVersion: SAVE_SCHEMA_VERSION,
-    savedAt: new Date().toISOString(),
-    standardTime: standardNow.value.toISOString(),
-    acceptedMissions: toPlainArray(state.acceptedMissions),
-    facilityQueue: toPlainArray(state.facilityQueue),
-    activeFacilityMission: state.activeFacilityMission ? { ...state.activeFacilityMission } : null,
-    maintenanceCenters: toPlainMaintenanceCenters(),
-    lastOperationByGroup: { ...state.lastOperationByGroup },
-    lastFacilityAt: state.lastFacilityAt,
+    mode: 'facility_admin',
+    cityName,
+    realBaseMs: baseMs,
+    standardBaseMs,
+    budgetWon: 500_000_000_000,
+    directSlotLimit: 1,
+    directCompletedCount: 0,
+    completedCount: 0,
+    nextProjectGeneratedAtMs: createInitialGenerationSchedule(standardBaseMs),
+    availableProjects: [],
+    activeProjects: [],
+    completedProjects: [],
   }
 }
 
-function restorePayload(payload, now = new Date()) {
-  state.acceptedMissions = normalizeArray(payload.acceptedMissions)
-  state.facilityQueue = normalizeArray(payload.facilityQueue)
-  state.activeFacilityMission = payload.activeFacilityMission || null
-  state.maintenanceCenters = normalizeMaintenanceCenters(payload.maintenanceCenters)
-  state.lastOperationByGroup = normalizeLastOperationByGroup(payload.lastOperationByGroup, now)
-  state.lastFacilityAt = payload.lastFacilityAt || now.toISOString()
+function applyLoadedSave(payload) {
+  if (!payload || payload.mode !== 'facility_admin') return false
+
+  const fresh = createFreshSave()
+  Object.assign(state, fresh, payload)
+  state.mode = 'facility_admin'
+  state.schemaVersion = SAVE_SCHEMA_VERSION
+  state.availableProjects = []
+  state.activeProjects = normalizeProjectList(payload.activeProjects, 'active')
+  state.completedProjects = normalizeProjectList(payload.completedProjects, 'completed')
+  state.directSlotLimit = Math.min(5, Math.max(1, Number(payload.directSlotLimit) || 1))
+  state.directCompletedCount = Number(payload.directCompletedCount) || 0
+  state.completedCount = Number(payload.completedCount) || state.completedProjects.length || 0
+  state.budgetWon = Number(payload.budgetWon) || fresh.budgetWon
+  state.realBaseMs = Number(payload.realBaseMs) || fresh.realBaseMs
+  state.standardBaseMs = Number(payload.standardBaseMs) || fresh.standardBaseMs
+  state.nextProjectGeneratedAtMs = normalizeGenerationSchedule(payload.nextProjectGeneratedAtMs, state.standardBaseMs)
+  return true
 }
 
-function normalizeLastOperationByGroup(value, now = new Date()) {
-  return operationGroups.reduce((result, group) => {
-    result[group.id] = value?.[group.id] || now.toISOString()
-    return result
-  }, {})
+function normalizeProjectList(projects, fallbackStatus) {
+  if (!Array.isArray(projects)) return []
+  return projects.map((project) => normalizeProject(project, fallbackStatus)).filter(Boolean)
 }
 
-function toPlainArray(array) {
-  return JSON.parse(JSON.stringify(array || []))
+function normalizeProject(project, fallbackStatus) {
+  if (!project || !project.id) return null
+  const scale = project.scale || 'small'
+  const totalCostWon = Number(project.totalCostWon ?? project.costWon ?? project.directBudgetWon) || 0
+  const method = project.method === 'direct' ? 'direct' : 'contract'
+  return {
+    ...project,
+    scale,
+    method,
+    status: project.status || fallbackStatus,
+    totalCostWon,
+    directBudgetWon: Number(project.directBudgetWon) || totalCostWon,
+    contractFeeWon: Number(project.contractFeeWon) || calculateContractFee(totalCostWon, scale),
+    costWon: Number(project.costWon) || totalCostWon,
+    durationMs: Number(project.durationMs) || DAY_MS,
+    createdAtMs: Number(project.createdAtMs) || state.standardBaseMs,
+    startedAtMs: Number(project.startedAtMs) || Number(project.createdAtMs) || state.standardBaseMs,
+    endsAtMs: Number(project.endsAtMs) || ((Number(project.startedAtMs) || Number(project.createdAtMs) || state.standardBaseMs) + (Number(project.durationMs) || DAY_MS)),
+    newUntilMs: Number(project.newUntilMs) || 0,
+    expiresAtMs: Number(project.expiresAtMs) || state.standardBaseMs + expireDurationForScale(scale),
+  }
 }
 
-function normalizeArray(value) {
-  return Array.isArray(value) ? value : []
+function tick() {
+  now.value = Date.now()
+  settleProjects()
+  expireAvailableProjects()
+  generateProjectCatchUp()
+  ensureMinimumActiveProjects()
+  updateDirectSlotLimit()
 }
 
-function toPlainMaintenanceCenters() {
-  return maintenanceGroups.reduce((result, group) => {
-    result[group.id] = toPlainArray(state.maintenanceCenters[group.id])
-    return result
-  }, {})
+function settleProjects() {
+  for (const project of state.activeProjects) {
+    if (project.status !== 'active') continue
+    if (standardNowMs.value < project.endsAtMs) continue
+
+    if (project.method === 'contract') {
+      project.status = 'payment_waiting'
+      project.progress = 100
+      continue
+    }
+
+    completeProject(project)
+  }
 }
 
-function normalizeMaintenanceCenters(value) {
-  const centers = createEmptyMaintenanceCenters()
-  if (!value || typeof value !== 'object') return centers
+function completeProject(project) {
+  project.status = 'completed'
+  project.completedAtMs = standardNowMs.value
+  state.completedCount += 1
 
-  maintenanceGroups.forEach((group) => {
-    centers[group.id] = normalizeArray(value[group.id])
-      .map((item) => normalizeLegacyMaintenanceItem(item, group.id))
-      .filter(Boolean)
-  })
+  if (project.method === 'direct') {
+    state.directCompletedCount += 1
+  }
 
-  return centers
+  state.completedProjects.unshift({ ...project })
+  state.completedProjects = state.completedProjects.slice(0, MAX_COMPLETED_HISTORY)
+  state.activeProjects = state.activeProjects.filter((item) => item.id !== project.id)
+  showNotice(`${project.title} 사업이 완료되었습니다.`)
 }
 
-function normalizeLegacyMaintenanceItem(item, fallbackGroup) {
-  if (!item || typeof item !== 'object') return null
+function payContractProject(projectId) {
+  const project = state.activeProjects.find((item) => item.id === projectId)
+  if (!project || project.status !== 'payment_waiting') return
+  if (state.budgetWon < project.contractFeeWon) return
 
-  const group = groupLabels[item.group] ? item.group : fallbackGroup
-  const enteredAt = validDateText(item.enteredAt || item.createdAt || item.startedAt) || new Date().toISOString()
-  const status = item.status || (item.repairStartedAt || item.currentEndsAt || item.originalEndsAt ? 'repairing' : 'queued')
-  const repairStartedAt = item.repairStartedAt || (status === 'queued' ? '' : enteredAt)
-  const endCandidate = item.currentEndsAt || item.endsAt || item.originalEndsAt
-  const baseDurationMs = Number(item.baseDurationMs) || Math.max(
-    HOUR_MS,
-    toTime(endCandidate) - toTime(repairStartedAt || enteredAt),
-  )
-  const originalEndsAt = item.originalEndsAt || item.endsAt || (repairStartedAt ? new Date(toTime(repairStartedAt) + baseDurationMs).toISOString() : '')
-  const currentEndsAt = item.currentEndsAt || item.endsAt || originalEndsAt
-  const partsEvent = item.partsEvent
-    ? {
-        ...item.partsEvent,
-        durationMs: Number(item.partsEvent.durationMs || item.partsEvent.durationHours * HOUR_MS || 0),
-      }
-    : null
+  state.budgetWon -= project.contractFeeWon
+  completeProject(project)
+}
+
+function expireAvailableProjects() {
+  state.availableProjects = state.availableProjects.filter((project) => project.expiresAtMs > standardNowMs.value)
+}
+
+function generateProjectCatchUp() {
+  state.nextProjectGeneratedAtMs = normalizeGenerationSchedule(state.nextProjectGeneratedAtMs, standardNowMs.value)
+
+  for (const scale of Object.keys(generationRules)) {
+    const rule = generationRules[scale]
+    let generated = 0
+
+    while (standardNowMs.value >= state.nextProjectGeneratedAtMs[scale] && generated < Math.min(rule.catchUp, MAX_MISSION_CATCH_UP)) {
+      const createdAtMs = state.nextProjectGeneratedAtMs[scale]
+      state.nextProjectGeneratedAtMs[scale] += randomInt(rule.minMs, rule.maxMs)
+      generated += 1
+
+      if (state.activeProjects.length >= MAX_ACTIVE_PROJECTS) continue
+      const project = createRandomProject(createdAtMs, scale)
+      state.activeProjects.unshift(activateGeneratedProject(project, createdAtMs))
+    }
+  }
+}
+
+function createRandomProject(createdAtMs, forcedScale = null) {
+  const pool = []
+
+  for (const group of unlockedGroups.value.length ? unlockedGroups.value : ['bus']) {
+    for (const item of templates[group] || []) {
+      if (!forcedScale || item.scale === forcedScale) pool.push({ group, base: item })
+    }
+  }
+
+  const selected = pool.length ? choice(pool) : { group: 'bus', base: choice(templates.bus) }
+  const { group, base } = selected
+  const durationMs = randomInt(base.minMs, base.maxMs)
+  const totalCostWon = roundCost(randomInt(base.minCost, base.maxCost))
+  const method = chooseProjectMethod(base.scale, totalCostWon)
 
   return {
-    ...item,
-    id: item.id || createId('maint_legacy'),
-    kind: 'maintenance',
+    id: `facility_${createdAtMs}_${Math.random().toString(36).slice(2, 8)}`,
     group,
-    level: item.level || 'legacy',
-    title: item.title || `${groupName(group)}정비`,
-    status,
-    enteredAt,
-    baseDurationMs,
-    repairStartedAt,
-    originalEndsAt,
-    currentEndsAt,
-    partsEvent,
+    title: base.title,
+    scale: base.scale,
+    effect: base.effect,
+    durationMs,
+    totalCostWon,
+    directBudgetWon: totalCostWon,
+    contractFeeWon: calculateContractFee(totalCostWon, base.scale),
+    costWon: totalCostWon,
+    createdAtMs,
+    expiresAtMs: createdAtMs + expireDurationForScale(base.scale),
+    status: 'available',
+    method,
   }
 }
 
-function validDateText(value) {
-  return toTime(value) ? new Date(value).toISOString() : ''
-}
 
-async function loadSave() {
-  const now = new Date()
-  const record = await loadRctsAutoSave()
-  const payload = record?.payload
+function activateGeneratedProject(project, startedAtMs) {
+  const activeProject = prepareProjectForStart(project)
+  const startMs = Number(startedAtMs) || standardNowMs.value
 
-  if (!payload) {
-    bootstrapNewGame(now)
-    return
+  if (activeProject.method === 'direct') {
+    state.budgetWon -= activeProject.directBudgetWon
   }
 
-  restorePayload(payload, now)
-  processGameState(now)
+  return {
+    ...activeProject,
+    status: 'active',
+    startedAtMs: startMs,
+    endsAtMs: startMs + activeProject.durationMs,
+    newUntilMs: standardNowMs.value + 2 * MINUTE_MS,
+  }
 }
 
-async function saveSoon() {
-  if (saveLock) return
-  saveLock = true
+function chooseProjectMethod(scale, totalCostWon) {
+  const directReserved = countDirectReservedProjects()
+  if (directAllowedScales.has(scale) && directReserved < state.directSlotLimit && state.budgetWon >= totalCostWon) return 'direct'
+  return 'contract'
+}
 
+function countDirectReservedProjects() {
+  return state.activeProjects.filter((project) => project.method === 'direct' && project.status === 'active').length
+}
+
+function calculateContractFee(totalCostWon, scale) {
+  const rate = contractFeeRates[scale] || 0.2
+  return roundCost(Math.max(1_000_000, totalCostWon * rate))
+}
+
+function createInitialGenerationSchedule(baseMs) {
+  return Object.fromEntries(Object.entries(generationRules).map(([scale, rule]) => [
+    scale,
+    baseMs + randomInt(rule.minMs, rule.maxMs),
+  ]))
+}
+
+function normalizeGenerationSchedule(schedule, baseMs) {
+  const normalized = {}
+  for (const [scale, rule] of Object.entries(generationRules)) {
+    const value = Number(schedule?.[scale])
+    normalized[scale] = Number.isFinite(value) && value > 0
+      ? value
+      : baseMs + randomInt(rule.minMs, rule.maxMs)
+  }
+  return normalized
+}
+
+function expireDurationForScale(scale) {
+  if (scale === 'mega') return 180 * DAY_MS
+  if (scale === 'large') return 60 * DAY_MS
+  if (scale === 'medium') return 21 * DAY_MS
+  return 7 * DAY_MS
+}
+
+function createAutoActiveProject(createdAtMs) {
+  const project = createRandomProject(createdAtMs)
+  const progressMs = randomInt(0, Math.floor(project.durationMs * 0.55))
+  const startedAtMs = standardNowMs.value - progressMs
+  const activeProject = activateGeneratedProject(project, startedAtMs)
+  activeProject.newUntilMs = 0
+  return activeProject
+}
+
+function ensureMinimumActiveProjects() {
+  while (state.activeProjects.filter((project) => project.status === 'active').length < 4 && state.activeProjects.length < MAX_ACTIVE_PROJECTS) {
+    state.activeProjects.unshift(createAutoActiveProject(standardNowMs.value))
+  }
+}
+
+
+function startProject(projectId) {
+  const project = state.availableProjects.find((item) => item.id === projectId)
+  if (!project) return
+
+  const activeProject = prepareProjectForStart(project)
+  if (!canStartProject(activeProject)) return
+
+  if (activeProject.method === 'direct') {
+    state.budgetWon -= activeProject.directBudgetWon
+  }
+
+  const startedAtMs = standardNowMs.value
+  state.availableProjects = state.availableProjects.filter((item) => item.id !== projectId)
+  state.activeProjects.unshift({
+    ...activeProject,
+    status: 'active',
+    startedAtMs,
+    endsAtMs: startedAtMs + activeProject.durationMs,
+  })
+  showNotice(`${project.title} 사업을 ${activeProject.method === 'direct' ? '직영' : '위탁'}으로 착수했습니다.`)
+}
+
+function prepareProjectForStart(project) {
+  return normalizeProject(project, project.status || 'available')
+}
+
+function canStartProject(project) {
+  if (!project) return false
+  if (project.method === 'direct') return canStartDirect(project)
+  return canStartContract(project)
+}
+
+function canStartDirect(project) {
+  if (!project) return false
+  if (!directAllowedScales.has(project.scale)) return false
+  if (directActiveCount.value >= state.directSlotLimit) return false
+  return state.budgetWon >= project.directBudgetWon
+}
+
+function canStartContract(project) {
+  if (!project) return false
+  return true
+}
+
+function startButtonText(project) {
+  return project.method === 'direct' ? '직영 착수' : '위탁 발주'
+}
+
+function projectCostLabel(project) {
+  return project.method === 'direct' ? '사업비' : '위탁비용'
+}
+
+function projectCostAmount(project) {
+  return project.method === 'direct' ? project.directBudgetWon : project.contractFeeWon
+}
+
+function updateDirectSlotLimit() {
+  const completed = state.directCompletedCount
+  let nextLimit = 1
+  if (completed >= 150) nextLimit = 5
+  else if (completed >= 70) nextLimit = 4
+  else if (completed >= 30) nextLimit = 3
+  else if (completed >= 10) nextLimit = 2
+
+  if (nextLimit > state.directSlotLimit) {
+    state.directSlotLimit = nextLimit
+    showNotice(`직영 가능 수가 ${nextLimit}개로 확장되었습니다.`)
+  }
+}
+
+function decorateActiveProject(project) {
+  const elapsed = Math.max(0, standardNowMs.value - project.startedAtMs)
+  const progress = project.status === 'payment_waiting'
+    ? 100
+    : Math.min(100, Math.floor((elapsed / project.durationMs) * 100))
+
+  return {
+    ...project,
+    progress,
+    remainingText: remainUntilText(project.endsAtMs),
+  }
+}
+
+function methodLabel(project) {
+  if (project.method === 'direct') return '직영'
+  if (project.method === 'contract') return '위탁'
+  return '시설'
+}
+
+function groupLabel(group) {
+  return groupLabels[group] || '시설'
+}
+
+function scaleLabel(scale) {
+  return scaleLabels[scale] || '사업'
+}
+
+function durationText(ms) {
+  return formatDurationText(ms, { showSecondsUnderHour: false })
+}
+
+function remainUntilText(targetMs) {
+  return formatDurationText(Math.max(0, targetMs - standardNowMs.value), { showSecondsUnderHour: true })
+}
+
+function formatDurationText(ms, options = {}) {
+  const showSecondsUnderHour = Boolean(options.showSecondsUnderHour)
+  const totalSeconds = Math.max(0, Math.floor(Number(ms) / SECOND_MS))
+
+  if (showSecondsUnderHour && totalSeconds < 3600) {
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    if (minutes > 0) return `${minutes}분 ${seconds}초`
+    return `${seconds}초`
+  }
+
+  let remainMinutes = Math.max(1, Math.ceil(totalSeconds / 60))
+  const years = Math.floor(remainMinutes / (365 * 24 * 60))
+  remainMinutes %= 365 * 24 * 60
+  const days = Math.floor(remainMinutes / (24 * 60))
+  remainMinutes %= 24 * 60
+  const hours = Math.floor(remainMinutes / 60)
+  const minutes = remainMinutes % 60
+
+  const parts = []
+  if (years) parts.push(`${years}년`)
+  if (days) parts.push(`${days}일`)
+  if (hours) parts.push(`${hours}시간`)
+  if (minutes || !parts.length) parts.push(`${minutes}분`)
+
+  return parts.join(' ')
+}
+
+function contractFeeAmount(project) {
+  if (!project) return 0
+  if (project.method === 'contract') return Number(project.contractFeeWon) || 0
+  return 0
+}
+
+function formatWon(value) {
+  const won = Math.round(Number(value) || 0)
+  const jo = Math.floor(won / 1_0000_0000_0000)
+  const eok = Math.floor((won % 1_0000_0000_0000) / 100_000_000)
+  const man = Math.floor((won % 100_000_000) / 10_000)
+
+  if (jo > 0) return eok > 0 ? `${jo}조 ${eok.toLocaleString()}억` : `${jo}조`
+  if (eok > 0) return `${eok.toLocaleString()}억`
+  if (man > 0) return `${man.toLocaleString()}만`
+  return `${won.toLocaleString()}원`
+}
+
+function formatDate(ms) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+  }).format(new Date(ms))
+}
+
+function formatTime(ms) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(ms))
+}
+
+function randomInt(min, max) {
+  return Math.floor(min + Math.random() * (max - min + 1))
+}
+
+function choice(items) {
+  return items[Math.floor(Math.random() * items.length)]
+}
+
+function roundCost(value) {
+  if (value >= 100_000_000_000) return Math.round(value / 10_000_000_000) * 10_000_000_000
+  if (value >= 1_000_000_000) return Math.round(value / 100_000_000) * 100_000_000
+  if (value >= 10_000_000) return Math.round(value / 1_000_000) * 1_000_000
+  return Math.round(value / 100_000) * 100_000
+}
+
+function showNotice(message) {
+  noticeText.value = message
+  window.clearTimeout(noticeTimer)
+  noticeTimer = window.setTimeout(() => {
+    noticeText.value = ''
+  }, 3200)
+}
+
+async function saveNow() {
   try {
-    await saveRctsAutoSave(getSavePayload())
-  } finally {
-    saveLock = false
+    await saveRctsAutoSave(state)
+  } catch (error) {
+    console.error(error)
   }
-}
-
-function startTimers() {
-  tickTimer = window.setInterval(() => {
-    processGameState(new Date())
-  }, SECOND_MS)
-
-  autoSaveTimer = window.setInterval(saveSoon, AUTO_SAVE_INTERVAL_MS)
-}
-
-function handleVisibilityChange() {
-  if (document.visibilityState === 'hidden') saveSoon()
-  if (document.visibilityState === 'visible') processGameState(new Date())
-}
-
-function groupName(groupId) {
-  return groupLabels[groupId] || groupId || '기타'
-}
-
-function pickRandom(array) {
-  return array[Math.floor(Math.random() * array.length)]
-}
-
-function randomInteger(min, max) {
-  const low = Math.ceil(Number(min))
-  const high = Math.floor(Number(max))
-  return Math.floor(Math.random() * (high - low + 1)) + low
-}
-
-function formatDateOnly(value) {
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-
-  const yyyy = date.getFullYear()
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const dd = String(date.getDate()).padStart(2, '0')
-  const weekdays = ['일', '월', '화', '수', '목', '금', '토']
-  return `${yyyy}.${mm}.${dd} ${weekdays[date.getDay()]}요일`
-}
-
-function formatClockTime(value) {
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return '--:--'
-
-  const hh = String(date.getHours()).padStart(2, '0')
-  const mm = String(date.getMinutes()).padStart(2, '0')
-  return `${hh}:${mm}`
-}
-
-function formatRemaining(value) {
-  const remainMs = Math.max(0, toTime(value) - standardNow.value.getTime())
-  if (remainMs <= 0) return '완료 대기'
-  return `${formatDuration(remainMs)} 남음`
-}
-
-function formatDuration(ms) {
-  const totalMinutes = Math.max(0, Math.ceil(Number(ms || 0) / MINUTE_MS))
-  const days = Math.floor(totalMinutes / (24 * 60))
-  const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
-  const minutes = totalMinutes % 60
-
-  if (days > 0) return `${days}일 ${hours}시간`
-  if (hours > 0) return `${hours}시간 ${minutes}분`
-  return `${minutes}분`
-}
-
-function toTime(value) {
-  const date = new Date(value)
-  const time = date.getTime()
-  return Number.isFinite(time) ? time : 0
-}
-
-function createId(prefix) {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return `${prefix}_${crypto.randomUUID()}`
-  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`
 }
 
 onMounted(async () => {
-  await loadSave()
-  processGameState(new Date())
-  startTimers()
-  window.addEventListener('beforeunload', saveSoon)
-  document.addEventListener('visibilitychange', handleVisibilityChange)
-  saveSoon()
+  const saved = await loadRctsAutoSave()
+  applyLoadedSave(saved?.payload)
+
+  if (!state.activeProjects.length) {
+    for (let index = 0; index < 4; index += 1) {
+      state.activeProjects.unshift(createAutoActiveProject(state.standardBaseMs + index * HOUR_MS))
+    }
+  }
+
+  tick()
+  tickTimer = window.setInterval(tick, TICK_MS)
+  saveTimer = window.setInterval(saveNow, AUTO_SAVE_INTERVAL_MS)
 })
 
 onBeforeUnmount(() => {
-  if (tickTimer) window.clearInterval(tickTimer)
-  if (autoSaveTimer) window.clearInterval(autoSaveTimer)
-  window.removeEventListener('beforeunload', saveSoon)
-  document.removeEventListener('visibilitychange', handleVisibilityChange)
-  saveSoon()
+  window.clearInterval(tickTimer)
+  window.clearInterval(saveTimer)
+  window.clearTimeout(noticeTimer)
+  saveNow()
 })
 </script>
 
@@ -692,231 +659,343 @@ onBeforeUnmount(() => {
 }
 
 :global(*::-webkit-scrollbar) {
+  display: none;
   width: 0;
   height: 0;
-  display: none;
 }
 
 :global(html),
 :global(body),
 :global(#app) {
-  width: 100%;
-  min-width: 320px;
   min-height: 100%;
   margin: 0;
 }
 
 :global(body) {
+  background: #0f141d;
+  color: #edf2f7;
+  font-family: Inter, Pretendard, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   overflow-y: auto;
-  color: #e5eefc;
+  scrollbar-width: none;
+}
+
+:global(body::-webkit-scrollbar) {
+  display: none;
+}
+
+.facility-page {
+  min-height: 100vh;
+  width: 100%;
+  padding: 18px;
   background:
-    radial-gradient(circle at 10% -10%, rgba(56, 189, 248, 0.24), transparent 32%),
-    linear-gradient(145deg, #020617 0%, #08111f 52%, #111827 100%);
-  font-family: Pretendard, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    radial-gradient(circle at top left, rgba(80, 120, 180, 0.24), transparent 32rem),
+    linear-gradient(180deg, #151b25 0%, #0f141d 100%);
 }
 
-.rcts-page {
-  width: min(100% - 24px, 860px);
-  min-height: 100dvh;
-  margin: 0 auto;
-  padding: 12px 0 24px;
-  overflow-x: hidden;
+.hero {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: stretch;
+  width: 100%;
+  margin-bottom: 14px;
 }
 
-.topbar,
-.deck-panel,
-.watch-card {
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.72);
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.24);
+.title-block,
+.clock-card,
+.summary-card,
+.project-card,
+.empty-card,
+.notice-line {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(16px);
 }
 
-.topbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(178px, 240px);
-  gap: 10px;
-  align-items: stretch;
+.title-block,
+.clock-card {
   border-radius: 24px;
-  padding: 14px;
+  padding: 18px;
 }
 
-.brand-block {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  justify-content: center;
+.title-block.compact {
+  padding: 16px 18px;
 }
 
-.brand-block span,
-.digital-clock span,
-.deck-head span,
-.card-label {
-  display: block;
-  color: #93c5fd;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.title-block span,
+.clock-card span,
+.summary-card span,
+.section-head span,
+.card-topline,
+.info-row span,
+.empty-card span {
+  color: rgba(237, 242, 247, 0.62);
+  font-size: 12px;
+  letter-spacing: -0.01em;
 }
 
-.brand-block h1 {
-  margin: 5px 0 0;
-  color: #ffffff;
-  font-size: clamp(42px, 11vw, 72px);
-  line-height: 0.9;
-  letter-spacing: -0.08em;
-}
-
-.digital-clock {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  border: 1px solid rgba(103, 232, 249, 0.22);
-  border-radius: 18px;
-  padding: 14px;
-  background: rgba(8, 47, 73, 0.34);
-}
-
-.digital-clock strong {
-  margin-top: 6px;
-  color: #ffffff;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: clamp(28px, 7vw, 42px);
+.title-block h1 {
+  margin: 0;
+  font-size: clamp(26px, 7vw, 44px);
   line-height: 1;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.07em;
 }
 
-.digital-clock em {
-  margin-top: 5px;
-  color: #8da3bd;
+.clock-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 156px;
+  text-align: right;
+}
+
+.clock-card strong {
+  display: block;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(28px, 7vw, 44px);
+  line-height: 1;
+  letter-spacing: -0.07em;
+}
+
+.clock-card em,
+.summary-card em {
+  display: block;
+  margin-top: 8px;
+  color: rgba(237, 242, 247, 0.52);
   font-size: 12px;
   font-style: normal;
 }
 
-.deck-panel {
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
   width: 100%;
-  margin-top: 10px;
-  border-radius: 24px;
-  padding: 12px;
+  margin-bottom: 12px;
 }
 
-.deck-head {
+.summary-card {
+  min-height: 98px;
+  border-radius: 20px;
+  padding: 14px;
+}
+
+.summary-card.wide {
+  grid-column: span 1;
+}
+
+.summary-card strong {
+  display: block;
+  margin-top: 10px;
+  font-size: clamp(18px, 4.5vw, 26px);
+  line-height: 1.05;
+  letter-spacing: -0.05em;
+}
+
+.notice-line {
+  width: 100%;
+  margin: 0 0 12px;
+  border-radius: 16px;
+  padding: 12px 14px;
+  color: rgba(237, 242, 247, 0.86);
+  font-size: 13px;
+}
+
+.deck {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+}
+
+.deck-section {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 10px;
+  padding: 0 2px;
 }
 
-.deck-head strong {
-  color: #cffafe;
+.section-head strong {
   font-size: 12px;
+  color: rgba(237, 242, 247, 0.74);
 }
 
-.card-deck {
+.card-list {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
 }
 
-.watch-card {
-  width: 100%;
-  overflow: hidden;
+.project-card,
+.empty-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
   border-radius: 18px;
-  border-left: 4px solid #60a5fa;
   padding: 12px;
 }
 
-.watch-card.operation.bus { border-left-color: #38bdf8; }
-.watch-card.operation.rail { border-left-color: #a78bfa; }
-.watch-card.operation.air { border-left-color: #22d3ee; }
-.watch-card.operation.ship { border-left-color: #2dd4bf; }
-.watch-card.facility { border-left-color: #c084fc; }
-.watch-card.maintenance { border-left-color: #f59e0b; }
-.watch-card.maintenance.bus { border-left-color: #38bdf8; }
-.watch-card.maintenance.rail { border-left-color: #a78bfa; }
-.watch-card.maintenance.air { border-left-color: #22d3ee; }
-.watch-card.maintenance.ship { border-left-color: #2dd4bf; }
-.watch-card.maintenance.space { border-left-color: #f0abfc; }
-.watch-card.queued { opacity: 0.76; }
-
-.card-label {
-  color: #bfdbfe;
-}
-
-.card-bodyline {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: end;
-  margin-top: 7px;
-}
-
-.card-bodyline h2 {
-  min-width: 0;
+.project-card h2 {
   margin: 0;
-  color: #ffffff;
-  font-size: clamp(19px, 5vw, 26px);
-  line-height: 1.08;
+  font-size: 17px;
+  line-height: 1.12;
   letter-spacing: -0.045em;
 }
 
-.card-bodyline strong {
-  color: #cffafe;
+.card-topline,
+.info-row,
+.action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-topline em {
+  color: rgba(237, 242, 247, 0.5);
+  font-style: normal;
+}
+
+.project-card p {
+  margin: 0;
+  color: rgba(237, 242, 247, 0.68);
   font-size: 13px;
-  white-space: nowrap;
+  line-height: 1.45;
 }
 
-.progress-track {
-  height: 8px;
-  margin-top: 11px;
-  overflow: hidden;
+.progress-inline {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.progress-inline b {
+  --progress: 0%;
+  min-width: 52px;
+  height: 6px;
   border-radius: 999px;
-  background: rgba(2, 6, 23, 0.88);
+  background:
+    linear-gradient(90deg, rgba(237, 242, 247, 0.86) 0 var(--progress), transparent var(--progress) 100%),
+    rgba(237, 242, 247, 0.14);
+  overflow: hidden;
 }
 
-.progress-track span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #38bdf8, #67e8f9);
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
 }
 
-.watch-card p {
-  margin: 8px 0 0;
-  color: #9fb2ca;
-  font-size: 12px;
-  line-height: 1.35;
+.info-grid .info-row {
+  min-width: 0;
 }
 
-@media (max-width: 620px) {
-  .rcts-page {
-    width: min(100% - 14px, 620px);
-    padding-top: 7px;
-  }
+.info-row {
+  min-height: 22px;
+  padding-top: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
 
-  .topbar {
-    grid-template-columns: 1fr;
-    border-radius: 20px;
+.info-row strong {
+  font-size: 13px;
+  text-align: right;
+}
+
+.action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.action-button {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #edf2f7;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.action-button.primary {
+  background: rgba(237, 242, 247, 0.9);
+  color: #121722;
+}
+
+.action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.36;
+}
+
+.empty-card {
+  grid-column: 1 / -1;
+  align-items: center;
+  min-height: 120px;
+  text-align: center;
+}
+
+.empty-card strong {
+  font-size: 18px;
+}
+
+.payment_waiting {
+  border-color: rgba(255, 221, 120, 0.34);
+}
+
+@media (max-width: 820px) {
+  .facility-page {
     padding: 12px;
   }
 
-  .digital-clock,
-  .deck-panel,
-  .watch-card {
-    border-radius: 16px;
-  }
-
-  .card-bodyline {
+  .hero {
     grid-template-columns: 1fr;
-    gap: 5px;
-    align-items: start;
   }
 
-  .card-bodyline strong {
-    font-size: 12px;
+  .clock-card {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .card-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .title-block,
+  .clock-card,
+  .summary-card,
+  .project-card,
+  .empty-card {
+    border-radius: 18px;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

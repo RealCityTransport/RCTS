@@ -1,13 +1,8 @@
-const DB_NAME = 'rcts_transport_operation_db'
-const LEGACY_DB_NAMES = ['rcts_realtime_mission_db']
+const DB_NAME = 'rcts_facility_admin_db'
 const DB_VERSION = 1
 const STORE_NAME = 'saves'
 const SAVE_KEY = 'main-autosave'
 const LOCAL_STORAGE_KEY = `${DB_NAME}:${SAVE_KEY}`
-
-function storageKey(dbName = DB_NAME) {
-  return `${dbName}:${SAVE_KEY}`
-}
 
 function hasIndexedDb() {
   return typeof window !== 'undefined' && 'indexedDB' in window
@@ -29,18 +24,17 @@ function toPlainData(value) {
   return JSON.parse(JSON.stringify(value))
 }
 
-function openDatabase(dbName = DB_NAME) {
+function openDatabase() {
   return new Promise((resolve, reject) => {
     if (!hasIndexedDb()) {
       reject(new Error('IndexedDB를 사용할 수 없습니다.'))
       return
     }
 
-    const request = window.indexedDB.open(dbName, DB_VERSION)
+    const request = window.indexedDB.open(DB_NAME, DB_VERSION)
 
     request.onupgradeneeded = () => {
       const db = request.result
-
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' })
       }
@@ -52,8 +46,8 @@ function openDatabase(dbName = DB_NAME) {
   })
 }
 
-function withStore(mode, callback, dbName = DB_NAME) {
-  return openDatabase(dbName).then((db) => new Promise((resolve, reject) => {
+function withStore(mode, callback) {
+  return openDatabase().then((db) => new Promise((resolve, reject) => {
     let settled = false
 
     function done(value) {
@@ -85,10 +79,10 @@ function withStore(mode, callback, dbName = DB_NAME) {
   }))
 }
 
-function loadFromLocalStorage(dbName = DB_NAME) {
+function loadFromLocalStorage() {
   if (!hasLocalStorage()) return null
 
-  const raw = window.localStorage.getItem(storageKey(dbName))
+  const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY)
   if (!raw) return null
 
   return JSON.parse(raw)
@@ -112,30 +106,19 @@ function saveToLocalStorage(payload) {
   return savedAt
 }
 
-async function loadFromIndexedDb(dbName = DB_NAME) {
+async function loadFromIndexedDb() {
   try {
-    return await withStore('readonly', (store) => store.get(SAVE_KEY), dbName)
+    return await withStore('readonly', (store) => store.get(SAVE_KEY))
   } catch {
     return null
   }
 }
 
 export async function loadRctsAutoSave() {
-  const currentIndexedDbRecord = await loadFromIndexedDb(DB_NAME)
-  if (currentIndexedDbRecord) return currentIndexedDbRecord
+  const indexedDbRecord = await loadFromIndexedDb()
+  if (indexedDbRecord) return indexedDbRecord
 
-  const currentLocalStorageRecord = loadFromLocalStorage(DB_NAME)
-  if (currentLocalStorageRecord) return currentLocalStorageRecord
-
-  for (const legacyDbName of LEGACY_DB_NAMES) {
-    const legacyIndexedDbRecord = await loadFromIndexedDb(legacyDbName)
-    if (legacyIndexedDbRecord) return legacyIndexedDbRecord
-
-    const legacyLocalStorageRecord = loadFromLocalStorage(legacyDbName)
-    if (legacyLocalStorageRecord) return legacyLocalStorageRecord
-  }
-
-  return null
+  return loadFromLocalStorage()
 }
 
 export async function saveRctsAutoSave(payload) {
